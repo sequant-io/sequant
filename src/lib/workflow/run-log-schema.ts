@@ -18,6 +18,7 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { getVersion } from "../version.js";
 
 // Import canonical Phase types from types.ts (single source of truth)
 import { PhaseSchema, type Phase } from "./types.js";
@@ -279,6 +280,18 @@ export const PhaseLogSchema = z.object({
   cacheMetrics: CacheMetricsSchema.optional(),
   /** Structured error context for failed phases (#447) */
   errorContext: ErrorContextSchema.optional(),
+  /**
+   * Resolved model this phase actually dispatched on, when the driver
+   * reported one (#1198 AC-1). Absent, not `null`, when the driver reported
+   * no `modelUsage`.
+   */
+  model: z.string().optional(),
+  /**
+   * Pre-resolution model/role string for this phase, when a `role:` policy
+   * was configured (#1198 AC-1) — set for any `role:`-configured phase,
+   * escalated or not. Absent, not `null`, when no role was configured.
+   */
+  requestedModel: z.string().optional(),
 });
 
 export type PhaseLog = z.infer<typeof PhaseLogSchema>;
@@ -403,6 +416,16 @@ export const RunLogSchema = z.object({
    * than by finishing (#856). Present iff at least one issue is `aborted`.
    */
   abortedBy: z.string().optional(),
+  /**
+   * sequant version that produced this run log (#1198 AC-2). Set internally
+   * by `createEmptyRunLog` via `getVersion()` — no caller plumbing needed.
+   */
+  sequantVersion: z.string().optional(),
+  /**
+   * Resolved agent/driver name for this run (#1198 AC-2), e.g.
+   * `"claude-code"`, `"opencode"`. Threaded from `LogWriterOptions.driver`.
+   */
+  driver: z.string().optional(),
 });
 
 export type RunLog = z.infer<typeof RunLogSchema>;
@@ -438,7 +461,7 @@ export function generateLogFilename(runId: string, startTime: Date): string {
  */
 export function createEmptyRunLog(
   config: RunConfig,
-  options?: { startCommit?: string; startTime?: Date },
+  options?: { startCommit?: string; startTime?: Date; driver?: string },
 ): Omit<RunLog, "endTime"> {
   const runId = randomUUID();
   // #867: use the caller-supplied run origin when provided so the log's wall
@@ -460,6 +483,10 @@ export function createEmptyRunLog(
       totalDurationSeconds: 0,
     },
     startCommit: options?.startCommit,
+    // #1198 AC-2: read fresh on every call — cheap (package.json read cached
+    // by the OS), called once per run, not per phase.
+    sequantVersion: getVersion(),
+    driver: options?.driver,
   };
 }
 

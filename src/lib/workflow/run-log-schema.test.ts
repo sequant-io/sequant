@@ -20,6 +20,7 @@ import {
   type PhaseLog,
   type IssueLog,
 } from "./run-log-schema.js";
+import { getVersion } from "../version.js";
 
 describe("Zod Schemas", () => {
   describe("PhaseSchema", () => {
@@ -149,6 +150,35 @@ describe("Zod Schemas", () => {
       };
       const parsed = PhaseLogSchema.parse(withoutSummary);
       expect(parsed.summary).toBeUndefined();
+    });
+
+    // #1198 AC-1: Given a phase execution whose driver populated `modelUsage`
+    // (so `PhaseResult.resolvedModel` is set) and/or whose config declared a
+    // `role:` policy for that phase, when `createPhaseLogFromTiming` builds
+    // the `PhaseLog` and `LogWriter.logPhase` persists it, then the persisted
+    // entry carries `model` equal to the resolved model and `requestedModel`
+    // equal to the pre-resolution value.
+    it("accepts model and requestedModel (#1198 AC-1)", () => {
+      const withModel = {
+        ...validPhaseLog,
+        model: "claude-sonnet-5",
+        requestedModel: "role:fast",
+      };
+
+      const parsed = PhaseLogSchema.parse(withModel);
+      expect(parsed.model).toBe("claude-sonnet-5");
+      expect(parsed.requestedModel).toBe("role:fast");
+    });
+
+    // #1198 AC-1: both fields are absent (not `null`/empty string) when the
+    // driver reported no `modelUsage` and no role was configured.
+    it("leaves model and requestedModel absent, not null, when the driver reports neither (#1198 AC-1)", () => {
+      const parsed = PhaseLogSchema.parse(validPhaseLog);
+
+      expect(parsed.model).toBeUndefined();
+      expect(parsed.requestedModel).toBeUndefined();
+      expect(parsed).not.toHaveProperty("model", null);
+      expect(parsed).not.toHaveProperty("requestedModel", null);
     });
   });
 
@@ -399,6 +429,25 @@ describe("Zod Schemas", () => {
       };
       expect(() => RunLogSchema.parse(withIssues)).not.toThrow();
     });
+
+    // #1198 AC-2: Given a run with `config.agent` resolved (default
+    // "claude-code"), when `LogWriter.initialize` calls `createEmptyRunLog`,
+    // then the top-level log object (sibling to `version`/`runId`, NOT nested
+    // in `config`) carries `sequantVersion` (from `getVersion()`) and
+    // `driver` (the resolved agent/driver name), for every driver.
+    it("accepts sequantVersion and driver at the top level, sibling to version/runId (#1198 AC-2)", () => {
+      const withDriverFields = {
+        ...validRunLog,
+        sequantVersion: getVersion(),
+        driver: "opencode",
+      };
+
+      const parsed = RunLogSchema.parse(withDriverFields);
+      expect(parsed.sequantVersion).toBe(getVersion());
+      expect(parsed.driver).toBe("opencode");
+      expect(parsed.config).not.toHaveProperty("driver");
+      expect(parsed.config).not.toHaveProperty("sequantVersion");
+    });
   });
 
   describe("ErrorContextSchema", () => {
@@ -536,6 +585,29 @@ describe("createEmptyRunLog", () => {
     const log = createEmptyRunLog(config);
 
     expect(log).not.toHaveProperty("endTime");
+  });
+
+  // #1198 AC-2: sequantVersion is set internally via getVersion() on every
+  // call — no caller plumbing needed.
+  it("sets sequantVersion via getVersion() (#1198 AC-2)", () => {
+    const log = createEmptyRunLog(config);
+
+    expect(log.sequantVersion).toBe(getVersion());
+  });
+
+  // #1198 AC-2: driver is threaded through from options, for any driver name
+  // — not just "claude-code".
+  it("sets driver from options for a non-default driver (#1198 AC-2)", () => {
+    const log = createEmptyRunLog(config, { driver: "opencode" });
+
+    expect(log.driver).toBe("opencode");
+  });
+
+  // === FAILURE / EDGE PATH ===
+  it("leaves driver undefined when no driver option is passed (#1198 AC-2)", () => {
+    const log = createEmptyRunLog(config);
+
+    expect(log.driver).toBeUndefined();
   });
 });
 

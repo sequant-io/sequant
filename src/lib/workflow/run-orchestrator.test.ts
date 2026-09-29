@@ -31,6 +31,17 @@ import type { OrchestratorConfig, RunInit } from "./run-orchestrator.js";
 import { runIssueWithLogging } from "./batch-executor.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
 import type { ExecutionConfig, IssueResult, RunOptions } from "./types.js";
+import { MetricsWriter } from "./metrics-writer.js";
+
+vi.mock("./metrics-writer.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./metrics-writer.js")>();
+  return {
+    ...actual,
+    MetricsWriter: vi.fn(function MockMetricsWriter() {
+      return { recordRun: vi.fn().mockResolvedValue(undefined) };
+    }),
+  };
+});
 
 // Only `runIssueWithLogging` is replaced — everything else (in particular
 // `recordIssueCompletion`, whose live-path wiring the #879 tests below pin)
@@ -330,5 +341,114 @@ describe("RunOrchestrator.run — warns when the main checkout is behind origin/
     expect(vi.mocked(runIssueWithLogging)).toHaveBeenCalledTimes(1);
     expect(lines.some((line) => line.includes("commits behind"))).toBe(false);
     expect(lines.some((line) => line.includes("commit behind"))).toBe(false);
+  });
+});
+
+describe("RunOrchestrator.recordMetrics — metrics.json model derivation (#1198 AC-3)", () => {
+  // `recordMetrics` is private to TypeScript only; same exported-for-testing
+  // cast pattern as `executeOneIssue` above.
+  function recordMetricsFn() {
+    return (
+      RunOrchestrator as unknown as {
+        recordMetrics(
+          config: ExecutionConfig,
+          mergedOptions: RunOptions,
+          results: IssueResult[],
+          worktreeMap: Map<number, unknown>,
+          issueNumbers: number[],
+          wallClockDurationSeconds: number,
+        ): Promise<void>;
+      }
+    ).recordMetrics;
+  }
+
+  function issueResult(overrides: Partial<IssueResult>): IssueResult {
+    return {
+      issueNumber: 765,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 1,
+      ...overrides,
+    };
+  }
+
+  afterEach(() => {
+    vi.mocked(MetricsWriter).mockClear();
+  });
+
+  // Given: a run whose phases resolved concrete models via `modelUsage`
+  // (already computed by `enrichPhasePoliciesFromResults`).
+  // When: `RunOrchestrator` calls `metricsWriter.recordRun`.
+  // Then: `metrics.json`'s top-level `model` is derived from a resolved
+  // phase model, not the raw `process.env.ANTHROPIC_MODEL ?? "opus"` guess.
+  it("derives model from the first phase (in config.phases order) with a resolvedModel", async () => {
+    const originalEnv = process.env.ANTHROPIC_MODEL;
+    process.env.ANTHROPIC_MODEL = "opus"; // the guess this AC replaces
+
+    try {
+      const results = [
+        issueResult({
+          phaseResults: [
+            { phase: "spec", success: true, resolvedModel: undefined },
+            { phase: "exec", success: true, resolvedModel: "claude-sonnet-5" },
+          ],
+        }),
+      ];
+
+      await recordMetricsFn()(
+        { phases: ["spec", "exec", "qa"] } as ExecutionConfig,
+        {} as RunOptions,
+        results,
+        new Map(),
+        [765],
+        10,
+      );
+
+      const recordRunMock = vi.mocked(MetricsWriter).mock.results[0]!.value
+        .recordRun as ReturnType<typeof vi.fn>;
+
+      expect(recordRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "claude-sonnet-5" }),
+      );
+    } finally {
+      process.env.ANTHROPIC_MODEL = originalEnv;
+    }
+  });
+
+  // === FAILURE / FALLBACK PATH ===
+  // The `ANTHROPIC_MODEL ?? "opus"` guess remains only as a last-resort
+  // fallback for drivers that report no `modelUsage` at all.
+  it('falls back to ANTHROPIC_MODEL ?? "opus" when no phase resolved a model', async () => {
+    const originalEnv = process.env.ANTHROPIC_MODEL;
+    delete process.env.ANTHROPIC_MODEL;
+
+    try {
+      const results = [
+        issueResult({
+          phaseResults: [
+            { phase: "spec", success: true },
+            { phase: "exec", success: true },
+          ],
+        }),
+      ];
+
+      await recordMetricsFn()(
+        { phases: ["spec", "exec"] } as ExecutionConfig,
+        {} as RunOptions,
+        results,
+        new Map(),
+        [765],
+        10,
+      );
+
+      const recordRunMock = vi.mocked(MetricsWriter).mock.results[0]!.value
+        .recordRun as ReturnType<typeof vi.fn>;
+
+      expect(recordRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "opus" }),
+      );
+    } finally {
+      process.env.ANTHROPIC_MODEL = originalEnv;
+    }
   });
 });

@@ -144,6 +144,15 @@ describe("#975 AC-4: metrics call-site wiring (source inspection)", () => {
       resolvePath(__dirname, "run-orchestrator.ts"),
       "utf-8",
     );
-    expect(src).toMatch(/phasePolicies:\s*enrichPhasePoliciesFromResults\(/);
+    // #1198 AC-3: the call now assigns to a local (reused to derive the
+    // metrics `model` field from a resolved phase) rather than inlining
+    // directly into the `recordRun` call — pin both halves of that wiring
+    // instead of the single inline expression.
+    const assignment = src.match(
+      /const (\w+) = enrichPhasePoliciesFromResults\(/,
+    );
+    expect(assignment).not.toBeNull();
+    const [, varName] = assignment!;
+    expect(src).toMatch(new RegExp(`phasePolicies:\\s*${varName}\\b`));
   });
 });

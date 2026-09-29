@@ -1269,6 +1269,10 @@ export async function runIssueWithLogging(
           // the main phase loop: status stays "failure" but `capped` flags it.
           capped: specResult.capped,
           errorContext: specErrorContext,
+          // #1198 AC-1: resolved model (from modelUsage) and the pre-resolution
+          // policy value, when a role: policy was configured for this phase.
+          model: specResult.resolvedModel,
+          requestedModel: config.phasePolicies?.["spec"]?.requestedModel,
         },
       );
       logWriter.logPhase(phaseLog);
@@ -1883,6 +1887,11 @@ export async function runIssueWithLogging(
             commitHash,
             cacheMetrics,
             errorContext,
+            // #1198 AC-1: resolved model (from modelUsage) and the
+            // pre-resolution policy value, when a role: policy was
+            // configured for this phase.
+            model: result.resolvedModel,
+            requestedModel: config.phasePolicies?.[phase]?.requestedModel,
           },
         );
         logWriter.logPhase(phaseLog);
@@ -2051,6 +2060,11 @@ export async function runIssueWithLogging(
               {
                 error: loopResult.error,
                 capped: loopResult.capped,
+                // #1198 AC-1: resolved model (from modelUsage) and the
+                // pre-resolution policy value, when a role: policy was
+                // configured for this phase.
+                model: loopResult.resolvedModel,
+                requestedModel: config.phasePolicies?.["loop"]?.requestedModel,
               },
             );
             logWriter.logPhase(loopPhaseLog);
