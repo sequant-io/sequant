@@ -21,17 +21,43 @@ vi.mock("child_process", async (importOriginal) => {
   return { ...actual, spawnSync: vi.fn() };
 });
 
+// hasScript (#1196 AC-3) reads package.json via `fs.readFileSync`. REPO_ROOT
+// below is a fake path with no real filesystem backing, so it needs a mock —
+// real tmpdir fixtures elsewhere in this file (see the yarn-major describe)
+// fall through to a real ENOENT either way, which is the behavior they
+// already relied on before this mock existed.
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  return { ...actual, readFileSync: vi.fn() };
+});
+
 import { spawnSync } from "child_process";
+import { readFileSync } from "fs";
 import {
   runCombinedBranchTest,
   resolveFailureReason,
+  hasScript,
   type CommandResult,
 } from "./combined-branch-test.js";
 import type { BranchInfo } from "./types.js";
 
 const mockSpawnSync = vi.mocked(spawnSync);
+const mockReadFileSync = vi.mocked(readFileSync);
 
 const REPO_ROOT = "/repo";
+
+/** package.json content assumed for REPO_ROOT unless a test overrides it. */
+const NODE_PACKAGE_JSON = JSON.stringify({
+  scripts: { test: "vitest run", build: "tsc" },
+});
+
+function enoent(): never {
+  const err = new Error(
+    "ENOENT: no such file or directory",
+  ) as NodeJS.ErrnoException;
+  err.code = "ENOENT";
+  throw err;
+}
 
 const BRANCHES: BranchInfo[] = [
   {
@@ -107,6 +133,16 @@ function mockRun(opts: {
 
 beforeEach(() => {
   mockSpawnSync.mockReset();
+  mockReadFileSync.mockReset();
+  // REPO_ROOT is a Node project with `test` and `build` scripts unless a
+  // test overrides this — matches what every pre-#1196 test in this file
+  // already assumed implicitly.
+  mockReadFileSync.mockImplementation((path: unknown) => {
+    if (String(path) === join(REPO_ROOT, "package.json")) {
+      return NODE_PACKAGE_JSON;
+    }
+    return enoent();
+  });
 });
 
 // ============================================================================
@@ -258,6 +294,90 @@ describe("runCombinedBranchTest — install failure (#803 AC-4)", () => {
     expect(
       result.batchFindings.some((f) => f.message.includes("npm run test")),
     ).toBe(false);
+  });
+});
+
+// ============================================================================
+// #1196 AC-3: skip, don't error, when the repo defines no test/build script
+// ============================================================================
+
+describe("hasScript (#1196 AC-3)", () => {
+  it("returns false when package.json is missing", () => {
+    mockReadFileSync.mockImplementation(() => enoent());
+    expect(hasScript(REPO_ROOT, "test")).toBe(false);
+  });
+
+  it("returns false when package.json has no scripts field", () => {
+    mockReadFileSync.mockReturnValue(JSON.stringify({}));
+    expect(hasScript(REPO_ROOT, "test")).toBe(false);
+  });
+
+  it("returns false when the named script is absent", () => {
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ scripts: { build: "tsc" } }),
+    );
+    expect(hasScript(REPO_ROOT, "test")).toBe(false);
+  });
+
+  it("returns false on malformed JSON rather than throwing", () => {
+    mockReadFileSync.mockReturnValue("{not json");
+    expect(hasScript(REPO_ROOT, "test")).toBe(false);
+  });
+
+  it("returns true when the named script is declared", () => {
+    mockReadFileSync.mockReturnValue(NODE_PACKAGE_JSON);
+    expect(hasScript(REPO_ROOT, "test")).toBe(true);
+    expect(hasScript(REPO_ROOT, "build")).toBe(true);
+  });
+});
+
+describe("runCombinedBranchTest — skips test/build with no script, not a BLOCKED (#1196 AC-3)", () => {
+  it("skips test with an info finding on a non-Node combined state (no package.json)", () => {
+    mockReadFileSync.mockImplementation(() => enoent());
+    mockRun({ lockfileChanged: false });
+
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+
+    expect(result.passed).toBe(true);
+    expect(indexOfCommand("npm run test")).toBe(-1);
+    expect(indexOfCommand("npm run build")).toBe(-1);
+    expect(result.batchFindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "info",
+          message: expect.stringContaining("No `test` script found"),
+        }),
+        expect.objectContaining({
+          severity: "info",
+          message: expect.stringContaining("No `build` script found"),
+        }),
+      ]),
+    );
+    expect(result.batchFindings.some((f) => f.severity === "error")).toBe(
+      false,
+    );
+  });
+
+  it("skips only the missing script when the other one is declared", () => {
+    mockReadFileSync.mockImplementation((path: unknown) => {
+      if (String(path) === join(REPO_ROOT, "package.json")) {
+        return JSON.stringify({ scripts: { build: "tsc" } });
+      }
+      return enoent();
+    });
+    mockRun({ lockfileChanged: false });
+
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+
+    expect(result.passed).toBe(true);
+    expect(indexOfCommand("npm run test")).toBe(-1);
+    expect(indexOfCommand("npm run build")).toBeGreaterThanOrEqual(0);
+    expect(result.batchFindings.map((f) => f.message)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("No `test` script found"),
+        expect.stringContaining("`npm run build` passed on combined state"),
+      ]),
+    );
   });
 });
 

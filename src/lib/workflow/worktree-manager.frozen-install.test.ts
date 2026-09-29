@@ -81,6 +81,21 @@ describe("reinstallIfLockfileChanged uses a frozen install", () => {
 });
 
 describe("installWorktreeDeps surfaces a failed provisioning install (#846)", () => {
+  // A real package.json is required so hasManifestForPackageManager (#1196
+  // AC-1) does not read this as a manifest-less, skip-the-install worktree —
+  // these tests are specifically about a *present* manifest whose install
+  // still fails.
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "sequant-846-"));
+    writeFileSync(join(dir, "package.json"), "{}");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("warns naming the failure when `npm ci` exits non-zero (no lockfile)", () => {
     // A repo with no lockfile makes `npm ci` hard-fail: status 1, message on
     // stderr, no node_modules. Assert the failure is reported, not swallowed.
@@ -93,7 +108,7 @@ describe("installWorktreeDeps surfaces a failed provisioning install (#846)", ()
     });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const ok = installWorktreeDeps("/tmp/wt", "npm", false);
+    const ok = installWorktreeDeps(dir, "npm", false);
 
     expect(ok).toBe(false); // warn-and-continue, not throw (AC-1)
     const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
@@ -114,7 +129,7 @@ describe("installWorktreeDeps surfaces a failed provisioning install (#846)", ()
     });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const ok = installWorktreeDeps("/tmp/wt", "npm", false);
+    const ok = installWorktreeDeps(dir, "npm", false);
 
     expect(ok).toBe(false);
     const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
@@ -127,11 +142,15 @@ describe("installWorktreeDeps surfaces a failed provisioning install (#846)", ()
     spawnSyncMock.mockReturnValue(ok());
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const result = installWorktreeDeps("/tmp/wt", "npm", false);
+    const result = installWorktreeDeps(dir, "npm", false);
 
     expect(result).toBe(true);
     const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(output).not.toMatch(/Dependency install failed/);
+    // The success path actually ran the install rather than skipping it.
+    expect(
+      spawnSyncMock.mock.calls.find(([cmd]) => cmd !== "git"),
+    ).toBeDefined();
 
     logSpy.mockRestore();
   });
@@ -167,6 +186,10 @@ describe("manifest-less worktrees detect the package manager (#870)", () => {
   }
 
   it("installWorktreeDeps runs pnpm's frozen install on a manifest-less pnpm worktree", () => {
+    // package.json is the manifest #1196's hasManifestForPackageManager gates
+    // on; "manifest-less" here refers to the declared packageManager field
+    // (undefined below), not the file's absence.
+    writeFileSync(join(dir, "package.json"), "{}");
     writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     spawnSyncMock.mockReturnValue(ok());
 
@@ -200,6 +223,7 @@ describe("manifest-less worktrees detect the package manager (#870)", () => {
   it("a declared manager still wins over the worktree's lockfile", () => {
     // The manifest is the more specific signal when it exists; detection is
     // only the fallback. Guards against over-correcting into always-detect.
+    writeFileSync(join(dir, "package.json"), "{}");
     writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     spawnSyncMock.mockReturnValue(ok());
 
@@ -208,14 +232,20 @@ describe("manifest-less worktrees detect the package manager (#870)", () => {
     expect(spawnedInstall()).toBe(PM_CONFIG.bun.ciInstall);
   });
 
-  it("a manifest-less worktree with no lockfile still falls back to npm", () => {
-    // detectPackageManagerSync's own npm default — behavior here is unchanged
-    // from before #870, and `npm ci` failing loudly is the #846 path.
+  it("a worktree with no manifest at all skips the install instead of running a failing `npm ci` (#1196 AC-1)", () => {
+    // No package.json, no lockfile — the exact shape of a non-Node repo,
+    // where resolvePackageManager's fallback used to be "npm" regardless.
     spawnSyncMock.mockReturnValue(ok());
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     expect(installWorktreeDeps(dir, undefined, false)).toBe(true);
 
-    expect(spawnedInstall()).toBe("npm ci");
+    const nonGit = spawnSyncMock.mock.calls.filter(([cmd]) => cmd !== "git");
+    expect(nonGit).toHaveLength(0);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toMatch(/Skipping dependency install/);
+
+    logSpy.mockRestore();
   });
 });
 
@@ -245,6 +275,9 @@ describe("PM_CONFIG frozen-install invariants", () => {
 describe("yarn major is resolved per worktree (#871)", () => {
   function yarnWorktree(lockContents: string): string {
     const dir = mkdtempSync(join(tmpdir(), "wt-yarn-major-"));
+    // package.json is the manifest hasManifestForPackageManager (#1196) gates
+    // on — every real yarn project has one alongside its lockfile.
+    writeFileSync(join(dir, "package.json"), "{}");
     writeFileSync(join(dir, "yarn.lock"), lockContents);
     return dir;
   }

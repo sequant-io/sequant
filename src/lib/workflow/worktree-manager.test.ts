@@ -7,7 +7,7 @@ import { execFileSync } from "child_process";
 import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { rebaseBeforePR } from "./worktree-manager.js";
+import { rebaseBeforePR, installWorktreeDeps } from "./worktree-manager.js";
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -152,5 +152,56 @@ describe("#1069 rebaseBeforePR merges pushed branches", () => {
     expect(result.error).toContain("conflict");
     expect(git(wt, "rev-parse", "HEAD")).toBe(before);
     expect(git(wt, "status", "--porcelain")).toBe("");
+  });
+});
+
+/**
+ * #1196 AC-1: worktree provisioning skips install (and logs why) when no
+ * manifest exists for the resolved package manager. Root cause: a non-Node
+ * repo has no `node_modules` either, so `ensureWorktree`'s
+ * `!existsSync(node_modules)` guard was always true, and `resolvePackageManager`
+ * falls back to `"npm"` (JS-only lockfile detection) — so provisioning always
+ * attempted a failing `npm ci` against a tree with no package.json.
+ *
+ * These tests never reach `spawnSync` on the skip path, so `child_process` is
+ * deliberately left unmocked — a real accidental install attempt would fail
+ * loudly rather than pass silently.
+ */
+describe("installWorktreeDeps skips install with no manifest (#1196 AC-1)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "sequant-1196-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("skips and logs why for a non-Node repo (no package.json, no lockfile)", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = installWorktreeDeps(dir, undefined, false);
+
+    expect(result).toBe(true);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("Skipping dependency install");
+    expect(output).toContain("no manifest found");
+
+    logSpy.mockRestore();
+  });
+
+  it("skips a pip stack with a pyproject.toml but no requirements file — never bare `pip install -q`", () => {
+    writeFileSync(join(dir, "pyproject.toml"), "[project]\nname = 'x'\n");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = installWorktreeDeps(dir, "pip", false);
+
+    expect(result).toBe(true);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("Skipping dependency install");
+    expect(output).not.toContain("pip install -q\n"); // never the bare no-op
+
+    logSpy.mockRestore();
   });
 });
