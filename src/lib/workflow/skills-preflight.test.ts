@@ -15,6 +15,7 @@ import {
   runResolvesSkills,
   resolveRequiredSkills,
   runSkillsPreflight,
+  SYNC_REWRITES_NOTE,
 } from "./skills-preflight.js";
 import { SKILLS_DIR } from "../skills-check.js";
 import type { Phase } from "./types.js";
@@ -259,6 +260,17 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
       expect(result.cause).toContain(SKILLS_DIR);
       expect(result.remedy).toContain("sequant sync");
       expect(result.driverName).toBe("claude-code");
+    }
+  });
+
+  it("1201 AC-1: the remedy names the tracked files sequant sync rewrites", async () => {
+    const result = await runSkillsPreflight({ ...EXPLICIT_BASE, cwd: root });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.remedy).toContain("hooks");
+      expect(result.remedy).toContain(".claude/settings.json");
+      expect(result.remedy).toContain("scripts/dev");
+      expect(result.remedy).toContain("AGENTS.md");
     }
   });
 
@@ -548,6 +560,9 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     );
     expect(reason).not.toContain("git worktree remove");
     expect(reason).not.toMatch(/re-run with --force/);
+    // #1201: the shared remedy is followed by the instruction to re-run.
+    expect(reason).toContain(SYNC_REWRITES_NOTE);
+    expect(reason).toMatch(/re-run\.$/i);
   });
   it("933: a multi-issue abort removes every worktree this run created and names them all", async () => {
     installSkillUntracked("spec");
@@ -573,7 +588,8 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     const reason = result.results[0]?.abortReason ?? "";
     expect(reason).toContain("was removed");
     expect(reason).toContain("Also removed (created for this run):");
-    expect(reason).toContain(join(base, "wt-934"));
+    expect(reason).toContain(join(base, "wt-934")); // #1201 AC-1: the worktree message carries the shared remedy.
+    expect(reason).toContain(SYNC_REWRITES_NOTE);
   });
   it("1193 AC-1: a main checkout missing .claude/skills/spec/SKILL.md fails pre-flight before any worktree, naming the path", async () => {
     // The field case: the base branch has every skill, so a worktree cut
@@ -605,6 +621,9 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     // The remedy fits what happened: update the checkout, not commit skills.
     expect(reason).toContain("git pull");
     expect(reason).not.toContain("commit .claude/skills");
+    // #1201 AC-1: where it recommends sync, it names what sync rewrites.
+    expect(reason).toContain("sequant sync");
+    expect(reason).toContain(SYNC_REWRITES_NOTE);
   });
 
   it("1193: with worktree isolation disabled the main checkout is checked once, with the full phase set", async () => {
