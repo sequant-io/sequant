@@ -612,11 +612,11 @@ export function parseQaSummary(output: string): QaSummary | null {
   // Uses alternation (not character class) to avoid ESLint no-misleading-character-class.
   // `\u23F3` (pending hourglass) and `\uD83D\uDD04` (overridden/cycle) are the
   // skill's documented emoji (#1194 AC-3). `\*{0,2}` tolerates a bold-wrapped cell
-  // with no emoji at all (`**MET**`, #1194 AC-1) \u2014 no explicit trailing-`**` match
+  // with no emoji at all (`**MET**`, #1194 AC-1) — no explicit trailing-`**` match
   // is needed since `\b` after the keyword already stops before the non-word `*`.
   // `NOT[ _]MET` normalizes the issue's own space-separated example to the
   // codebase's underscore vocabulary (#1194 AC-1). `OVERRIDDEN` is the skill's
-  // \u00A711a approved-exception status (#1194 AC-3) and, per spec Open Question 3,
+  // §11a approved-exception status (#1194 AC-3) and, per spec Open Question 3,
   // counts as MET-equivalent below.
   const STATUS_CELL =
     /^(?:\u2705|\u274C|\u26A0\uFE0F|\u2B50|\u2139\uFE0F|\u2753|\u2757|\u23F3|\uD83D\uDD04)?\s*\*{0,2}\s*(NOT[ _]MET|PARTIALLY_MET|PARTIAL|PENDING|OVERRIDDEN|MET|N\/A)\b/i;
@@ -631,7 +631,7 @@ export function parseQaSummary(output: string): QaSummary | null {
     "i",
   );
 
-  // A status normalizes to "MET" or counts as an approved override \u2014 both credit
+  // A status normalizes to "MET" or counts as an approved override — both credit
   // acMet. Shared by the table loop and the checklist fallback loop below.
   const normalizeStatus = (raw: string): string =>
     raw.toUpperCase().replace(/\s+/g, "_");
@@ -657,11 +657,16 @@ export function parseQaSummary(output: string): QaSummary | null {
       const match = cells[i].match(STATUS_TABLE_CELL);
       if (match) {
         const status = normalizeStatus(match[1]);
+        const id = cells[0].match(/AC-\d+/i);
+        const acId = id ? id[0].toUpperCase() : undefined;
+        // #1194: an AC that appears in more than one table (the coverage
+        // table and the Manual Test table) is counted once, from its first
+        // row, so a later 🔄 Overridden row can't credit an AC the coverage
+        // table marks PENDING.
+        if (acId && tableIds.has(acId)) break;
         acTotal++;
         if (isMet(status)) acMet++;
-        const id = cells[0].match(/AC-\d+/i);
-        if (id) {
-          const acId = id[0].toUpperCase();
+        if (acId) {
           tableIds.add(acId);
           if (status === "PENDING") pendingIds.add(acId);
         }

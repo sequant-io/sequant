@@ -638,6 +638,25 @@ describe("parseQaSummary", () => {
     });
   });
 
+  it("#1194: an AC repeated in a second table is counted once, from its first row", () => {
+    const output = `| AC | Status |
+|----|--------|
+| AC-1 | ✅ MET |
+| AC-2 | ⏳ PENDING |
+
+### Manual Test ACs
+| AC-2 | Manual Test | 🔄 Overridden |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 2,
+      gaps: [],
+      suggestions: [],
+      pendingAcIds: ["AC-2"],
+    });
+  });
+
   it("#1194: OVERRIDDEN counts as MET-equivalent", () => {
     const output = `| AC-1 | Manual Test | Approved exception | 🔄 Overridden | See #830 |
 | AC-2 | Original | Normal case | MET | Done |`;
