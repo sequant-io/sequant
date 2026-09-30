@@ -443,10 +443,26 @@ export function shouldPreserveWorktree(
   worktreePath: string,
   options?: { phaseInProgress?: boolean; baseRef?: string },
 ): boolean {
-  if (abort === null) return false;
-  if (isWorktreeDirty(worktreePath)) return true;
-  if (options?.phaseInProgress) return true;
-  return hasCommitsAheadOfBase(worktreePath, options?.baseRef);
+  return worktreePreserveReason(abort, worktreePath, options) !== null;
+}
+
+/**
+ * Why {@link shouldPreserveWorktree} keeps a worktree, or `null` when it
+ * removes it. The first matching rule wins, so the reason in the shutdown log
+ * names the check that actually applied.
+ */
+export function worktreePreserveReason(
+  abort: AbortContext | null,
+  worktreePath: string,
+  options?: { phaseInProgress?: boolean; baseRef?: string },
+): string | null {
+  if (abort === null) return null;
+  if (isWorktreeDirty(worktreePath)) return "uncommitted changes";
+  if (options?.phaseInProgress) return "phase in progress";
+  if (hasCommitsAheadOfBase(worktreePath, options?.baseRef)) {
+    return "commits ahead of base";
+  }
+  return null;
 }
 
 /**
@@ -470,14 +486,11 @@ export async function cleanupWorktreeOnShutdown(
   log?: (message: string) => void,
   phaseInProgress?: () => boolean,
 ): Promise<void> {
-  if (
-    shouldPreserveWorktree(abort, worktree.path, {
-      phaseInProgress: phaseInProgress?.() ?? false,
-    })
-  ) {
-    log?.(
-      `Worktree for #${issueNum} preserved (uncommitted changes): ${worktree.path}`,
-    );
+  const reason = worktreePreserveReason(abort, worktree.path, {
+    phaseInProgress: phaseInProgress?.() ?? false,
+  });
+  if (reason !== null) {
+    log?.(`Worktree for #${issueNum} preserved (${reason}): ${worktree.path}`);
     return;
   }
   spawnSync("git", ["worktree", "remove", "--force", worktree.path], {

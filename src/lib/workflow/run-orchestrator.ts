@@ -825,18 +825,7 @@ export class RunOrchestrator {
     // at shutdown time, once `.instance` has been set below.
     const shutdownOrchestratorRef: { instance?: RunOrchestrator } = {};
     if (logWriter) {
-      const writer = logWriter;
-      // #856: forward the abort cause into the log. This cleanup runs on the
-      // SIGINT/SIGTERM path, where no phase result will ever arrive for the
-      // in-flight issue — without the context, `finalize()` writes that issue
-      // out as if the run had simply ended.
-      shutdown.registerCleanup(
-        "Finalize run logs",
-        async (abort) => {
-          await writer.finalize(abort ? { aborted: abort } : undefined);
-        },
-        { phase: "finalize" },
-      );
+      registerRunLogFinalizer(shutdown, logWriter);
     }
 
     // ── Pre-flight state guard ─────────────────────────────────────────
@@ -1247,9 +1236,7 @@ export class RunOrchestrator {
             worktree,
             (msg) =>
               bracketedConsoleLog(phasePauseHandle, chalk.gray(`    ${msg}`)),
-            () =>
-              shutdownOrchestratorRef.instance?.isPhaseInProgress(issueNum) ??
-              false,
+            phaseInProgressPredicate(shutdownOrchestratorRef, issueNum),
           );
         }
       }
@@ -2207,6 +2194,44 @@ function extractActivityLine(raw: string | undefined): string | undefined {
  * Build the synthetic `IssueResult` returned for an issue that was skipped
  * because another sequant session holds its lock (#625).
  */
+/**
+ * Register the run-log finalizer as a `"finalize"`-phase cleanup (#1222
+ * AC-1), so it runs before every worktree-removal cleanup. Those register
+ * lazily, after this one, so LIFO alone would run them first, and a SIGKILL
+ * landing mid-removal would leave no run log at all. Exported so this wiring
+ * has a regression test.
+ */
+export function registerRunLogFinalizer(
+  shutdown: ShutdownManager,
+  writer: Pick<LogWriter, "finalize">,
+): void {
+  // #856: forward the abort cause into the log. This cleanup runs on the
+  // SIGINT/SIGTERM path, where no phase result will ever arrive for the
+  // in-flight issue — without the context, `finalize()` writes that issue
+  // out as if the run had simply ended.
+  shutdown.registerCleanup(
+    "Finalize run logs",
+    async (abort) => {
+      await writer.finalize(abort ? { aborted: abort } : undefined);
+    },
+    { phase: "finalize" },
+  );
+}
+
+/**
+ * The shutdown-time "is a phase running for this issue?" predicate (#1222
+ * AC-2). It reads `ref.instance` lazily because worktree cleanups are
+ * registered before the orchestrator exists. When the instance was never set,
+ * it answers `false`, which is safe: the dirty and commits-ahead checks in
+ * `shouldPreserveWorktree` still apply.
+ */
+export function phaseInProgressPredicate(
+  ref: { instance?: Pick<RunOrchestrator, "isPhaseInProgress"> },
+  issueNum: number,
+): () => boolean {
+  return () => ref.instance?.isPhaseInProgress(issueNum) ?? false;
+}
+
 export function buildLockedResult(
   issueNumber: number,
   holder: LockFile,
