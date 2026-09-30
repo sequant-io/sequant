@@ -2740,3 +2740,168 @@ describe.each(HOOK_COPIES)(
     });
   },
 );
+
+// === Issue #1228: the reset --hard guard checks the directory the reset targets ===
+//
+// PreToolUse runs outside and before the command's shell, so neither a
+// `cd <wt> &&` prefix nor `git -C <wt>` has taken effect in the hook process.
+// The guard used to run `git status` (and the unpushed/MERGE_HEAD checks) in
+// its own cwd: it blocked resets of clean worktrees whenever the main checkout
+// was dirty, and allowed resets of dirty worktrees whenever it was clean. The
+// hook process AND the payload cwd are the main checkout here, while the
+// command targets a linked worktree — exactly the shape of a real session.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh reset --hard guard evaluates the target directory (#1228) [%s]",
+  (_label, hookPath) => {
+    let sandbox: string;
+    let main: string;
+    let cleanWt: string;
+    let dirtyWt: string;
+    let mergeWt: string;
+
+    const git = (cwd: string, ...args: string[]) => {
+      const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+      return r.stdout.trim();
+    };
+
+    function resetFrom(cmd: string): { code: number; stderr: string } {
+      const env = cleanEnv();
+      for (const k of Object.keys(env)) {
+        if (k.startsWith("SEQUANT_")) delete env[k];
+      }
+      delete env.CLAUDE_PROJECT_DIR;
+      const r = spawnSync("bash", [hookPath], {
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command: cmd },
+          cwd: main,
+        }),
+        cwd: main,
+        env,
+        encoding: "utf8",
+      });
+      return { code: r.status ?? -1, stderr: r.stderr ?? "" };
+    }
+
+    beforeAll(() => {
+      sandbox = mkdtempSync(join(tmpdir(), "pre-tool-1228-"));
+      main = join(sandbox, "repo");
+      cleanWt = join(sandbox, "custom-root", "clean");
+      dirtyWt = join(sandbox, "custom-root", "dirty");
+      mergeWt = join(sandbox, "custom-root", "merge");
+      mkdirSync(main, { recursive: true });
+      git(main, "init", "-q", "-b", "main");
+      git(main, "config", "user.email", "t@example.com");
+      git(main, "config", "user.name", "t");
+      git(main, "config", "commit.gpgsign", "false");
+      writeFileSync(join(main, "a.txt"), "a\n");
+      git(main, "add", ".");
+      git(main, "commit", "-q", "-m", "init");
+      git(main, "worktree", "add", "-q", "-b", "feature/1228-clean", cleanWt);
+      git(main, "worktree", "add", "-q", "-b", "feature/1228-dirty", dirtyWt);
+      git(main, "worktree", "add", "-q", "-b", "feature/1228-merge", mergeWt);
+      writeFileSync(join(dirtyWt, "untracked.txt"), "x\n");
+      writeFileSync(
+        join(git(mergeWt, "rev-parse", "--absolute-git-dir"), "MERGE_HEAD"),
+        `${git(main, "rev-parse", "HEAD")}\n`,
+      );
+    });
+
+    afterAll(() => {
+      rmSync(sandbox, { recursive: true, force: true });
+    });
+
+    // Run `fn` with the main checkout temporarily dirty (untracked file).
+    function withDirtyMain(fn: () => void) {
+      const f = join(main, "untracked.txt");
+      writeFileSync(f, "x\n");
+      try {
+        fn();
+      } finally {
+        rmSync(f, { force: true });
+      }
+    }
+
+    it("AC-1: allows cd <clean-wt> && git reset --hard while the main checkout is dirty", () => {
+      withDirtyMain(() => {
+        const r = resetFrom(`cd ${cleanWt} && git reset --hard origin/x`);
+        expect(r.stderr).not.toMatch(/HOOK_BLOCKED/);
+        expect(r.code).toBe(0);
+      });
+    });
+
+    it("AC-3: still blocks a bare git reset --hard in the dirty main checkout", () => {
+      withDirtyMain(() => {
+        const r = resetFrom("git reset --hard");
+        expect(r.code).toBe(2);
+        expect(r.stderr).toMatch(/1 uncommitted file\(s\)/);
+      });
+    });
+
+    it.each([
+      ["cd <dirty-wt> &&", (wt: string) => `cd ${wt} && git reset --hard`],
+      ["git -C <dirty-wt>", (wt: string) => `git -C ${wt} reset --hard`],
+      [
+        'git -C "<dirty-wt>"',
+        (wt: string) => `git -C "${wt}" reset --hard origin/x`,
+      ],
+      [
+        "cd <parent> && git -C <relative>",
+        (wt: string) => `cd ${dirname(wt)} && git -C dirty reset --hard`,
+      ],
+    ])("AC-2: blocks %s reset --hard with a clean hook cwd", (_form, build) => {
+      const r = resetFrom(build(dirtyWt));
+      expect(r.code).toBe(2);
+      expect(r.stderr).toMatch(
+        /HOOK_BLOCKED: git reset --hard would lose local work/,
+      );
+      expect(r.stderr).toMatch(/1 uncommitted file\(s\)/);
+      // The remediation names the target's branch, not the main checkout's.
+      expect(r.stderr).toMatch(/git push origin feature\/1228-dirty/);
+    });
+
+    it("AC-4: blocks cd <wt> && git reset --hard when the worktree is mid-merge", () => {
+      const r = resetFrom(`cd ${mergeWt} && git reset --hard`);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toMatch(/Unfinished merge in progress/);
+      expect(r.stderr).not.toMatch(/uncommitted/);
+      expect(r.stderr).toMatch(/git push origin feature\/1228-merge/);
+    });
+
+    it("AC-4: allows cd <clean-wt> && git reset --hard when only the main checkout is mid-merge", () => {
+      const mergeHead = join(main, ".git", "MERGE_HEAD");
+      writeFileSync(mergeHead, `${git(main, "rev-parse", "HEAD")}\n`);
+      try {
+        expect(resetFrom("git reset --hard").code).toBe(2);
+        const r = resetFrom(`cd ${cleanWt} && git reset --hard`);
+        expect(r.stderr).not.toMatch(/HOOK_BLOCKED/);
+        expect(r.code).toBe(0);
+      } finally {
+        rmSync(mergeHead, { force: true });
+      }
+    });
+
+    it("AC-5: quoted body text naming git -C <dir> reset --hard never triggers", () => {
+      const r = resetFrom(
+        `gh issue comment 1 --body "git -C ${dirtyWt} reset --hard"`,
+      );
+      expect(r.stderr).not.toMatch(/HOOK_BLOCKED/);
+      expect(r.code).toBe(0);
+    });
+
+    it("AC-6: a dynamic git -C path falls back to the payload cwd", () => {
+      // "$WT" cannot be resolved without running the shell, so the guard
+      // evaluates the command's own cwd — clean main allows, dirty main blocks.
+      expect(resetFrom('git -C "$WT" reset --hard').code).toBe(0);
+      withDirtyMain(() => {
+        const r = resetFrom('git -C "$WT" reset --hard');
+        expect(r.code).toBe(2);
+        // The block names the repository it checked, so a user whose
+        // variable pointed at a clean worktree can see why (#1228).
+        expect(r.stderr).toContain(`Checked: ${main}`);
+        expect(r.stderr).toMatch(/Only a literal `cd <dir>` or `git -C <dir>`/);
+      });
+    });
+  },
+);
