@@ -27,6 +27,7 @@ import {
   isWindowExhaustedRateLimit,
   selectFixableGaps,
   normalizeModelUsage,
+  selectResolvedModel,
   PROMPT_CONTEXT_SENTINEL,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
@@ -2906,6 +2907,107 @@ describe("createThrottledReporter (#543)", () => {
 });
 
 /**
+ * #1227 — `resolvedModel` was `Object.keys(modelUsage)[0]`, which is a Haiku
+ * helper call on every phase since 2026-09-20. The recorded #986 fixture has
+ * the same shape (Haiku first, the real model second).
+ */
+describe("#1227 selectResolvedModel", () => {
+  const recorded = JSON.parse(
+    readFileSync(
+      "src/lib/workflow/__fixtures__/sdk-result-modelusage-986.json",
+      "utf-8",
+    ),
+  ) as { modelUsage: Record<string, Record<string, number>> };
+
+  it("1227 picks the main model, not the Haiku helper listed first (recorded map)", () => {
+    expect(Object.keys(recorded.modelUsage)[0]).toBe(
+      "claude-haiku-4-5-20251001",
+    );
+    expect(selectResolvedModel(recorded.modelUsage)).toBe("claude-fable-5");
+  });
+
+  it("1227 never selects the advisor key when the dispatched model's key is present", () => {
+    // Probe shape (2026-09-30): opus main + fable advisor, advisor read uncached
+    // and larger than the main model's in a one-turn session.
+    const usage = {
+      "claude-opus-5-5": {
+        inputTokens: 4,
+        outputTokens: 29,
+        cacheReadInputTokens: 20000,
+        costUSD: 0.2,
+      },
+      "claude-fable-5-1": {
+        inputTokens: 36052,
+        outputTokens: 208,
+        cacheReadInputTokens: 0,
+        costUSD: 0.37,
+      },
+    };
+    expect(selectResolvedModel(usage, "opus")).toBe("claude-opus-5-5");
+    expect(selectResolvedModel(usage, "claude-opus-5-5")).toBe(
+      "claude-opus-5-5",
+    );
+  });
+
+  it("1227 picks the main model over a Haiku helper listed first at ~$0 (sonnet phase)", () => {
+    const usage = {
+      "claude-haiku-4-5-20251001": {
+        inputTokens: 918,
+        outputTokens: 16,
+        cacheReadInputTokens: 0,
+        costUSD: 0.001,
+      },
+      "claude-sonnet-5": {
+        inputTokens: 40,
+        outputTokens: 9000,
+        cacheReadInputTokens: 1200000,
+        costUSD: 0.86,
+      },
+    };
+    expect(selectResolvedModel(usage)).toBe("claude-sonnet-5");
+    expect(selectResolvedModel(usage, "sonnet")).toBe("claude-sonnet-5");
+  });
+
+  it("1227 without a hint, prefers the cached main model over a larger uncached advisor or helper read", () => {
+    // No phase policy → no hint. Short phase: the advisor's uncached read and
+    // a web-search-heavy helper both out-volume the main model.
+    const usage = {
+      "claude-haiku-4-5-20251001": {
+        inputTokens: 60000,
+        outputTokens: 3000,
+        cacheReadInputTokens: 0,
+      },
+      "claude-opus-5-5": {
+        inputTokens: 4,
+        outputTokens: 29,
+        cacheReadInputTokens: 20000,
+      },
+      "claude-fable-5-1": {
+        inputTokens: 36052,
+        outputTokens: 208,
+        cacheReadInputTokens: 0,
+      },
+    };
+    expect(selectResolvedModel(usage)).toBe("claude-opus-5-5");
+  });
+
+  it("1227 falls back to token volume when the hint matches no key", () => {
+    expect(selectResolvedModel(recorded.modelUsage, "role:strong")).toBe(
+      "claude-fable-5",
+    );
+  });
+
+  it("1227 returns undefined for a missing or empty map", () => {
+    expect(selectResolvedModel(undefined)).toBeUndefined();
+    expect(selectResolvedModel({})).toBeUndefined();
+  });
+
+  it("1227 returns the only key of a single-model map", () => {
+    expect(selectResolvedModel({ "some-model": {} })).toBe("some-model");
+  });
+});
+
+/**
  * #986 AC-1 — normalization of the SDK `modelUsage` map into `PhaseUsage` rows.
  *
  * #975 already reached into this map, but took only `Object.keys(...)[0]` for
@@ -2930,8 +3032,9 @@ describe("#986 normalizeModelUsage", () => {
       "claude-haiku-4-5-20251001",
       "claude-fable-5",
     ]);
-    // First key is the one #975 records as `resolvedModel` — the two views of
-    // the map must not disagree about which model came first.
+    // Rows keep map order. Map order is not dispatch order: the first key
+    // here is a Haiku helper, which is why `resolvedModel` is picked by
+    // `selectResolvedModel` rather than by position (#1227).
     expect(rows[0].model).toBe(Object.keys(fixture.modelUsage)[0]);
   });
 

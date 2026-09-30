@@ -1802,11 +1802,14 @@ async function executePhase(
   const durationSeconds = (Date.now() - startTime) / 1000;
 
   // #975: extract the concrete model ID from the driver's modelUsage map.
-  // First key is the primary model dispatched; undefined for drivers that
-  // don't populate modelUsage (aider, subprocess paths).
-  const resolvedModel = agentResult.modelUsage
-    ? Object.keys(agentResult.modelUsage)[0]
-    : undefined;
+  // #1227: map order is not dispatch order — a Haiku helper call can come
+  // first, and an advisor model is its own key — so pick by rule, not by
+  // position. Undefined for drivers that don't populate modelUsage (aider,
+  // subprocess paths).
+  const resolvedModel = selectResolvedModel(
+    agentResult.modelUsage,
+    agentConfig.model,
+  );
 
   // #986: the same map also carries the tokens and the SDK's cost estimate.
   // Normalize the whole map — not just its first key — so a phase that
@@ -1847,10 +1850,57 @@ async function executePhase(
 }
 
 /**
+ * Pick the phase's main model out of the SDK `modelUsage` map (#1227).
+ *
+ * The map also carries models the phase did not run on: a Haiku helper call
+ * that Claude Code makes before the first main-model response (listed FIRST
+ * since 2026-09-20, which is why `Object.keys(...)[0]` recorded Haiku for
+ * every phase), and an advisor model under its own key.
+ *
+ * Rule, narrowing in order and skipping any step that would leave nothing:
+ * 1. keys matching the dispatched model (`requested`, an alias like `sonnet`
+ *    or a full ID) — absent when the phase has no configured model;
+ * 2. keys with cache reads — only the main loop re-reads a cached
+ *    conversation; the advisor's read is never cached, and the Haiku helper
+ *    showed 0 cache reads in 140/140 recorded `phaseUsage` rows;
+ * 3. the largest total token volume (input + output + cache read + cache
+ *    creation) among what is left.
+ *
+ * @internal Exported for testing only
+ */
+export function selectResolvedModel(
+  modelUsage: Record<string, ModelUsageEntry> | undefined,
+  requested?: string,
+): string | undefined {
+  if (!modelUsage) return undefined;
+  const keys = Object.keys(modelUsage);
+  if (keys.length === 0) return undefined;
+  const hint = requested?.toLowerCase();
+  const matching = hint
+    ? keys.filter((k) => k.toLowerCase().includes(hint))
+    : [];
+  const pool = matching.length > 0 ? matching : keys;
+  const cached = pool.filter(
+    (k) => (modelUsage[k]?.cacheReadInputTokens ?? 0) > 0,
+  );
+  const candidates = cached.length > 0 ? cached : pool;
+  const volume = (k: string): number => {
+    const e = modelUsage[k] ?? {};
+    return (
+      (e.inputTokens ?? 0) +
+      (e.outputTokens ?? 0) +
+      (e.cacheReadInputTokens ?? 0) +
+      (e.cacheCreationInputTokens ?? 0)
+    );
+  };
+  return candidates.reduce((best, k) => (volume(k) > volume(best) ? k : best));
+}
+
+/**
  * Normalize the driver's `modelUsage` map into flat {@link PhaseUsage} rows (#986).
  *
- * One row per model key, in map order (the first key is the primary model —
- * the same one #975's `resolvedModel` records). Missing counters become `0`
+ * One row per model key, in map order. Map order is not dispatch order — see
+ * {@link selectResolvedModel} for how `resolvedModel` is picked (#1227). Missing counters become `0`
  * rather than `undefined` so the orchestrator can sum without guards.
  *
  * @internal Exported for testing only.
