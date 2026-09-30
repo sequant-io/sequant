@@ -1857,11 +1857,14 @@ async function executePhase(
  * since 2026-09-20, which is why `Object.keys(...)[0]` recorded Haiku for
  * every phase), and an advisor model under its own key.
  *
- * Rule: among the keys that match the dispatched model (`requested`, an alias
- * like `sonnet` or a full ID), else among all keys, take the one with the
- * largest total token volume (input + output + cache read + cache creation).
- * The main model re-reads its cached context every turn, so its volume
- * dominates both the helper's and the advisor's in any real phase.
+ * Rule, narrowing in order and skipping any step that would leave nothing:
+ * 1. keys matching the dispatched model (`requested`, an alias like `sonnet`
+ *    or a full ID) — absent when the phase has no configured model;
+ * 2. keys with cache reads — only the main loop re-reads a cached
+ *    conversation; the advisor's read is never cached, and the Haiku helper
+ *    showed 0 cache reads in 140/140 recorded `phaseUsage` rows;
+ * 3. the largest total token volume (input + output + cache read + cache
+ *    creation) among what is left.
  *
  * @internal Exported for testing only
  */
@@ -1876,7 +1879,11 @@ export function selectResolvedModel(
   const matching = hint
     ? keys.filter((k) => k.toLowerCase().includes(hint))
     : [];
-  const candidates = matching.length > 0 ? matching : keys;
+  const pool = matching.length > 0 ? matching : keys;
+  const cached = pool.filter(
+    (k) => (modelUsage[k]?.cacheReadInputTokens ?? 0) > 0,
+  );
+  const candidates = cached.length > 0 ? cached : pool;
   const volume = (k: string): number => {
     const e = modelUsage[k] ?? {};
     return (
@@ -1892,8 +1899,8 @@ export function selectResolvedModel(
 /**
  * Normalize the driver's `modelUsage` map into flat {@link PhaseUsage} rows (#986).
  *
- * One row per model key, in map order (the first key is the primary model —
- * the same one #975's `resolvedModel` records). Missing counters become `0`
+ * One row per model key, in map order. Map order is not dispatch order — see
+ * {@link selectResolvedModel} for how `resolvedModel` is picked (#1227). Missing counters become `0`
  * rather than `undefined` so the orchestrator can sum without guards.
  *
  * @internal Exported for testing only.

@@ -2949,6 +2949,48 @@ describe("#1227 selectResolvedModel", () => {
     );
   });
 
+  it("1227 picks the main model over a Haiku helper listed first at ~$0 (sonnet phase)", () => {
+    const usage = {
+      "claude-haiku-4-5-20251001": {
+        inputTokens: 918,
+        outputTokens: 16,
+        cacheReadInputTokens: 0,
+        costUSD: 0.001,
+      },
+      "claude-sonnet-5": {
+        inputTokens: 40,
+        outputTokens: 9000,
+        cacheReadInputTokens: 1200000,
+        costUSD: 0.86,
+      },
+    };
+    expect(selectResolvedModel(usage)).toBe("claude-sonnet-5");
+    expect(selectResolvedModel(usage, "sonnet")).toBe("claude-sonnet-5");
+  });
+
+  it("1227 without a hint, prefers the cached main model over a larger uncached advisor or helper read", () => {
+    // No phase policy → no hint. Short phase: the advisor's uncached read and
+    // a web-search-heavy helper both out-volume the main model.
+    const usage = {
+      "claude-haiku-4-5-20251001": {
+        inputTokens: 60000,
+        outputTokens: 3000,
+        cacheReadInputTokens: 0,
+      },
+      "claude-opus-5-5": {
+        inputTokens: 4,
+        outputTokens: 29,
+        cacheReadInputTokens: 20000,
+      },
+      "claude-fable-5-1": {
+        inputTokens: 36052,
+        outputTokens: 208,
+        cacheReadInputTokens: 0,
+      },
+    };
+    expect(selectResolvedModel(usage)).toBe("claude-opus-5-5");
+  });
+
   it("1227 falls back to token volume when the hint matches no key", () => {
     expect(selectResolvedModel(recorded.modelUsage, "role:strong")).toBe(
       "claude-fable-5",

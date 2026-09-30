@@ -125,8 +125,9 @@ export interface AgentPhaseResult {
   exitCode?: number;
   /**
    * Per-model usage totals from the SDK result (#975). Keys are concrete model
-   * IDs (e.g. `"claude-sonnet-5"`); first key is the resolved model string used
-   * for this phase. Set by claude-code (SDK), codex (`turn.completed.usage`)
+   * IDs (e.g. `"claude-sonnet-5"`). The map can also carry a helper model and
+   * an advisor model, in any order; `selectResolvedModel` picks the phase's
+   * main model (#1227). Set by claude-code (SDK), codex (`turn.completed.usage`)
    * and opencode (`step_finish.part.tokens`, #1115); undefined for aider.
    */
   modelUsage?: Record<string, ModelUsageEntry>;
