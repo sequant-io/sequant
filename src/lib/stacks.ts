@@ -240,7 +240,14 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
 
 /**
  * Synchronous version of detectPackageManager for use in startup code.
- * Only checks JS lockfiles (not Python) since sequant is a Node.js tool.
+ *
+ * Mirrors {@link detectPackageManager}'s order exactly (#1231): JS lockfiles,
+ * then `package.json` → npm, then Python lockfiles, then `pyproject.toml` or
+ * a `requirements*.txt` → pip, and `npm` as the final fallback. Before #1231
+ * this only checked JS lockfiles, so a uv/poetry repo whose manifest declared
+ * no `packageManager` resolved to npm here — disagreeing with the async
+ * detector and skipping the Python install entirely in
+ * `resolvePackageManager`'s callers.
  *
  * @param root Directory to look for lockfiles in. Defaults to the process cwd,
  *        which is what startup code wants; callers that operate on a specific
@@ -253,6 +260,20 @@ export function detectPackageManagerSync(
     if (existsSync(join(root, file))) {
       return pm;
     }
+  }
+  if (existsSync(join(root, "package.json"))) {
+    return "npm";
+  }
+  for (const { file, pm } of PYTHON_LOCKFILE_PRIORITY) {
+    if (existsSync(join(root, file))) {
+      return pm;
+    }
+  }
+  if (
+    existsSync(join(root, "pyproject.toml")) ||
+    findRequirementsFile(root) !== null
+  ) {
+    return "pip";
   }
   return "npm";
 }
