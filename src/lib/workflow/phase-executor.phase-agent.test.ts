@@ -9,7 +9,15 @@
  * `canResume` contract, are the production code under test.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 
 vi.mock("../agents-md.js", () => ({
   readAgentsMd: vi.fn().mockResolvedValue(null),
@@ -20,6 +28,10 @@ vi.mock("./drivers/index.js", () => ({
 }));
 
 import { executePhaseWithRetry } from "./phase-executor.js";
+import {
+  createExecTempRepo,
+  type ExecTempRepo,
+} from "./__fixtures__/exec-temp-repo.fixture.js";
 import { getDriver } from "./drivers/index.js";
 import { ClaudeCodeDriver } from "./drivers/claude-code.js";
 import { CodexDriver } from "./drivers/codex.js";
@@ -46,6 +58,30 @@ function baseConfig(): ExecutionConfig {
     mcp: false,
     retry: false,
   };
+}
+
+// #1232: never run the exec guard against the developer's checkout.
+let execRepo: ExecTempRepo;
+beforeAll(() => {
+  execRepo = createExecTempRepo();
+});
+afterAll(() => {
+  // Guard: if createExecTempRepo threw, beforeAll already reported it.
+  execRepo?.cleanup();
+});
+function runInExecRepo(
+  issueNumber: number,
+  phase: Parameters<typeof executePhaseWithRetry>[1],
+  config: Parameters<typeof executePhaseWithRetry>[2],
+  resumeHandle?: Parameters<typeof executePhaseWithRetry>[3],
+) {
+  return executePhaseWithRetry(
+    issueNumber,
+    phase,
+    config,
+    resumeHandle,
+    execRepo.path,
+  );
 }
 
 describe("#1150: executePhase dispatches each phase to its own driver", () => {
@@ -75,13 +111,20 @@ describe("#1150: executePhase dispatches each phase to its own driver", () => {
       phasePolicies: { qa: { agent: "claude-code" } },
     };
 
-    await executePhaseWithRetry(1150, "exec", config);
+    await runInExecRepo(1150, "exec", config);
     expect(ran.codex).toHaveBeenCalledTimes(1);
     expect(ran["claude-code"]).not.toHaveBeenCalled();
 
-    await executePhaseWithRetry(1150, "qa", config);
+    await runInExecRepo(1150, "qa", config);
     expect(ran["claude-code"]).toHaveBeenCalledTimes(1);
     expect(ran.codex).toHaveBeenCalledTimes(1);
+  });
+
+  it("1232 dispatches exec with the temp repo as cwd", async () => {
+    await runInExecRepo(1150, "exec", { ...baseConfig(), agent: "codex" });
+    const execConfig: AgentExecutionConfig = ran.codex.mock.calls[0][1];
+    expect(execConfig.cwd).toBe(execRepo.path);
+    expect(execConfig.cwd).not.toBe(process.cwd());
   });
 
   it("AC-7: a resume handle from exec's codex driver is not passed to qa's claude-code driver", async () => {
@@ -93,16 +136,16 @@ describe("#1150: executePhase dispatches each phase to its own driver", () => {
     const codexHandle: ResumeHandle = {
       driver: "codex",
       token: "thread-1",
-      originCwd: process.cwd(),
+      originCwd: execRepo.path,
     };
 
     // The same handle IS eligible when the phase stays on codex, so the
     // negative case below is about the driver change, not a bad handle.
-    await executePhaseWithRetry(1150, "exec", config, codexHandle);
+    await runInExecRepo(1150, "exec", config, codexHandle);
     const execConfig: AgentExecutionConfig = ran.codex.mock.calls[0][1];
     expect(execConfig.resumeHandle).toEqual(codexHandle);
 
-    await executePhaseWithRetry(1150, "qa", config, codexHandle);
+    await runInExecRepo(1150, "qa", config, codexHandle);
     const qaConfig: AgentExecutionConfig = ran["claude-code"].mock.calls[0][1];
     expect(qaConfig.resumeHandle).toBeUndefined();
     expect(qaConfig.sessionId).toBeUndefined();
@@ -111,8 +154,8 @@ describe("#1150: executePhase dispatches each phase to its own driver", () => {
   it("AC-9: with no per-phase agent, every phase uses the run-level driver", async () => {
     const config: ExecutionConfig = { ...baseConfig(), agent: "codex" };
 
-    await executePhaseWithRetry(1150, "exec", config);
-    await executePhaseWithRetry(1150, "qa", config);
+    await runInExecRepo(1150, "exec", config);
+    await runInExecRepo(1150, "qa", config);
 
     expect(ran.codex).toHaveBeenCalledTimes(2);
     expect(ran["claude-code"]).not.toHaveBeenCalled();

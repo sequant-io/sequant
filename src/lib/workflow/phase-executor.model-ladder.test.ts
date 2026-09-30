@@ -22,7 +22,15 @@
  * subprocess and no port binding — matching the #915 file's precedent.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import type { Mock } from "vitest";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({ query: vi.fn() }));
@@ -32,6 +40,10 @@ vi.mock("./agents-md.js", () => ({
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { executePhaseWithRetry } from "./phase-executor.js";
+import {
+  createExecTempRepo,
+  type ExecTempRepo,
+} from "./__fixtures__/exec-temp-repo.fixture.js";
 import { withEscalatedModel, createLadderState } from "./model-ladder.js";
 import type { ExecutionConfig } from "./types.js";
 
@@ -93,6 +105,30 @@ beforeEach(() => {
   queryMock.mockReturnValue(SUCCESS_STREAM());
 });
 
+// #1232: never run the exec guard against the developer's checkout.
+let execRepo: ExecTempRepo;
+beforeAll(() => {
+  execRepo = createExecTempRepo();
+});
+afterAll(() => {
+  // Guard: if createExecTempRepo threw, beforeAll already reported it.
+  execRepo?.cleanup();
+});
+function runInExecRepo(
+  issueNumber: number,
+  phase: Parameters<typeof executePhaseWithRetry>[1],
+  config: Parameters<typeof executePhaseWithRetry>[2],
+  resumeHandle?: Parameters<typeof executePhaseWithRetry>[3],
+) {
+  return executePhaseWithRetry(
+    issueNumber,
+    phase,
+    config,
+    resumeHandle,
+    execRepo.path,
+  );
+}
+
 describe("971 AC-2 end-to-end: the escalated rung reaches the real SDK query() call", () => {
   it("dispatches the NEXT rung's model, not the base, after a capability-bound trigger", async () => {
     const config = baseConfig({ modelLadder: ["sonnet", "opus", "fable"] });
@@ -105,7 +141,7 @@ describe("971 AC-2 end-to-end: the escalated rung reaches the real SDK query() c
     );
     expect(record?.escalated).toBe("opus");
 
-    await executePhaseWithRetry(971, "exec", dispatchConfig);
+    await runInExecRepo(971, "exec", dispatchConfig);
 
     expect(callOptions()?.model).toBe("opus");
   });
@@ -119,7 +155,7 @@ describe("971 AC-2 end-to-end: the escalated rung reaches the real SDK query() c
       createLadderState(),
     );
 
-    await executePhaseWithRetry(971, "exec", dispatchConfig);
+    await runInExecRepo(971, "exec", dispatchConfig);
 
     // Key-presence, not truthiness — matches #914's mutation-verified
     // absence gate (claude-code.phase-policy.test.ts AC-3).
@@ -138,7 +174,7 @@ describe("971 AC-10 end-to-end: the dispatch-time facts land on the PhaseResult"
       createLadderState(),
     );
 
-    const result = await executePhaseWithRetry(971, "exec", dispatchConfig);
+    const result = await runInExecRepo(971, "exec", dispatchConfig);
 
     expect(result.escalatedModel).toMatchObject({
       rung: 1,
@@ -157,7 +193,7 @@ describe("971 AC-10 end-to-end: the dispatch-time facts land on the PhaseResult"
       createLadderState(),
     );
 
-    await executePhaseWithRetry(971, "exec", dispatchConfig);
+    await runInExecRepo(971, "exec", dispatchConfig);
 
     const env = callOptions()?.env as Record<string, string> | undefined;
     expect(env?.SEQUANT_MODEL_RUNG).toBe("1");
@@ -169,7 +205,7 @@ describe("971 AC-10 end-to-end: the dispatch-time facts land on the PhaseResult"
   });
 
   it("sets no escalation env vars on a non-escalated dispatch", async () => {
-    await executePhaseWithRetry(971, "exec", baseConfig({}));
+    await runInExecRepo(971, "exec", baseConfig({}));
 
     const env = callOptions()?.env as Record<string, string> | undefined;
     expect(env && "SEQUANT_MODEL_RUNG" in env).toBe(false);
@@ -194,7 +230,7 @@ describe("971 AC-13: the #973 result shape is retry-eligible, never convergence"
       createLadderState(),
     );
 
-    const result = await executePhaseWithRetry(971, "exec", dispatchConfig);
+    const result = await runInExecRepo(971, "exec", dispatchConfig);
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/unrecognized model/);
@@ -211,7 +247,7 @@ describe("971 AC-13: the #973 result shape is retry-eligible, never convergence"
       createLadderState(),
     );
 
-    const result = await executePhaseWithRetry(971, "exec", dispatchConfig);
+    const result = await runInExecRepo(971, "exec", dispatchConfig);
 
     // A failed phase still spent its rung — the record must not be lost, or
     // the escalation history in the eventual handoff is wrong.
@@ -255,7 +291,7 @@ describe("995 AC-D3: a SPEC_DIVERGENCE result is dispatched exactly once", () =>
     // the mocked stream returns instantly, so the sub-second duration reads as
     // a cold-start failure and would normally buy 2 re-spawns plus an MCP
     // fallback. This is the configuration a leak would show up in.
-    const result = await executePhaseWithRetry(
+    const result = await runInExecRepo(
       995,
       "qa",
       baseConfig({ retry: true, mcp: true }),
@@ -284,7 +320,7 @@ describe("995 AC-D3: a SPEC_DIVERGENCE result is dispatched exactly once", () =>
       ]),
     );
 
-    const result = await executePhaseWithRetry(
+    const result = await runInExecRepo(
       995,
       "qa",
       baseConfig({ retry: true, mcp: true }),
@@ -316,7 +352,15 @@ describe("995 AC-D3: a SPEC_DIVERGENCE result is dispatched exactly once", () =>
       ]),
     );
 
-    const result = await executePhaseWithRetry(995, "qa", baseConfig({}));
+    const result = await runInExecRepo(995, "qa", baseConfig({}));
     expect(result.specDivergence).toBeUndefined();
+  });
+});
+
+describe("#1232 exec never runs against the developer's checkout", () => {
+  it("1232 dispatches exec with the temp repo as cwd", async () => {
+    await runInExecRepo(971, "exec", baseConfig({}));
+    expect(callOptions()?.cwd).toBe(execRepo.path);
+    expect(callOptions()?.cwd).not.toBe(process.cwd());
   });
 });
