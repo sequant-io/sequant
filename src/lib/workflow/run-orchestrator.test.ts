@@ -452,3 +452,90 @@ describe("RunOrchestrator.recordMetrics — metrics.json model derivation (#1198
     }
   });
 });
+
+describe("RunOrchestrator.run — the non-chain skip guard after a run without qa (#1233 AC-2)", () => {
+  // AC-1 (batch-executor.test.ts) pins what a spec-only run now records:
+  // `in_progress`. This drives the real `run()` from that state with
+  // `--phases exec` and checks the issue actually runs, with no `--force`.
+  // The `ready_for_merge` case is the control: it proves the guard is live
+  // here, so the first test can't pass just because nothing was skipped.
+  let base: string;
+  let repo: string;
+  let originalCwd: string;
+  const git = (cwd: string, args: string) =>
+    execSync(
+      `git -c user.email=t@t -c user.name=t -c commit.gpgsign=false ${args}`,
+      { cwd, stdio: "pipe" },
+    );
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    base = realpathSync(mkdtempSync(join(tmpdir(), "run-orch-1233-")));
+    const origin = join(base, "origin.git");
+    repo = join(base, "repo");
+    execSync(`git init --bare -b main ${JSON.stringify(origin)}`, {
+      stdio: "pipe",
+    });
+    execSync(`git clone -q ${JSON.stringify(origin)} repo`, {
+      cwd: base,
+      stdio: "pipe",
+    });
+    git(repo, "checkout -q -b main");
+    for (const skill of ["spec", "exec", "qa"]) {
+      mkdirSync(join(repo, ".claude/skills", skill), { recursive: true });
+      writeFileSync(join(repo, ".claude/skills", skill, "SKILL.md"), "# s\n");
+    }
+    git(repo, "add .");
+    git(repo, "commit -q -m init");
+    git(repo, "push -q origin main");
+    process.chdir(repo);
+    vi.mocked(runIssueWithLogging).mockResolvedValue({
+      issueNumber: 1233,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 0,
+      loopTriggered: false,
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(base, { recursive: true, force: true });
+    vi.mocked(runIssueWithLogging).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  async function seedStatus(status: "in_progress" | "ready_for_merge") {
+    const { StateManager } = await import("./state-manager.js");
+    const state = new StateManager();
+    await state.initializeIssue(1233, "Issue 1233");
+    await state.updateIssueStatus(1233, status);
+  }
+
+  async function runExec() {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await RunOrchestrator.run(
+      runInit({ phases: "exec", worktreeIsolation: false }),
+      ["1233"],
+    );
+    return log.mock.calls.map((call) => String(call[0])).join("\n");
+  }
+
+  it("runs --phases exec after a spec-only run left the issue in_progress", async () => {
+    await seedStatus("in_progress");
+
+    const output = await runExec();
+
+    expect(vi.mocked(runIssueWithLogging), output).toHaveBeenCalledTimes(1);
+    expect(output).not.toMatch(/already .* skipping/);
+  });
+
+  it("control: still skips an issue already ready_for_merge", async () => {
+    await seedStatus("ready_for_merge");
+
+    const output = await runExec();
+
+    expect(vi.mocked(runIssueWithLogging)).not.toHaveBeenCalled();
+    expect(output).toMatch(/#1233: already ready_for_merge — skipping/);
+  });
+});

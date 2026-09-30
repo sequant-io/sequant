@@ -101,6 +101,7 @@ import {
   type ReadyResult,
   type ReadyPhaseRunner,
 } from "./ready-gate.js";
+import { isCompletedIssueStatus } from "./completed-status.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -2236,6 +2237,10 @@ export async function runIssueWithLogging(
   // A successful run that never ran qa (e.g. `--phases spec` or `--phases
   // exec`) stays `in_progress` so a later `sequant run N --phases exec`
   // isn't skipped as already-completed.
+  // This reads what ran, so a `--resume` run that skips an already-completed
+  // qa also records `in_progress`. That's the conservative side: main used to
+  // mark such a run ready without looking at the earlier verdict. A
+  // `--phases qa` run restores the terminal status.
   const ranQa = phaseResults.some((p) => p.phase === "qa");
   const finalStatus = readyGateResult
     ? readyGateResult.issueStatus
@@ -2277,12 +2282,19 @@ export async function runIssueWithLogging(
     );
     if (!checkpointOk) {
       checkpointFailed = true;
+      // The consequence depends on the status actually recorded: a completed
+      // status is skipped by the next run, a non-terminal one (#1233: a run
+      // without qa) is resumed. Name the one that applies (#837).
+      const reRunConsequence = isCompletedIssueStatus(finalStatus)
+        ? `so a re-run will skip it and refuse to resume the chain here until the ` +
+          `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`
+        : `so a re-run resumes the chain at this link; commit the work in ${worktreePath} ` +
+          `first so the next link builds on it.`;
       log(
         chalk.yellow(
           `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
             `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
-            `${finalStatus}, so a re-run will skip it and refuse to resume the chain here until the ` +
-            `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`,
+            `${finalStatus}, ${reRunConsequence}`,
         ),
       );
     }

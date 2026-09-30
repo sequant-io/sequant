@@ -97,7 +97,7 @@ import {
   runIssueWithLogging,
   recordIssueCompletion,
 } from "./batch-executor.js";
-import { createPR } from "./worktree-manager.js";
+import { createCheckpointCommit, createPR } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
 const mockCreatePR = vi.mocked(createPR);
@@ -2898,6 +2898,54 @@ describe("#1233: a successful run without qa leaves the issue non-terminal", () 
     const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
     expect(finalStatuses).toContain("in_progress");
     expect(finalStatuses).not.toContain("ready_for_merge");
+  });
+});
+
+describe("#1233: the chain checkpoint-failure warning names the right re-run outcome", () => {
+  // The warning quotes the recorded status. After #1233 a chain link run
+  // without qa records `in_progress`, which the next run resumes rather than
+  // skips, so the old "a re-run will skip it" sentence would be wrong (#837).
+  async function checkpointWarning(phases: string[]): Promise<string> {
+    vi.mocked(createCheckpointCommit).mockReturnValue(false);
+    vi.mocked(createPR).mockReturnValue({ success: false } as never);
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await runIssueWithLogging({
+        ...makeCtx({
+          issueNumber: 1233,
+          config: {
+            phases: phases as ExecutionConfig["phases"],
+            qualityLoop: false,
+            maxIterations: 1,
+          },
+          options: { autoDetectPhases: false },
+        }),
+        worktree: { path: "/tmp/wt-1233", branch: "feature/1233" },
+        chain: { enabled: true, isLast: false },
+      });
+      return log.mock.calls
+        .map((c) => String(c[0]))
+        .filter((line) => line.includes("could not be created"))
+        .join("\n");
+    } finally {
+      log.mockRestore();
+    }
+  }
+
+  it("says a re-run resumes the link when no qa ran (in_progress)", async () => {
+    const warning = await checkpointWarning(["exec"]);
+    expect(warning).toContain("stays in_progress");
+    expect(warning).toContain("a re-run resumes the chain at this link");
+    expect(warning).not.toContain("will skip it");
+  });
+
+  it("still says a re-run will skip it when qa ran and passed (ready_for_merge)", async () => {
+    const warning = await checkpointWarning(["exec", "qa"]);
+    expect(warning).toContain("stays ready_for_merge");
+    expect(warning).toContain("a re-run will skip it");
   });
 });
 
