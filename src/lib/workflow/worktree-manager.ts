@@ -6,7 +6,7 @@
  */
 
 import chalk from "chalk";
-import { spawnSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import {
@@ -19,7 +19,6 @@ import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
   readRecordedBaseRef,
-  readRecordedBaseRefAtHead,
   recordWorktreeBaseRef,
   resolveBaseRef,
 } from "./phase-executor.js";
@@ -1602,6 +1601,23 @@ function branchIsPushed(worktreePath: string, baseRef: string): boolean {
   return !!name && name !== baseRef;
 }
 
+/** Whether `ref` resolves to a commit in `cwd`; false on any git error (#1234). */
+function refResolves(cwd: string, ref: string): boolean {
+  try {
+    execFileSync(
+      "git",
+      ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+      {
+        cwd,
+        stdio: "pipe",
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Rebase the worktree branch onto the base branch before PR creation.
  * This ensures the branch is up-to-date and prevents lockfile drift.
@@ -1621,38 +1637,48 @@ export function rebaseBeforePR(
   verbose: boolean,
   baseBranch: string = "main",
 ): RebaseResult {
-  // #1234: when the run's base is a LOCAL branch (a local `--base`), the
-  // worktree recorded that ref at creation; rebase onto it directly — there
-  // is no `origin/<base>` to fetch, and fetching one only printed a failure.
-  // Only when the recorded ref IS the caller's `baseBranch`: a chain's final
-  // link recorded its predecessor, but is rebased onto the run's base here.
-  const recordedBase = readRecordedBaseRefAtHead(worktreePath);
-  const localBase =
-    recordedBase === baseBranch && !recordedBase.startsWith("origin/")
-      ? recordedBase
-      : undefined;
-  const baseRef = localBase ?? `origin/${baseBranch}`;
+  let baseRef = `origin/${baseBranch}`;
+
+  // Fetch latest base branch to ensure we're rebasing onto fresh state
+  const fetchResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "fetch", "origin", baseBranch],
+    {
+      stdio: "pipe",
+    },
+  );
+
+  if (fetchResult.status !== 0) {
+    // #1234: a base that exists only locally (a local `--base`, never pushed)
+    // has no `origin/<base>` to fetch or rebase onto. Use the local branch
+    // quietly. Decided by the remote, not by the worktree's recorded base: a
+    // pushed `--base` must still be fetched and rebased onto fresh, and a
+    // chain's final link recorded its predecessor, not the run's base.
+    if (
+      !refResolves(worktreePath, `refs/remotes/origin/${baseBranch}`) &&
+      refResolves(worktreePath, `refs/heads/${baseBranch}`)
+    ) {
+      baseRef = baseBranch;
+      if (verbose) {
+        console.log(
+          chalk.gray(
+            `    ${baseBranch} exists only locally — rebasing onto the local branch`,
+          ),
+        );
+      }
+    } else {
+      const error = fetchResult.stderr.toString();
+      console.log(
+        chalk.yellow(`    !  Could not fetch ${baseRef}: ${error.trim()}`),
+      );
+      // Continue anyway - might work with local state
+    }
+  }
 
   if (verbose) {
     console.log(
       chalk.gray(`    Rebasing #${issueNumber} onto ${baseRef} before PR...`),
     );
-  }
-
-  // Fetch latest base branch to ensure we're rebasing onto fresh state
-  // (skipped for a local base: nothing to fetch).
-  const fetchResult = localBase
-    ? { status: 0, stderr: Buffer.from("") }
-    : spawnSync("git", ["-C", worktreePath, "fetch", "origin", baseBranch], {
-        stdio: "pipe",
-      });
-
-  if (fetchResult.status !== 0) {
-    const error = fetchResult.stderr.toString();
-    console.log(
-      chalk.yellow(`    !  Could not fetch ${baseRef}: ${error.trim()}`),
-    );
-    // Continue anyway - might work with local state
   }
 
   // #1069: rebasing a branch that exists on the remote rewrites pushed SHAs and

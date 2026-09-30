@@ -568,10 +568,46 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
     expect(recorded(ensure(3, "local-base"))).toBe("local-base");
   }, 60_000);
 
-  it("1234 pre-PR rebase onto a recorded local base does not fetch origin/<base>", () => {
+  it("1234 pre-PR rebase onto a local-only base prints no fetch failure", () => {
     const wt = ensure(4, "local-base");
     const out = runScript(
       `rebaseBeforePR(${JSON.stringify(wt)}, 4, undefined, true, "local-base");`,
+    );
+    expect(out).not.toContain("Could not fetch");
+    expect(out).toContain("onto local-base");
+  }, 60_000);
+
+  it("1234 pre-PR rebase still fetches a pushed --base and picks up a teammate's commit", () => {
+    const wt = ensure(6, "remote-base");
+    // A teammate pushes to the shared base after the worktree was cut.
+    const mate = join(root, "mate");
+    git(root, "clone", "-q", join(root, "remote.git"), mate);
+    git(mate, "config", "user.email", "m@m");
+    git(mate, "config", "user.name", "m");
+    git(mate, "config", "commit.gpgsign", "false");
+    git(mate, "checkout", "-q", "remote-base");
+    commitFile(mate, "mate.txt", "teammate commit");
+    git(mate, "push", "-q", "origin", "remote-base");
+
+    const out = runScript(
+      `rebaseBeforePR(${JSON.stringify(wt)}, 6, undefined, true, "remote-base");`,
+    );
+    expect(out).toContain("onto origin/remote-base");
+    expect(git(wt, "log", "--format=%s")).toContain("teammate commit");
+  }, 60_000);
+
+  it("1234 pre-PR rebase onto a local-only base works for a chain final link too", () => {
+    const wt = ensure(7, "local-base");
+    // A chain successor records its predecessor, not the run's base.
+    git(clone, "branch", "predecessor", "local-base");
+    git(
+      wt,
+      "config",
+      `branch.${git(wt, "branch", "--show-current")}.sequantBaseRef`,
+      "predecessor",
+    );
+    const out = runScript(
+      `rebaseBeforePR(${JSON.stringify(wt)}, 7, undefined, true, "local-base");`,
     );
     expect(out).not.toContain("Could not fetch");
     expect(out).toContain("onto local-base");
