@@ -17,7 +17,11 @@ import {
 } from "../stacks.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
-import { resolveBaseRef } from "./phase-executor.js";
+import {
+  readRecordedBaseRef,
+  recordWorktreeBaseRef,
+  resolveBaseRef,
+} from "./phase-executor.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
 import type { CacheMetrics } from "./run-log-schema.js";
@@ -802,6 +806,24 @@ export function resolveWorktreeRoot(
 }
 
 /**
+ * The ref a new worktree branch is cut from (#1234 extracted it so the
+ * creation and reuse paths record the same value): a local branch (chain
+ * mode, or a local `--base`) as-is, `origin/<x>` for a remote-style base,
+ * else `origin/<default>`.
+ *
+ * @internal Exported for testing only.
+ */
+export function computeWorktreeBaseRef(
+  baseBranch: string | undefined,
+  detectedDefault: string,
+): string {
+  if (!baseBranch) return `origin/${detectedDefault}`;
+  if (baseBranch.startsWith("origin/")) return baseBranch;
+  if (baseBranch === detectedDefault) return `origin/${baseBranch}`;
+  return baseBranch;
+}
+
+/**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
@@ -880,6 +902,16 @@ export async function ensureWorktree(
   if (existingPath) {
     if (verbose) {
       console.log(chalk.gray(`    Reusing existing worktree: ${existingPath}`));
+    }
+
+    // #1234: a worktree created before the base was recorded gets it now;
+    // one that already has it keeps the ref it was actually cut from.
+    if (!readRecordedBaseRef(existingPath, branch)) {
+      recordWorktreeBaseRef(
+        existingPath,
+        branch,
+        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose)),
+      );
     }
 
     // In chain mode, rebase existing worktree onto previous chain link
@@ -965,13 +997,7 @@ export async function ensureWorktree(
     baseBranch &&
     !baseBranch.startsWith("origin/") &&
     baseBranch !== detectedDefault;
-  const baseRef = baseBranch
-    ? isLocalBranch
-      ? baseBranch
-      : baseBranch.startsWith("origin/")
-        ? baseBranch
-        : `origin/${baseBranch}`
-    : `origin/${detectedDefault}`;
+  const baseRef = computeWorktreeBaseRef(baseBranch, detectedDefault);
 
   // Fetch the base branch to ensure worktree starts from fresh baseline
   const branchToFetch = effectiveBase.replace(/^origin\//, "");
@@ -1026,6 +1052,10 @@ export async function ensureWorktree(
     console.log(chalk.red(`    ❌ Failed to create worktree: ${error}`));
     return null;
   }
+
+  // #1234: record the exact base so the exec guard and the pre-PR rebase
+  // compare against what the worktree was actually cut from.
+  recordWorktreeBaseRef(worktreePath, branch, baseRef);
 
   // Rebase existing branch onto chain base if needed
   let rebased = false;
@@ -1590,7 +1620,26 @@ export function rebaseBeforePR(
   verbose: boolean,
   baseBranch: string = "main",
 ): RebaseResult {
-  const baseRef = `origin/${baseBranch}`;
+  // #1234: when the run's base is a LOCAL branch (a local `--base`), the
+  // worktree recorded that ref at creation; rebase onto it directly — there
+  // is no `origin/<base>` to fetch, and fetching one only printed a failure.
+  // Only when the recorded ref IS the caller's `baseBranch`: a chain's final
+  // link recorded its predecessor, but is rebased onto the run's base here.
+  const currentBranch = spawnSync(
+    "git",
+    ["-C", worktreePath, "rev-parse", "--abbrev-ref", "HEAD"],
+    { stdio: "pipe" },
+  )
+    .stdout?.toString()
+    .trim();
+  const recordedBase = currentBranch
+    ? readRecordedBaseRef(worktreePath, currentBranch)
+    : undefined;
+  const localBase =
+    recordedBase === baseBranch && !recordedBase.startsWith("origin/")
+      ? recordedBase
+      : undefined;
+  const baseRef = localBase ?? `origin/${baseBranch}`;
 
   if (verbose) {
     console.log(
@@ -1599,13 +1648,12 @@ export function rebaseBeforePR(
   }
 
   // Fetch latest base branch to ensure we're rebasing onto fresh state
-  const fetchResult = spawnSync(
-    "git",
-    ["-C", worktreePath, "fetch", "origin", baseBranch],
-    {
-      stdio: "pipe",
-    },
-  );
+  // (skipped for a local base: nothing to fetch).
+  const fetchResult = localBase
+    ? { status: 0, stderr: Buffer.from("") }
+    : spawnSync("git", ["-C", worktreePath, "fetch", "origin", baseBranch], {
+        stdio: "pipe",
+      });
 
   if (fetchResult.status !== 0) {
     const error = fetchResult.stderr.toString();
