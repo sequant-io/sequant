@@ -753,10 +753,6 @@ describe("detectPackageManagerSync (#1231 AC-1)", () => {
   });
 });
 
-// Parity gate for #1231 AC-2: detectPackageManagerSync must agree with
-// detectPackageManager everywhere the async detector returns non-null. The
-// async detector is driven through the mocked `./fs.js`, the sync detector
-// through real files in a tmpdir, built from the same file list per fixture.
 // sequant itself is an npm package: hints that install, update or remove it
 // (bin/cli.ts, version-check.ts) must never print a Python command, even in a
 // Python-only directory that detectPackageManagerSync now reads as uv/pip.
@@ -794,6 +790,10 @@ describe("detectNodePackageManagerSync — sequant's own package manager (#1231)
   });
 });
 
+// Parity gate for #1231 AC-2: detectPackageManagerSync must agree with
+// detectPackageManager everywhere the async detector returns non-null. The
+// async detector is driven through the mocked `./fs.js`, the sync detector
+// through real files in a tmpdir, built from the same file list per fixture.
 describe("detectPackageManagerSync parity with detectPackageManager (#1231 AC-2)", () => {
   let root: string;
 
