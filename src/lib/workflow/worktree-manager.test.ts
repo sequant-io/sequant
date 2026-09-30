@@ -495,6 +495,18 @@ describe("#1223 buildPRTitle: conventional-commit prefix reuse", () => {
     expect(buildPRTitle("feat(adopt): x", 1209)).toBe("feat(#1209): x");
   });
 
+  it("maps a `bug(scope):` title to fix without doubling it (this repo's #1232–#1234 shape)", () => {
+    expect(
+      buildPRTitle(
+        "bug(state): a successful spec-only run marks the issue ready_for_merge",
+        1233,
+        ["bug"],
+      ),
+    ).toBe(
+      "fix(#1233): a successful spec-only run marks the issue ready_for_merge",
+    );
+  });
+
   it("prefers the title's type over the label-derived prefix", () => {
     expect(buildPRTitle("fix(run): y", 932, ["enhancement"])).toBe(
       "fix(#932): y",

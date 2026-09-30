@@ -1787,8 +1787,15 @@ const CONVENTIONAL_COMMIT_TYPES = [
   "revert",
 ];
 
+/**
+ * Title prefixes that aren't conventional-commit types but mean one. `bug` is
+ * this repo's third most common issue-title prefix (32 of the last 400,
+ * behind `fix` and `feat`), and it maps to `fix` just as a `bug` label does.
+ */
+const PREFIX_TYPE_ALIASES: Record<string, string> = { bug: "fix" };
+
 const CONVENTIONAL_PREFIX_RE = new RegExp(
-  `^(${CONVENTIONAL_COMMIT_TYPES.join("|")})(\\([^)]*\\))?!?:\\s*`,
+  `^(${[...CONVENTIONAL_COMMIT_TYPES, ...Object.keys(PREFIX_TYPE_ALIASES)].join("|")})(\\([^)]*\\))?!?:\\s*`,
 );
 
 /**
@@ -1810,7 +1817,8 @@ export function buildPRTitle(
   const match = issueTitle.match(CONVENTIONAL_PREFIX_RE);
   if (match) {
     const rest = issueTitle.slice(match[0].length);
-    return `${match[1]}(#${issueNumber}): ${rest}`;
+    const type = PREFIX_TYPE_ALIASES[match[1]] ?? match[1];
+    return `${type}(#${issueNumber}): ${rest}`;
   }
   const isBug = labels?.some((l) => /^bug/i.test(l));
   const prefix = isBug ? "fix" : "feat";
