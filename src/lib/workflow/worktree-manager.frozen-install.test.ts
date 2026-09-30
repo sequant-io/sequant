@@ -232,6 +232,20 @@ describe("manifest-less worktrees detect the package manager (#870)", () => {
     expect(spawnedInstall()).toBe(PM_CONFIG.bun.ciInstall);
   });
 
+  it("installWorktreeDeps resolves uv and runs `uv sync --frozen` on a manifest-less Python worktree (#1231 AC-3)", () => {
+    // pyproject.toml + uv.lock, no declared packageManager — before #1231,
+    // detectPackageManagerSync only checked JS lockfiles and returned "npm"
+    // here, so this worktree never reached uv sync at all.
+    writeFileSync(join(dir, "pyproject.toml"), '[project]\nname = "x"\n');
+    writeFileSync(join(dir, "uv.lock"), "version = 1\n");
+    spawnSyncMock.mockReturnValue(ok());
+
+    expect(installWorktreeDeps(dir, undefined, false)).toBe(true);
+
+    expect(spawnedInstall()).toBe("uv sync --frozen");
+    expect(spawnedInstall()).not.toBe("npm ci"); // the pre-#1231 npm fallback
+  });
+
   it("a worktree with no manifest at all skips the install instead of running a failing `npm ci` (#1196 AC-1)", () => {
     // No package.json, no lockfile — the exact shape of a non-Node repo,
     // where resolvePackageManager's fallback used to be "npm" regardless.

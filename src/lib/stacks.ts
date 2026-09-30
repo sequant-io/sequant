@@ -238,9 +238,38 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
   return null;
 }
 
+function detectNodeLockfile(root: string): PackageManager | null {
+  for (const { file, pm } of LOCKFILE_PRIORITY) {
+    if (existsSync(join(root, file))) {
+      return pm;
+    }
+  }
+  return null;
+}
+
+/**
+ * The package manager that installs sequant itself — JS lockfiles only, `npm`
+ * otherwise. For hints about sequant's own npm packages ("remove local
+ * sequant", "add @modelcontextprotocol/sdk", "update sequant"), where a
+ * Python manager found by {@link detectPackageManagerSync} would print a
+ * wrong command such as `uv add @modelcontextprotocol/sdk` (#1231).
+ */
+export function detectNodePackageManagerSync(
+  root: string = process.cwd(),
+): PackageManager {
+  return detectNodeLockfile(root) ?? "npm";
+}
+
 /**
  * Synchronous version of detectPackageManager for use in startup code.
- * Only checks JS lockfiles (not Python) since sequant is a Node.js tool.
+ *
+ * Mirrors {@link detectPackageManager}'s order exactly (#1231): JS lockfiles,
+ * then `package.json` → npm, then Python lockfiles, then `pyproject.toml` or
+ * a `requirements*.txt` → pip, and `npm` as the final fallback. Before #1231
+ * this only checked JS lockfiles, so a uv/poetry repo whose manifest declared
+ * no `packageManager` resolved to npm here — disagreeing with the async
+ * detector and skipping the Python install entirely in
+ * `resolvePackageManager`'s callers.
  *
  * @param root Directory to look for lockfiles in. Defaults to the process cwd,
  *        which is what startup code wants; callers that operate on a specific
@@ -249,10 +278,23 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
 export function detectPackageManagerSync(
   root: string = process.cwd(),
 ): PackageManager {
-  for (const { file, pm } of LOCKFILE_PRIORITY) {
+  const node = detectNodeLockfile(root);
+  if (node) {
+    return node;
+  }
+  if (existsSync(join(root, "package.json"))) {
+    return "npm";
+  }
+  for (const { file, pm } of PYTHON_LOCKFILE_PRIORITY) {
     if (existsSync(join(root, file))) {
       return pm;
     }
+  }
+  if (
+    existsSync(join(root, "pyproject.toml")) ||
+    findRequirementsFile(root) !== null
+  ) {
+    return "pip";
   }
   return "npm";
 }
@@ -276,7 +318,8 @@ export function detectPackageManagerSync(
  * `"npm@10"` spelling) used to index `PM_CONFIG` to `undefined` and throw on
  * the next property access. Such a value now routes to detection instead.
  * Python managers (`pip`/`poetry`/`uv`) are `PM_CONFIG` keys, so a declared
- * Python manager still wins over the JS-only detector.
+ * Python manager wins over detection, and since #1231 detection itself finds
+ * `uv.lock`/`poetry.lock`/`pyproject.toml`/`requirements*.txt` too.
  *
  * The test is `hasOwnProperty`, deliberately not `in`: `in` walks the
  * prototype chain, so `"toString"`, `"constructor"`, and `"__proto__"` would

@@ -9,6 +9,8 @@ import {
   getStackConfig,
   STACKS,
   detectPackageManager,
+  detectPackageManagerSync,
+  detectNodePackageManagerSync,
   detectYarnMajor,
   getPackageManagerCommands,
   resolvePackageManagerConfig,
@@ -672,6 +674,166 @@ describe("detectPackageManager", () => {
       expect(result).toBe("bun");
     });
   });
+});
+
+// detectPackageManagerSync reads node's `fs` directly (this file only mocks
+// `./fs.js` and `fs/promises`), so these use real fixture directories rather
+// than mocks — the same approach as `detectYarnMajor` below (#1231 AC-1).
+describe("detectPackageManagerSync (#1231 AC-1)", () => {
+  let root: string;
+
+  function seed(name: string): void {
+    writeFileSync(join(root, name), "");
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "sequant-pm-sync-"));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("detects JS lockfiles", () => {
+    seed("pnpm-lock.yaml");
+    expect(detectPackageManagerSync(root)).toBe("pnpm");
+  });
+
+  it("falls back to npm when only package.json exists", () => {
+    seed("package.json");
+    expect(detectPackageManagerSync(root)).toBe("npm");
+  });
+
+  it("detects uv.lock", () => {
+    seed("uv.lock");
+    expect(detectPackageManagerSync(root)).toBe("uv");
+  });
+
+  it("detects poetry.lock", () => {
+    seed("poetry.lock");
+    expect(detectPackageManagerSync(root)).toBe("poetry");
+  });
+
+  it("uv takes priority over poetry", () => {
+    seed("uv.lock");
+    seed("poetry.lock");
+    expect(detectPackageManagerSync(root)).toBe("uv");
+  });
+
+  it("falls back to pip when only pyproject.toml exists", () => {
+    seed("pyproject.toml");
+    expect(detectPackageManagerSync(root)).toBe("pip");
+  });
+
+  it("falls back to pip when only requirements.txt exists", () => {
+    seed("requirements.txt");
+    expect(detectPackageManagerSync(root)).toBe("pip");
+  });
+
+  it("falls back to pip for a requirements-dev.txt variant", () => {
+    seed("requirements-dev.txt");
+    expect(detectPackageManagerSync(root)).toBe("pip");
+  });
+
+  it("JS package.json takes priority over Python lockfiles", () => {
+    seed("package.json");
+    seed("uv.lock");
+    expect(detectPackageManagerSync(root)).toBe("npm");
+  });
+
+  it("JS lockfile takes priority over package.json and Python signals", () => {
+    seed("yarn.lock");
+    seed("package.json");
+    seed("pyproject.toml");
+    expect(detectPackageManagerSync(root)).toBe("yarn");
+  });
+
+  it("falls back to npm when nothing recognizable exists", () => {
+    expect(detectPackageManagerSync(root)).toBe("npm");
+  });
+});
+
+// sequant itself is an npm package: hints that install, update or remove it
+// (bin/cli.ts, version-check.ts) must never print a Python command, even in a
+// Python-only directory that detectPackageManagerSync now reads as uv/pip.
+describe("detectNodePackageManagerSync — sequant's own package manager (#1231)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "sequant-pm-node-"));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("answers npm in a Python-only directory the project detector reads as uv", () => {
+    writeFileSync(join(root, "uv.lock"), "");
+    writeFileSync(join(root, "pyproject.toml"), "[project]\nname = 'x'\n");
+
+    expect(detectPackageManagerSync(root)).toBe("uv");
+    expect(detectNodePackageManagerSync(root)).toBe("npm");
+  });
+
+  it("answers npm for a requirements-only directory", () => {
+    writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+    expect(detectPackageManagerSync(root)).toBe("pip");
+    expect(detectNodePackageManagerSync(root)).toBe("npm");
+  });
+
+  it("still follows a JS lockfile", () => {
+    writeFileSync(join(root, "pnpm-lock.yaml"), "");
+    writeFileSync(join(root, "uv.lock"), "");
+
+    expect(detectNodePackageManagerSync(root)).toBe("pnpm");
+  });
+});
+
+// Parity gate for #1231 AC-2: detectPackageManagerSync must agree with
+// detectPackageManager everywhere the async detector returns non-null. The
+// async detector is driven through the mocked `./fs.js`, the sync detector
+// through real files in a tmpdir, built from the same file list per fixture.
+describe("detectPackageManagerSync parity with detectPackageManager (#1231 AC-2)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    root = mkdtempSync(join(tmpdir(), "sequant-pm-parity-"));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const fixtures: Array<{ name: string; files: string[] }> = [
+    { name: "JS lockfiles", files: ["pnpm-lock.yaml"] },
+    { name: "package.json only", files: ["package.json"] },
+    { name: "uv.lock", files: ["uv.lock"] },
+    { name: "poetry.lock", files: ["poetry.lock"] },
+    { name: "pyproject.toml only", files: ["pyproject.toml"] },
+    { name: "requirements.txt only", files: ["requirements.txt"] },
+    { name: "JS + Python mix", files: ["package.json", "uv.lock"] },
+    { name: "empty", files: [] },
+  ];
+
+  for (const fixture of fixtures) {
+    it(`agrees with the async detector for: ${fixture.name}`, async () => {
+      for (const file of fixture.files) {
+        writeFileSync(join(root, file), "");
+      }
+      mockFileExists.mockImplementation(async (path) =>
+        fixture.files.includes(path),
+      );
+
+      const asyncResult = await detectPackageManager();
+      const syncResult = detectPackageManagerSync(root);
+
+      if (asyncResult !== null) {
+        expect(syncResult).toBe(asyncResult);
+      }
+    });
+  }
 });
 
 describe("getPackageManagerCommands", () => {
