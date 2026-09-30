@@ -1802,11 +1802,14 @@ async function executePhase(
   const durationSeconds = (Date.now() - startTime) / 1000;
 
   // #975: extract the concrete model ID from the driver's modelUsage map.
-  // First key is the primary model dispatched; undefined for drivers that
-  // don't populate modelUsage (aider, subprocess paths).
-  const resolvedModel = agentResult.modelUsage
-    ? Object.keys(agentResult.modelUsage)[0]
-    : undefined;
+  // #1227: map order is not dispatch order — a Haiku helper call can come
+  // first, and an advisor model is its own key — so pick by rule, not by
+  // position. Undefined for drivers that don't populate modelUsage (aider,
+  // subprocess paths).
+  const resolvedModel = selectResolvedModel(
+    agentResult.modelUsage,
+    agentConfig.model,
+  );
 
   // #986: the same map also carries the tokens and the SDK's cost estimate.
   // Normalize the whole map — not just its first key — so a phase that
@@ -1844,6 +1847,46 @@ async function executePhase(
   return enrich(
     mapAgentFailureToPhaseResult(phase, agentResult, durationSeconds),
   );
+}
+
+/**
+ * Pick the phase's main model out of the SDK `modelUsage` map (#1227).
+ *
+ * The map also carries models the phase did not run on: a Haiku helper call
+ * that Claude Code makes before the first main-model response (listed FIRST
+ * since 2026-09-20, which is why `Object.keys(...)[0]` recorded Haiku for
+ * every phase), and an advisor model under its own key.
+ *
+ * Rule: among the keys that match the dispatched model (`requested`, an alias
+ * like `sonnet` or a full ID), else among all keys, take the one with the
+ * largest total token volume (input + output + cache read + cache creation).
+ * The main model re-reads its cached context every turn, so its volume
+ * dominates both the helper's and the advisor's in any real phase.
+ *
+ * @internal Exported for testing only
+ */
+export function selectResolvedModel(
+  modelUsage: Record<string, ModelUsageEntry> | undefined,
+  requested?: string,
+): string | undefined {
+  if (!modelUsage) return undefined;
+  const keys = Object.keys(modelUsage);
+  if (keys.length === 0) return undefined;
+  const hint = requested?.toLowerCase();
+  const matching = hint
+    ? keys.filter((k) => k.toLowerCase().includes(hint))
+    : [];
+  const candidates = matching.length > 0 ? matching : keys;
+  const volume = (k: string): number => {
+    const e = modelUsage[k] ?? {};
+    return (
+      (e.inputTokens ?? 0) +
+      (e.outputTokens ?? 0) +
+      (e.cacheReadInputTokens ?? 0) +
+      (e.cacheCreationInputTokens ?? 0)
+    );
+  };
+  return candidates.reduce((best, k) => (volume(k) > volume(best) ? k : best));
 }
 
 /**
