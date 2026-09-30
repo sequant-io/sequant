@@ -108,8 +108,37 @@ fi
 # Change to repo root for consistent behavior
 cd "$MAIN_REPO_DIR"
 
+# Worktree root (#1199). Same precedence as resolveWorktreeRoot() in
+# worktree-manager.ts: SEQUANT_WORKTREE_ROOT, then `run.worktreeRoot` in
+# .sequant/settings.json, then ../worktrees. A relative value resolves against
+# the main repo root (the cwd here); a blank value counts as unset.
+#
+# The settings read is a text pattern, not `jq`: settings.json is JSONC, and
+# the script also runs in non-Node repos. Lines starting with `//` are dropped
+# before matching, so a commented-out key is ignored. A key inside a `/* */`
+# block would still match — the same trade-off as the packageManager read.
+trim() {
+    sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+read_worktree_root_setting() {
+    [ -f ".sequant/settings.json" ] || return 0
+    grep -v '^[[:space:]]*//' ".sequant/settings.json" | tr '\n' ' ' \
+        | grep -o '"worktreeRoot"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 \
+        | sed 's/^.*:[[:space:]]*"\([^"]*\)"$/\1/'
+}
+WORKTREE_ROOT="$(printf '%s' "${SEQUANT_WORKTREE_ROOT:-}" | trim)"
+if [ -z "$WORKTREE_ROOT" ]; then
+    WORKTREE_ROOT="$(read_worktree_root_setting | trim)"
+fi
+WORKTREE_ROOT="${WORKTREE_ROOT:-../worktrees}"
+# Absolute form, for use after the script has cd'd into the new worktree.
+case "$WORKTREE_ROOT" in
+    /*) WORKTREE_ROOT_ABS="$WORKTREE_ROOT" ;;
+    *)  WORKTREE_ROOT_ABS="${MAIN_REPO_DIR}/${WORKTREE_ROOT}" ;;
+esac
+
 # Worktree directory
-WORKTREE_DIR="../worktrees/${BRANCH_NAME}"
+WORKTREE_DIR="${WORKTREE_ROOT}/${BRANCH_NAME}"
 
 echo -e "${GREEN}✨ Creating worktree for issue #${ISSUE_NUMBER}${NC}"
 echo -e "${BLUE}Branch: ${BRANCH_NAME}${NC}"
@@ -140,7 +169,7 @@ if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
     else
         echo -e "${RED}❌ Branch exists but no worktree found${NC}"
         echo -e "${YELLOW}   To create worktree from existing branch:${NC}"
-        echo -e "   git worktree add ../worktrees/${BRANCH_NAME} ${BRANCH_NAME}"
+        echo -e "   git worktree add ${WORKTREE_DIR} ${BRANCH_NAME}"
         echo -e "${YELLOW}   Or delete the branch first:${NC}"
         echo -e "   git branch -D ${BRANCH_NAME}"
         exit 1
@@ -413,8 +442,9 @@ if [ ! -d "node_modules" ] && [ -f "package.json" ]; then
         # Anchored to the main repo, not the cwd: execution is inside the new
         # worktree by this point, so the old relative path resolved to
         # `worktrees/feature/worktrees/.npm-cache` — a level deeper than the
-        # `../worktrees/` the worktrees themselves live in.
-        CACHE_DIR="${MAIN_REPO_DIR}/../worktrees/.npm-cache"
+        # `../worktrees/` the worktrees themselves live in. Follows the
+        # configured worktree root (#1199).
+        CACHE_DIR="${WORKTREE_ROOT_ABS}/.npm-cache"
         # Named for the resolved lockfile, not package-lock.json specifically,
         # and keyed by project (#847): `../worktrees/` is shared by every repo
         # in the same parent directory, so a single hash file made two projects
