@@ -2363,7 +2363,11 @@ export async function runIssueWithLogging(
     const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
     // #1223 AC-2: surface exec's own `## Summary` in the PR body instead of
     // the placeholder text.
-    const execOutput = phaseResults.find((p) => p.phase === "exec")?.output;
+    // The latest exec pass: a quality-loop iteration re-runs exec, and the
+    // first pass's summary describes code the loop has since changed.
+    const execOutput = [...phaseResults]
+      .reverse()
+      .find((p) => p.phase === "exec")?.output;
     const prResult = createPR(
       worktreePath,
       issueNumber,

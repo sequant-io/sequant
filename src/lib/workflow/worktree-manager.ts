@@ -1795,7 +1795,7 @@ const CONVENTIONAL_COMMIT_TYPES = [
 const PREFIX_TYPE_ALIASES: Record<string, string> = { bug: "fix" };
 
 const CONVENTIONAL_PREFIX_RE = new RegExp(
-  `^(${[...CONVENTIONAL_COMMIT_TYPES, ...Object.keys(PREFIX_TYPE_ALIASES)].join("|")})(\\([^)]*\\))?!?:\\s*`,
+  `^(${[...CONVENTIONAL_COMMIT_TYPES, ...Object.keys(PREFIX_TYPE_ALIASES)].join("|")})(\\([^)]*\\))?(!)?:\\s*`,
 );
 
 /**
@@ -1818,7 +1818,9 @@ export function buildPRTitle(
   if (match) {
     const rest = issueTitle.slice(match[0].length);
     const type = PREFIX_TYPE_ALIASES[match[1]] ?? match[1];
-    return `${type}(#${issueNumber}): ${rest}`;
+    // Keep a breaking-change `!`: `feat(api)!: x` → `feat(#N)!: x`.
+    const bang = match[3] ?? "";
+    return `${type}(#${issueNumber})${bang}: ${rest}`;
   }
   const isBug = labels?.some((l) => /^bug/i.test(l));
   const prefix = isBug ? "fix" : "feat";
@@ -1875,11 +1877,15 @@ export function extractExecSummary(
  * @internal Exported for testing
  */
 export function sanitizeImportedClosingKeywords(text: string): string {
+  // Any issue reference GitHub's closing keywords accept: `#N`,
+  // `owner/repo#N`, or a full issue URL. A cross-repo reference closes the
+  // other repo's issue too, when the merger has access to it.
+  const ref = String.raw`(?:[\w.-]+/[\w.-]+)?#\d+|https?://github\.com/[\w.-]+/[\w.-]+/issues/\d+`;
   const pattern = new RegExp(
-    `\\b(?:${CLOSING_KEYWORDS})\\s*:?\\s+#(\\d+)`,
+    String.raw`\b(?:${CLOSING_KEYWORDS})\s*:?\s+(${ref})`,
     "gi",
   );
-  return text.replace(pattern, "Refs #$1");
+  return text.replace(pattern, "Refs $1");
 }
 
 /**

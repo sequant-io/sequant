@@ -534,13 +534,16 @@ describe("#1223 buildPRTitle: conventional-commit prefix reuse", () => {
     expect(buildPRTitle("Docs: foo", 42)).toBe("feat(#42): Docs: foo");
   });
 
-  it("handles a scope-less breaking-change marker", () => {
+  // The `!` is kept: it's valid conventional-commit form (this repo's
+  // commit validator accepts `(!)?`), and dropping it would hide a breaking
+  // change in the squash commit's title.
+  it("keeps a scope-less breaking-change marker", () => {
     expect(buildPRTitle("feat!: drop legacy flag", 55)).toBe(
-      "feat(#55): drop legacy flag",
+      "feat(#55)!: drop legacy flag",
     );
   });
 
-  it("handles a breaking-change marker with a scope", () => {
-    expect(buildPRTitle("fix(run)!: y", 932)).toBe("fix(#932): y");
+  it("keeps a breaking-change marker with a scope", () => {
+    expect(buildPRTitle("fix(run)!: y", 932)).toBe("fix(#932)!: y");
   });
 });

@@ -252,6 +252,17 @@ describe("sanitizeImportedClosingKeywords (#1223 AC-3)", () => {
     expect(sanitizeImportedClosingKeywords("Closes #279")).toBe("Refs #279");
   });
 
+  it("rewrites cross-repo and URL references, which close other repos' issues too", () => {
+    expect(sanitizeImportedClosingKeywords("Fixes owner/repo#12")).toBe(
+      "Refs owner/repo#12",
+    );
+    expect(
+      sanitizeImportedClosingKeywords(
+        "Resolves https://github.com/owner/repo/issues/12",
+      ),
+    ).toBe("Refs https://github.com/owner/repo/issues/12");
+  });
+
   it("rewrites fixes #N (lowercase) to Refs #N", () => {
     expect(sanitizeImportedClosingKeywords("fixes #1223")).toBe("Refs #1223");
   });
