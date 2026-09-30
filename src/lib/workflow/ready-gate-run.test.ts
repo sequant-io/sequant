@@ -176,7 +176,9 @@ function successResult(phase: string): PhaseResult {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockExecutePhase.mockResolvedValue(successResult("exec"));
+  mockExecutePhase.mockImplementation(async (_issue, phase) =>
+    successResult(phase as string),
+  );
   mockRunReadyGate.mockResolvedValue(cannedGate);
   mockGetSettings.mockResolvedValue({ ready: { policy: "a-plus" } } as never);
 });
@@ -185,7 +187,12 @@ describe("run --ready-gate wiring (#817)", () => {
   it("AC-5: does NOT invoke the gate when the flag is off", async () => {
     const state = makeStateManager();
     const result = await runIssueWithLogging(
-      makeCtx({ config: { readyGate: false }, stateManager: state }),
+      // A standard run includes qa: since #1233 a run in which no qa ran
+      // records `in_progress`, not the success terminal status.
+      makeCtx({
+        config: { readyGate: false, phases: ["exec", "qa"] },
+        stateManager: state,
+      }),
     );
 
     expect(mockRunReadyGate).not.toHaveBeenCalled();
@@ -278,7 +285,12 @@ describe("run --ready-gate wiring (#817)", () => {
     mockRunReadyGate.mockRejectedValueOnce(new Error("boom"));
     const state = makeStateManager();
     const result = await runIssueWithLogging(
-      makeCtx({ config: { readyGate: true }, stateManager: state }),
+      // qa ran, so the degraded run's standard status is `ready_for_merge`
+      // (#1233 requires a qa phase for it).
+      makeCtx({
+        config: { readyGate: true, phases: ["exec", "qa"] },
+        stateManager: state,
+      }),
     );
 
     expect(result.readyGate).toBeUndefined();
