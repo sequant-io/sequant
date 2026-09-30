@@ -817,17 +817,82 @@ export function formatDuration(seconds: number): string {
   return `${mins}m ${secs.toFixed(0)}s`;
 }
 
+/** Git config key holding the exact ref a worktree was cut from (#1234). */
+export const SEQUANT_BASE_REF_KEY = "sequantBaseRef";
+
+/**
+ * Record the exact ref a worktree's branch was cut from (#1234), for
+ * {@link resolveBaseRef} to read verbatim. Best-effort: a failed write leaves
+ * the legacy/`origin/main` resolution in place, never fails the caller.
+ */
+export function recordWorktreeBaseRef(
+  cwd: string,
+  branch: string,
+  baseRef: string,
+): void {
+  try {
+    execFileSync(
+      "git",
+      ["config", `branch.${branch}.${SEQUANT_BASE_REF_KEY}`, baseRef],
+      { cwd, stdio: "pipe" },
+    );
+  } catch {
+    // Best-effort — see doc comment.
+  }
+}
+
+/**
+ * The recorded exact base ref for `branch` when it is set, single-line, and
+ * resolves to a commit; otherwise `undefined` (#1234).
+ *
+ * @internal Exported for testing only.
+ */
+export function readRecordedBaseRef(
+  cwd: string,
+  branch: string,
+): string | undefined {
+  let ref: string;
+  try {
+    ref = execFileSync(
+      "git",
+      ["config", "--get", `branch.${branch}.${SEQUANT_BASE_REF_KEY}`],
+      { cwd, stdio: "pipe" },
+    )
+      .toString()
+      .trim();
+  } catch {
+    return undefined;
+  }
+  if (!ref || ref.includes("\n")) return undefined;
+  try {
+    execFileSync(
+      "git",
+      ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+      { cwd, stdio: "pipe" },
+    );
+  } catch {
+    return undefined;
+  }
+  return ref;
+}
+
 /**
  * Resolve the base ref the zero-diff guard should compare against for
  * this worktree.
  *
- * Reads `branch.<current>.sequantBase` — written by `scripts/new-feature.sh`
- * when a worktree is created with `--base <branch>`. Returns `origin/<base>`
- * (prepending `origin/` only when the recorded value does not already
- * reference a remote). Falls back to `"origin/main"` on missing config,
- * missing branch, or any git error — preserves the pre-#537 behavior
- * for worktrees that predate this change or are managed outside
- * `new-feature.sh`.
+ * Order (#1234):
+ * 1. `branch.<current>.sequantBaseRef` — the exact ref `ensureWorktree` cut
+ *    the worktree from (`origin/main`, `origin/x`, or a local `feature/x`),
+ *    used verbatim when it resolves to a commit. Before #1234 nothing written
+ *    by `sequant run` was read here, so every `sequant run` worktree compared
+ *    against `origin/main` and a `--base` ahead of main disabled the guard.
+ * 2. `branch.<current>.sequantBase` — written by `scripts/new-feature.sh`
+ *    as a bare branch name. Returns `origin/<base>` (prepending `origin/`
+ *    only when the recorded value does not already reference a remote); a
+ *    bare name is never read as a local branch, so a stale local `main`
+ *    is never used.
+ * 3. `"origin/main"` on missing config, missing branch, or any git error —
+ *    preserves the pre-#537 behavior for worktrees that predate both keys.
  *
  * Uses `execFileSync` (not `execSync`) so argv is passed directly to
  * `execve` without shell interpretation — the recorded value originates
@@ -854,6 +919,8 @@ export function resolveBaseRef(cwd: string): string {
   // Guard against multi-line output (paranoid — should never happen) and
   // the detached-HEAD case where we have no recorded base to look up.
   if (!branch || branch === "HEAD" || branch.includes("\n")) return fallback;
+  const exact = readRecordedBaseRef(cwd, branch);
+  if (exact) return exact;
   let recorded: string;
   try {
     recorded = execFileSync(

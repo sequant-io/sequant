@@ -26,6 +26,7 @@ import {
   hasExecChanges,
   classifyExecChanges,
   mapAgentSuccessToPhaseResult,
+  recordWorktreeBaseRef,
   resolveBaseRef,
 } from "./phase-executor.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
@@ -385,5 +386,86 @@ describe("exec guard on an uncommitted-only worktree (integration, #879 AC-3/AC-
       /^chore\(exec\): wip checkpoint/,
     );
     expect(result.error).toMatch(/auto-committed as [0-9a-f]{7}/);
+  });
+});
+
+/**
+ * #1234 — `sequant run` worktrees never recorded their base, so the guard
+ * compared against `origin/main`. With a base branch ahead of main (a local
+ * `--base`, or a chain link), the base's own commits read as exec's commits
+ * and the `none`/`uncommitted` branches never fired. The #1138 Phase 0 bench
+ * hit exactly this: 3/18 exec phases ended with all work uncommitted and
+ * "passed".
+ *
+ *   origin/main: M1
+ *   local base-arm (unpushed): M1 → A1
+ *   work HEAD (feature/1234-test): branched from base-arm, no commits of its own
+ */
+describe("exec guard with a local base ahead of main (integration, #1234)", () => {
+  let origin: string;
+  let work: string;
+
+  beforeEach(() => {
+    origin = mkdtempSync(join(tmpdir(), "sequant-1234-origin-"));
+    work = mkdtempSync(join(tmpdir(), "sequant-1234-work-"));
+    git(origin, "init", "--bare", "--initial-branch=main");
+    git(work, "init", "--initial-branch=main");
+    git(work, "config", "user.email", "test@sequant.test");
+    git(work, "config", "user.name", "Test");
+    git(work, "config", "commit.gpgsign", "false");
+    git(work, "remote", "add", "origin", origin);
+    writeFileSync(join(work, "README.md"), "# repo\n");
+    git(work, "add", "README.md");
+    git(work, "commit", "-m", "M1: baseline");
+    git(work, "push", "-u", "origin", "main");
+    git(work, "checkout", "-b", "base-arm");
+    writeFileSync(join(work, "arm.txt"), "arm\n");
+    git(work, "add", "arm.txt");
+    git(work, "commit", "-m", "A1: base branch commit");
+    git(work, "checkout", "-b", "feature/1234-test");
+  });
+
+  afterEach(() => {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  it("1234 resolveBaseRef uses a recorded sequantBaseRef verbatim", () => {
+    recordWorktreeBaseRef(work, "feature/1234-test", "base-arm");
+    expect(resolveBaseRef(work)).toBe("base-arm");
+  });
+
+  it("1234 an unresolvable sequantBaseRef falls back to origin/main", () => {
+    recordWorktreeBaseRef(work, "feature/1234-test", "no-such-branch");
+    expect(resolveBaseRef(work)).toBe("origin/main");
+  });
+
+  it("1234 a legacy bare sequantBase never resolves to a local branch", () => {
+    // A stale local `main` must not be used; the legacy key keeps `origin/`.
+    git(work, "config", "branch.feature/1234-test.sequantBase", "main");
+    expect(resolveBaseRef(work)).toBe("origin/main");
+  });
+
+  it("1234 uncommitted-only exec on a recorded local base fails and is WIP-committed", () => {
+    recordWorktreeBaseRef(work, "feature/1234-test", "base-arm");
+    writeFileSync(join(work, "exec-work.ts"), "export const w = 1;\n");
+
+    const result = mapAgentSuccessToPhaseResult(
+      "exec",
+      { success: true, output: "done" },
+      120,
+      work,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("uncommitted");
+    expect(git(work, "log", "-1", "--format=%s")).toMatch(
+      /^chore\(exec\): wip checkpoint/,
+    );
+  });
+
+  it("1234 no-op exec on a recorded local base fails as no changes", () => {
+    recordWorktreeBaseRef(work, "feature/1234-test", "base-arm");
+    expect(classifyExecChanges(work)).toEqual({ kind: "none" });
   });
 });
