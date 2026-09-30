@@ -51,16 +51,25 @@ export interface Manifest {
 }
 
 export async function getManifest(): Promise<Manifest | null> {
-  if (!(await fileExists(MANIFEST_PATH))) {
-    return null;
-  }
-
   try {
-    const content = await readFile(MANIFEST_PATH);
-    return JSON.parse(content) as Manifest;
+    return await readManifestStrict();
   } catch {
     return null;
   }
+}
+
+/**
+ * Like {@link getManifest}, but only an absent manifest reads as `null`: a
+ * manifest that exists yet can't be read or isn't valid JSON throws. For
+ * callers that must tell "not installed" apart from "installed but broken"
+ * — `sequant://install` (#1195 AC-2).
+ */
+export async function readManifestStrict(): Promise<Manifest | null> {
+  if (!(await fileExists(MANIFEST_PATH))) {
+    return null;
+  }
+  const content = await readFile(MANIFEST_PATH);
+  return JSON.parse(content) as Manifest;
 }
 
 export async function createManifest(

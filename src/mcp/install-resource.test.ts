@@ -130,6 +130,58 @@ describe("#988 AC-3: sequant://install", () => {
       await close();
     }
   });
+
+  // The real provider `serve` wires in, not a synthetic thrower: the lenient
+  // getManifest() used to swallow these into `null`, so the resource read
+  // "not installed" for a manifest that exists but is broken.
+  describe("AC-2 through the real getSkillsInstallStatus provider", () => {
+    const manifestPath = () => path.join(root, ".sequant-manifest.json");
+
+    afterAll(() => {
+      fs.rmSync(manifestPath(), { force: true });
+    });
+
+    async function readReal() {
+      const { getSkillsInstallStatus } =
+        await import("../commands/version-preflight.js");
+      const { client, close } = await connect({
+        install: () => getSkillsInstallStatus(),
+      });
+      try {
+        const result = await client.readResource({ uri: "sequant://install" });
+        return JSON.parse(result.contents[0].text as string);
+      } finally {
+        await close();
+      }
+    }
+
+    it("reports a corrupt manifest as { error }, not { installed: false }", async () => {
+      fs.writeFileSync(manifestPath(), '{"version": "2.0.0", "stack":');
+      const body = await readReal();
+      expect(body).not.toHaveProperty("installed");
+      expect(body.error).toEqual(expect.any(String));
+    });
+
+    it.skipIf(process.getuid?.() === 0)(
+      "reports an unreadable manifest as { error }, not { installed: false }",
+      async () => {
+        fs.writeFileSync(manifestPath(), "{}");
+        fs.chmodSync(manifestPath(), 0);
+        try {
+          const body = await readReal();
+          expect(body).not.toHaveProperty("installed");
+          expect(body.error).toEqual(expect.any(String));
+        } finally {
+          fs.chmodSync(manifestPath(), 0o644);
+        }
+      },
+    );
+
+    it("still reports an absent manifest as { installed: false }", async () => {
+      fs.rmSync(manifestPath(), { force: true });
+      expect(await readReal()).toEqual({ installed: false });
+    });
+  });
 });
 
 describe("#988 AC-3: sequant://config stays the settings file, verbatim", () => {

@@ -56,11 +56,10 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
 
   // Install status is read-only and reported, never acted on (#988): a
   // server start used to trigger the CLI's auto-sync and rewrite the project.
-  // The check must never prevent the server from starting. The startup
-  // warning below is a one-shot snapshot; the resource itself (#1195) gets a
-  // provider that recomputes on every read, so `.catch` is deliberately
-  // absent here — a thrown/rejected read must reach the resource's own
-  // try/catch instead of collapsing to `null`.
+  // The check must never prevent the server from starting, so the one-shot
+  // snapshot for the startup warning swallows errors. The resource (#1195)
+  // gets an uncaught provider that recomputes on every read, so a read error
+  // reaches the resource's own try/catch and surfaces as `{ error }`.
   const install: SkillsInstallStatus | null =
     await getSkillsInstallStatus().catch(() => null);
 
