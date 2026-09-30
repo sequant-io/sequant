@@ -1,0 +1,22 @@
+Good — 4 tests fail as expected when the AC-2 fix is removed. Restore now.
+Restored. Now AC-3 mutation:
+Mutation confirmed for AC-3 as well. Restore.
+All three AC gates are mutation-verified. Now let's run the full build/lint/targeted tests once more, then update the CHANGELOG and write the ADR (spec requires one since a rejected alternative was named).
+Now let's check the ADR directory structure and existing ADRs for the format.
+Now the CHANGELOG entry.
+Now let's run the full targeted test suite once more (the foreground, timed, final check per skill instructions) plus build/lint.
+All pass. Now stage and commit the real changes, then create the PR.
+Now let's verify git log and push.
+Now create the PR with the mutation markers and AC verification.
+PR #1238 created and verified.
+
+### Pre-PR Confidence Check
+- **Weakest part:** The orchestrator wiring for AC-2 (`isPhaseInProgress` via a mutable `shutdownOrchestratorRef` box) is only exercised end-to-end through the mutation-verified unit tests in `worktree-manager.test.ts`; there's no full-`sequant run` integration test that a phase-in-progress worktree actually survives a real SIGTERM.
+- **Coverage gaps:** No test drives the exact original bug scenario (a 5s+ `git worktree remove` racing a real SIGKILL) — that's inherently timing-dependent and not practical to unit test; AC-1/AC-2/AC-3 are each covered at the unit level instead, which is what the issue's own Evidence lines specified.
+
+### Summary
+- **AC-1** (finalize-before-worktree-removal ordering): implemented via a `phase` field on `CleanupTask` in `src/lib/shutdown.ts`.
+- **AC-2** (preserve mid-flight worktrees): implemented in `src/lib/workflow/worktree-manager.ts` (`hasCommitsAheadOfBase`, extended `shouldPreserveWorktree`), wired from `run-orchestrator.ts` via `isPhaseInProgress`.
+- **AC-3** (SIGKILL grace ≥ force-exit timeout): implemented in `src/mcp/tools/run.ts`, deriving `SIGKILL_GRACE_MS` from the new exported `DEFAULT_FORCE_EXIT_TIMEOUT_MS`.
+
+All three ACs are mutation-verified (markers in the PR body), build/lint/targeted tests (161 tests) pass, CHANGELOG and ADR-0003 added. PR: https://github.com/sequant-io/sequant/pull/1238

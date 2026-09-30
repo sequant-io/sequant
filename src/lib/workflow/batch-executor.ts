@@ -2361,6 +2361,13 @@ export async function runIssueWithLogging(
     // #749: surface a non-A+ qa verdict (e.g. AC_MET_BUT_NOT_A_PLUS) in the PR
     // body so a reviewer sees why the run broke to PR rather than reaching A+.
     const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
+    // #1223 AC-2: surface exec's own `## Summary` in the PR body instead of
+    // the placeholder text.
+    // The latest exec pass: a quality-loop iteration re-runs exec, and the
+    // first pass's summary describes code the loop has since changed.
+    const execOutput = [...phaseResults]
+      .reverse()
+      .find((p) => p.phase === "exec")?.output;
     const prResult = createPR(
       worktreePath,
       issueNumber,
@@ -2377,6 +2384,7 @@ export async function runIssueWithLogging(
       // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
       config.prIssueLink,
       config.prNoCloseLabel,
+      { execOutput },
     );
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;
