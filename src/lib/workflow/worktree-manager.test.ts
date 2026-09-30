@@ -11,6 +11,7 @@ import {
   rebaseBeforePR,
   installWorktreeDeps,
   buildAutomatedPRBody,
+  buildPRTitle,
   resolvePrLinkMode,
   resolveWorktreeRoot,
   shouldPreserveWorktree,
@@ -489,8 +490,66 @@ describe("#1222 AC-2: preserve a mid-flight worktree on signal shutdown", () => 
   });
 });
 
+describe("#1223 buildPRTitle: conventional-commit prefix reuse", () => {
+  it("reuses the title's own type and replaces the scope with #N", () => {
+    expect(buildPRTitle("feat(adopt): x", 1209)).toBe("feat(#1209): x");
+  });
+
+  it("maps a `bug(scope):` title to fix without doubling it (this repo's #1232–#1234 shape)", () => {
+    expect(
+      buildPRTitle(
+        "bug(state): a successful spec-only run marks the issue ready_for_merge",
+        1233,
+        ["bug"],
+      ),
+    ).toBe(
+      "fix(#1233): a successful spec-only run marks the issue ready_for_merge",
+    );
+  });
+
+  it("prefers the title's type over the label-derived prefix", () => {
+    expect(buildPRTitle("fix(run): y", 932, ["enhancement"])).toBe(
+      "fix(#932): y",
+    );
+  });
+
+  it("does not double the prefix", () => {
+    const title = buildPRTitle("feat(adopt): x", 1209);
+    expect(title).not.toContain("feat(#1209): feat(adopt)");
+  });
+
+  it("falls back to label-derived fix for a bug-labeled title with no prefix", () => {
+    expect(buildPRTitle("crash on startup", 932, ["bug"])).toBe(
+      "fix(#932): crash on startup",
+    );
+  });
+
+  it("falls back to label-derived feat with no bug label and no prefix", () => {
+    expect(buildPRTitle("add dark mode", 42, ["enhancement"])).toBe(
+      "feat(#42): add dark mode",
+    );
+  });
+
+  it("does not mistake a mid-title colon for a conventional prefix", () => {
+    expect(buildPRTitle("Docs: foo", 42)).toBe("feat(#42): Docs: foo");
+  });
+
+  // The `!` is kept: it's valid conventional-commit form (this repo's
+  // commit validator accepts `(!)?`), and dropping it would hide a breaking
+  // change in the squash commit's title.
+  it("keeps a scope-less breaking-change marker", () => {
+    expect(buildPRTitle("feat!: drop legacy flag", 55)).toBe(
+      "feat(#55)!: drop legacy flag",
+    );
+  });
+
+  it("keeps a breaking-change marker with a scope", () => {
+    expect(buildPRTitle("fix(run)!: y", 932)).toBe("fix(#932)!: y");
+  });
+});
+
 // #1234: sequant run worktrees record the exact ref they were cut from, and
-// the pre-PR rebase uses a recorded local base instead of fetching
+// the pre-PR rebase falls back to a local-only base instead of failing on
 // origin/<base>. Child process for the same reason as #1199 above.
 describe("#1234 ensureWorktree records sequantBaseRef", () => {
   let root: string;
