@@ -19,6 +19,7 @@ import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
   readRecordedBaseRef,
+  readRecordedBaseRefAtHead,
   recordWorktreeBaseRef,
   resolveBaseRef,
 } from "./phase-executor.js";
@@ -1625,16 +1626,7 @@ export function rebaseBeforePR(
   // is no `origin/<base>` to fetch, and fetching one only printed a failure.
   // Only when the recorded ref IS the caller's `baseBranch`: a chain's final
   // link recorded its predecessor, but is rebased onto the run's base here.
-  const currentBranch = spawnSync(
-    "git",
-    ["-C", worktreePath, "rev-parse", "--abbrev-ref", "HEAD"],
-    { stdio: "pipe" },
-  )
-    .stdout?.toString()
-    .trim();
-  const recordedBase = currentBranch
-    ? readRecordedBaseRef(worktreePath, currentBranch)
-    : undefined;
+  const recordedBase = readRecordedBaseRefAtHead(worktreePath);
   const localBase =
     recordedBase === baseBranch && !recordedBase.startsWith("origin/")
       ? recordedBase

@@ -1,8 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// #1234: these tests queue execFileSync results in call order. The exact
+// base-ref lookup (`branch.<b>.sequantBaseRef`) reads as unset here so the
+// queued sequences stay as written; the recorded case is covered with real
+// git in phase-executor.integration.test.ts.
+const { innerExecFileSync } = vi.hoisted(() => ({
+  innerExecFileSync: vi.fn(),
+}));
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
-  execFileSync: vi.fn(),
+  execFileSync: (...args: unknown[]) => {
+    const argv = args[1];
+    if (
+      Array.isArray(argv) &&
+      argv.some((a) => typeof a === "string" && a.endsWith(".sequantBaseRef"))
+    ) {
+      throw new Error("key unset");
+    }
+    return innerExecFileSync(...args);
+  },
 }));
 
 import { readFileSync } from "node:fs";
@@ -50,7 +66,9 @@ vi.mock("../agents-md.js", () => ({
 import { readAgentsMd } from "../agents-md.js";
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
 const mockExecSync = vi.mocked(execSync);
-const mockExecFileSync = vi.mocked(execFileSync);
+const mockExecFileSync = innerExecFileSync as unknown as ReturnType<
+  typeof vi.mocked<typeof execFileSync>
+>;
 
 describe("parseQaVerdict", () => {
   const verdicts = [

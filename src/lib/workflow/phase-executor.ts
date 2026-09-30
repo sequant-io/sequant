@@ -877,6 +877,28 @@ export function readRecordedBaseRef(
 }
 
 /**
+ * {@link readRecordedBaseRef} for the branch checked out in `cwd`;
+ * `undefined` on detached HEAD or any git error (#1234).
+ *
+ * @internal Exported for testing only.
+ */
+export function readRecordedBaseRefAtHead(cwd: string): string | undefined {
+  let branch: string;
+  try {
+    branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      stdio: "pipe",
+    })
+      .toString()
+      .trim();
+  } catch {
+    return undefined;
+  }
+  if (!branch || branch === "HEAD" || branch.includes("\n")) return undefined;
+  return readRecordedBaseRef(cwd, branch);
+}
+
+/**
  * Resolve the base ref the zero-diff guard should compare against for
  * this worktree.
  *

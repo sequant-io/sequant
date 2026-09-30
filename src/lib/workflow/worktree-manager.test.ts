@@ -488,3 +488,100 @@ describe("#1222 AC-2: preserve a mid-flight worktree on signal shutdown", () => 
     expect(remaining).toContain(wt);
   });
 });
+
+// #1234: sequant run worktrees record the exact ref they were cut from, and
+// the pre-PR rebase uses a recorded local base instead of fetching
+// origin/<base>. Child process for the same reason as #1199 above.
+describe("#1234 ensureWorktree records sequantBaseRef", () => {
+  let root: string;
+  let clone: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1234-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    git(clone, "config", "commit.gpgsign", "false");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "a.txt", "init");
+    git(clone, "push", "-q", "-u", "origin", "main");
+    // A pushed feature branch and an unpushed local one, each ahead of main.
+    git(clone, "checkout", "-q", "-b", "remote-base");
+    commitFile(clone, "r.txt", "remote base");
+    git(clone, "push", "-q", "-u", "origin", "remote-base");
+    git(clone, "checkout", "-q", "-b", "local-base", "main");
+    commitFile(clone, "l.txt", "local base");
+    git(clone, "checkout", "-q", "main");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const runScript = (body: string): string => {
+    const script = join(root, `run-${Math.random().toString(36).slice(2)}.mts`);
+    const modPath = join(__dirname, "worktree-manager.ts");
+    writeFileSync(
+      script,
+      `import { ensureWorktree, rebaseBeforePR } from ${JSON.stringify(modPath)};\n${body}\n`,
+    );
+    const env = { ...process.env };
+    delete env.SEQUANT_WORKTREE_ROOT;
+    return execFileSync("npx", ["tsx", script], {
+      cwd: clone,
+      env,
+      encoding: "utf8",
+    });
+  };
+
+  const ensure = (issue: number, base: string | undefined): string => {
+    const out = runScript(
+      `const info = await ensureWorktree(${issue}, "base ref", false, undefined, ${JSON.stringify(base)}, false, ".trees");
+process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
+    );
+    const line = out.split("\n").find((l) => l.startsWith("RESULT="));
+    return JSON.parse(line!.slice("RESULT=".length)).path as string;
+  };
+
+  const recorded = (worktree: string): string =>
+    git(
+      worktree,
+      "config",
+      "--get",
+      `branch.${git(worktree, "branch", "--show-current")}.sequantBaseRef`,
+    );
+
+  it("1234 records origin/main when no --base is given", () => {
+    expect(recorded(ensure(1, undefined))).toBe("origin/main");
+  }, 60_000);
+
+  it("1234 records origin/<x> for a remote-style --base", () => {
+    expect(recorded(ensure(2, "origin/remote-base"))).toBe(
+      "origin/remote-base",
+    );
+  }, 60_000);
+
+  it("1234 records a local --base branch as-is", () => {
+    expect(recorded(ensure(3, "local-base"))).toBe("local-base");
+  }, 60_000);
+
+  it("1234 pre-PR rebase onto a recorded local base does not fetch origin/<base>", () => {
+    const wt = ensure(4, "local-base");
+    const out = runScript(
+      `rebaseBeforePR(${JSON.stringify(wt)}, 4, undefined, true, "local-base");`,
+    );
+    expect(out).not.toContain("Could not fetch");
+    expect(out).toContain("onto local-base");
+  }, 60_000);
+
+  it("1234 pre-PR rebase still targets origin/<base> when the recorded ref is a different branch (chain final link)", () => {
+    const wt = ensure(5, "local-base");
+    const out = runScript(
+      `rebaseBeforePR(${JSON.stringify(wt)}, 5, undefined, true, "main");`,
+    );
+    expect(out).toContain("onto origin/main");
+  }, 60_000);
+});
