@@ -2264,11 +2264,14 @@ export async function runIssueWithLogging(
   // When qa ran and passed, a completed status was already written above —
   // `ready_for_merge`, or `waiting_for_human_merge` when #817's `--ready-gate`
   // owned the terminal status (#837) — so a re-run reads this link as a
-  // completed prefix and does NOT redo it. A run without qa records
-  // `in_progress` instead (#1233), which a re-run does not skip. Its uncommitted work is therefore absent from the branch tip,
-  // which `computeChainResumePlan` detects (dirty worktree → fail fast) rather
-  // than wrong-basing the next link. The message states that outcome exactly:
-  // the work must be committed, or --force.
+  // completed prefix and does NOT redo it. Its uncommitted work is therefore
+  // absent from the branch tip, which `computeChainResumePlan` detects (dirty
+  // worktree → fail fast) rather than wrong-basing the next link: the work must
+  // be committed, or --force.
+  //
+  // A run without qa records `in_progress` instead (#1233). That link is not a
+  // completed prefix, so a re-run doesn't skip it. The warning below names
+  // whichever of the two outcomes applies.
   //
   // A gate that halted (`blocked`) is NOT a completed prefix, so that link is
   // re-executed on resume rather than skipped — see COMPLETED_STATUSES in
