@@ -10,7 +10,15 @@
  * Undefined for drivers that don't populate modelUsage (aider, subprocess).
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import type { Mock } from "vitest";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -23,6 +31,10 @@ vi.mock("./agents-md.js", () => ({
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { executePhaseWithRetry } from "./phase-executor.js";
+import {
+  createExecTempRepo,
+  type ExecTempRepo,
+} from "./__fixtures__/exec-temp-repo.fixture.js";
 import type { ExecutionConfig } from "./types.js";
 
 const queryMock = query as unknown as Mock;
@@ -53,6 +65,29 @@ function baseConfig(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
     retry: false,
     ...overrides,
   };
+}
+
+// #1232: never run the exec guard against the developer's checkout.
+let execRepo: ExecTempRepo;
+beforeAll(() => {
+  execRepo = createExecTempRepo();
+});
+afterAll(() => {
+  execRepo.cleanup();
+});
+function runInExecRepo(
+  issueNumber: number,
+  phase: Parameters<typeof executePhaseWithRetry>[1],
+  config: Parameters<typeof executePhaseWithRetry>[2],
+  resumeHandle?: Parameters<typeof executePhaseWithRetry>[3],
+) {
+  return executePhaseWithRetry(
+    issueNumber,
+    phase,
+    config,
+    resumeHandle,
+    execRepo.path,
+  );
 }
 
 describe("#975 AC-4: phase-executor resolvedModel extraction from modelUsage", () => {
@@ -91,7 +126,7 @@ describe("#975 AC-4: phase-executor resolvedModel extraction from modelUsage", (
       ]),
     );
 
-    const result = await executePhaseWithRetry(975, "exec", baseConfig());
+    const result = await runInExecRepo(975, "exec", baseConfig());
 
     expect(result.resolvedModel).toBe("claude-sonnet-5");
   });
@@ -128,7 +163,7 @@ describe("#975 AC-4: phase-executor resolvedModel extraction from modelUsage", (
       ]),
     );
 
-    const result = await executePhaseWithRetry(
+    const result = await runInExecRepo(
       975,
       "exec",
       baseConfig({ phasePolicies: { exec: { model: "opus" } } }),
@@ -149,8 +184,24 @@ describe("#975 AC-4: phase-executor resolvedModel extraction from modelUsage", (
       ]),
     );
 
-    const result = await executePhaseWithRetry(975, "exec", baseConfig());
+    const result = await runInExecRepo(975, "exec", baseConfig());
 
     expect(result.resolvedModel).toBeUndefined();
+  });
+
+  it("1232 dispatches exec with the temp repo as cwd", async () => {
+    queryMock.mockReturnValue(
+      mockStream([
+        { type: "system", subtype: "init", session_id: "sess-1232" },
+        { type: "result", subtype: "success" },
+      ]),
+    );
+
+    await runInExecRepo(975, "exec", baseConfig());
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as
+      Record<string, unknown> | undefined;
+    expect(options?.cwd).toBe(execRepo.path);
+    expect(options?.cwd).not.toBe(process.cwd());
   });
 });
