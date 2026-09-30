@@ -337,3 +337,5 @@
 { "command": "gh issue comment --help 2>&1 | grep -i \"edit-last\\|--body\"", "tool": "Bash", "exit": 0, "block": null, "source": "transcript" }
 { "command": "cd /Users/user/Projects/<project>/feature/958-fix-fullsolve-phase-5-3-auto-merges-the-pr-the\nnpm run lint:skill-sync 2>&1 | tail -40\necho \"===skill-calls===\"\nnpm run lint:skill-calls 2>&1 | tail -40\necho \"===skill-gates===\"\nnpx tsx scripts/lint-skill-gates.ts 2>&1 | tail -40", "tool": "Bash", "exit": 0, "block": null, "source": "transcript" }
 { "command": "echo \"=== PWD ===\" && pwd && echo \"=== ENV ===\" && env | grep -i sequant || echo \"(no SEQUANT_* env)\"", "tool": "Bash", "exit": 2, "block": "Environment dump", "source": "hook-log" }
+{ "command": "git -C /Users/user/Projects/missing reset --hard origin/main", "tool": "Bash", "exit": 2, "block": "git reset --hard would lose local work:", "source": "#1228", "state": "dirty" }
+{ "command": "git -C /Users/user/Projects/missing reset --hard origin/main", "tool": "Bash", "exit": 0, "block": null, "source": "#1228", "state": "clean" }
