@@ -1610,6 +1610,56 @@ describe("emitProgressLine (#624 Item 3): iteration field propagation", () => {
   });
 });
 
+describe("#1223: the PR body gets the latest exec pass's output", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 1240,
+      prUrl: "https://example.test/pr/1240",
+    });
+  });
+
+  it("hands createPR the second exec pass after a quality-loop iteration, not the first", async () => {
+    let execPass = 0;
+    let qaPass = 0;
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "exec") {
+        execPass++;
+        return {
+          ...successResult("exec"),
+          output: `## Summary\nexec pass ${execPass}`,
+        };
+      }
+      if (phase === "qa") {
+        qaPass++;
+        return {
+          phase: "qa",
+          success: qaPass > 1,
+          durationSeconds: 10,
+          verdict: qaPass > 1 ? "READY_FOR_MERGE" : "AC_NOT_MET",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1223,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1223", branch: "feature/1223" },
+    });
+
+    expect(execPass).toBeGreaterThan(1);
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    const opts = mockCreatePR.mock.calls[0].at(-1) as { execOutput?: string };
+    expect(opts.execOutput).toBe(`## Summary\nexec pass ${execPass}`);
+  });
+});
+
 describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
