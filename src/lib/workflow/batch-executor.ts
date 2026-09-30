@@ -2261,10 +2261,11 @@ export async function runIssueWithLogging(
   // #760: chain resume rebases the next link onto this checkpoint, so a failure
   // here is not silent — warn prominently and record it on the result (AC-4).
   //
-  // Note a completed status was already written above — `ready_for_merge`, or
-  // `waiting_for_human_merge` when #817's `--ready-gate` owned the terminal
-  // status (#837) — so a re-run reads this link as a completed prefix and does
-  // NOT redo it. Its uncommitted work is therefore absent from the branch tip,
+  // When qa ran and passed, a completed status was already written above —
+  // `ready_for_merge`, or `waiting_for_human_merge` when #817's `--ready-gate`
+  // owned the terminal status (#837) — so a re-run reads this link as a
+  // completed prefix and does NOT redo it. A run without qa records
+  // `in_progress` instead (#1233), which a re-run does not skip. Its uncommitted work is therefore absent from the branch tip,
   // which `computeChainResumePlan` detects (dirty worktree → fail fast) rather
   // than wrong-basing the next link. The message states that outcome exactly:
   // the work must be committed, or --force.
@@ -2288,8 +2289,8 @@ export async function runIssueWithLogging(
       const reRunConsequence = isCompletedIssueStatus(finalStatus)
         ? `so a re-run will skip it and refuse to resume the chain here until the ` +
           `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`
-        : `so a re-run resumes the chain at this link; commit the work in ${worktreePath} ` +
-          `first so the next link builds on it.`;
+        : `so a re-run won't skip it (the chain resumes at its first unfinished link); ` +
+          `commit the work in ${worktreePath} first so the next link builds on it.`;
       log(
         chalk.yellow(
           `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
