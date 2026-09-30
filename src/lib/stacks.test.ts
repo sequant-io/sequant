@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -1246,13 +1246,13 @@ describe("resolvePackageManagerConfig", () => {
     );
   });
 
-  it("leaves every non-yarn, non-pip package manager untouched", () => {
+  it("leaves every non-yarn, non-pip, non-uv package manager untouched", () => {
     writeFileSync(join(root, "yarn.lock"), "# yarn lockfile v1\n");
 
-    // pip gets its own dedicated cases below — #1196 gives it a
-    // directory-dependent override too, so it no longer rides in this loop
-    // asserting untouched-by-identity.
-    for (const pm of ["npm", "pnpm", "bun", "poetry", "uv"] as const) {
+    // pip and uv get their own dedicated cases below — #1196/#1217 give
+    // them a directory-dependent override too, so they no longer ride in
+    // this loop asserting untouched-by-identity.
+    for (const pm of ["npm", "pnpm", "bun", "poetry"] as const) {
       // Same object, not merely equal: nothing is resolved for these, so a
       // future edit that starts copying configs unconditionally is visible.
       expect(resolvePackageManagerConfig(pm, root)).toBe(PM_CONFIG[pm]);
@@ -1315,6 +1315,92 @@ describe("resolvePackageManagerConfig", () => {
       ] as const) {
         expect(config[field]).toBe(PM_CONFIG.pip[field]);
       }
+    });
+  });
+
+  describe("uv (#1217 AC-1, AC-2)", () => {
+    it("uses `uv sync --frozen` when uv.lock exists", () => {
+      writeFileSync(join(root, "uv.lock"), "");
+
+      expect(resolvePackageManagerConfig("uv", root).ciInstall).toBe(
+        "uv sync --frozen",
+      );
+    });
+
+    it("prefers uv.lock over a present requirements.txt", () => {
+      writeFileSync(join(root, "uv.lock"), "");
+      writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+      expect(resolvePackageManagerConfig("uv", root).ciInstall).toBe(
+        "uv sync --frozen",
+      );
+    });
+
+    it("names the requirements file when no uv.lock exists", () => {
+      writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+      expect(resolvePackageManagerConfig("uv", root).ciInstall).toBe(
+        "uv pip install -q -r requirements.txt",
+      );
+    });
+
+    it("falls back to the first requirements*.txt match alphabetically", () => {
+      writeFileSync(join(root, "requirements-dev.txt"), "pytest\n");
+
+      expect(resolvePackageManagerConfig("uv", root).ciInstall).toBe(
+        "uv pip install -q -r requirements-dev.txt",
+      );
+    });
+
+    it("never runs a bare `uv pip install -q` — skips when nothing matches", () => {
+      writeFileSync(join(root, "pyproject.toml"), "[project]\nname = 'x'\n");
+
+      const config = resolvePackageManagerConfig("uv", root);
+      expect(config.ciInstall).toBe(CI_INSTALL_SKIP);
+      expect(config.ciInstall).not.toBe(PM_CONFIG.uv.ciInstall);
+    });
+
+    it("skips when the directory has no manifest at all", () => {
+      expect(resolvePackageManagerConfig("uv", root).ciInstall).toBe(
+        CI_INSTALL_SKIP,
+      );
+    });
+
+    it("leaves every other uv field untouched", () => {
+      writeFileSync(join(root, "uv.lock"), "");
+      const config = resolvePackageManagerConfig("uv", root);
+
+      for (const field of [
+        "run",
+        "exec",
+        "install",
+        "installSilent",
+        "addPkg",
+        "removePkg",
+        "updatePkg",
+      ] as const) {
+        expect(config[field]).toBe(PM_CONFIG.uv[field]);
+      }
+    });
+  });
+
+  describe("CI_INSTALL_SKIP doc comment (#1217 AC-3)", () => {
+    it("no longer says pip is the only manager that resolves to it", () => {
+      const source = readFileSync(
+        new URL("./stacks.ts", import.meta.url),
+        "utf-8",
+      );
+      const marker = "export const CI_INSTALL_SKIP";
+      const markerIndex = source.indexOf(marker);
+      expect(markerIndex).toBeGreaterThan(-1);
+      const docStart = source.lastIndexOf("/**", markerIndex);
+      const docEnd = source.indexOf("*/", docStart);
+      expect(docStart).toBeGreaterThan(-1);
+      expect(docEnd).toBeGreaterThan(docStart);
+      const doc = source.slice(docStart, docEnd);
+
+      expect(doc).toMatch(/\buv\b/);
+      expect(doc).not.toMatch(/Currently only pip resolves/);
     });
   });
 
