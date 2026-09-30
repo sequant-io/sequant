@@ -2734,7 +2734,9 @@ describe.each(HOOK_COPIES)(
 
     it("warns for a commit in the main checkout", () => {
       const log = commitFrom(linked, main, 'git commit -m "feat(#1199): x"');
-      expect(log).toMatch(/WORKTREE_WARNING: Committing outside feature worktree/);
+      expect(log).toMatch(
+        /WORKTREE_WARNING: Committing outside feature worktree/,
+      );
     });
   },
 );

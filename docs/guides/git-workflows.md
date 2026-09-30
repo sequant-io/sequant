@@ -38,6 +38,29 @@ By convention, worktrees live in a sibling directory:
 
 This keeps worktrees separate from the main repo while allowing easy access.
 
+To put them somewhere else, set `run.worktreeRoot` or the `SEQUANT_WORKTREE_ROOT`
+environment variable. Both `sequant run` and `scripts/new-feature.sh` honour it:
+
+```json
+// .sequant/settings.json
+{
+  "run": {
+    "worktreeRoot": "../trees"
+  }
+}
+```
+
+The root is resolved in this order (highest priority first):
+
+1. **Environment**: `SEQUANT_WORKTREE_ROOT` (a blank value counts as unset)
+2. **Project config**: `.sequant/settings.json` → `run.worktreeRoot`
+3. **Default**: `../worktrees`, next to the main repo
+
+A value is either absolute or relative to the main repo root. `~` is not
+expanded. Worktrees are recognised by asking git (`--git-dir` differs from
+`--git-common-dir`), not by their path, so the commit hook and `/qa`'s build
+comparison work under any root.
+
 ### Resolving a Worktree by Issue
 
 Skills (`/fullsolve`, `/exec`, `/qa`, `/loop`, `/testgen`, `/merger`) resolve
