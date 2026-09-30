@@ -679,8 +679,9 @@ export function installWorktreeDeps(
   const pmConfig = resolvePackageManagerConfig(pm, worktreePath);
 
   // pip's ciInstall resolves to CI_INSTALL_SKIP when no requirements file
-  // exists (#1196 AC-2) — a bare `pip install -q` names no package and would
-  // fail as a no-op.
+  // exists (#1196 AC-2), and uv's does when there is neither a uv.lock nor a
+  // requirements file (#1217) — a bare `pip install -q` / `uv pip install -q`
+  // names no package and would fail as a no-op.
   if (pmConfig.ciInstall === CI_INSTALL_SKIP) {
     console.log(
       chalk.gray(
@@ -1377,10 +1378,10 @@ export function reinstallIfLockfileChanged(
   );
 
   // Defensive, not reachable in practice today: LOCKFILES above is JS-only,
-  // so `lockfileChanged` can only fire for a JS lockfile, never for a pip
-  // tree. Kept in step with installWorktreeDeps / combined-branch-test.ts
-  // anyway, in case a declared `packageManager` of "pip" ever reaches here
-  // (#1196).
+  // so `lockfileChanged` can only fire for a JS lockfile, never for a pip or
+  // uv tree. Kept in step with installWorktreeDeps / combined-branch-test.ts
+  // anyway, in case a declared `packageManager` of "pip" or "uv" ever reaches
+  // here (#1196, #1217).
   if (pmConfig.ciInstall === CI_INSTALL_SKIP) {
     console.log(
       chalk.gray(
