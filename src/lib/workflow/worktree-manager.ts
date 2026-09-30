@@ -723,9 +723,31 @@ export function installWorktreeDeps(
 }
 
 /**
+ * Resolve the directory issue worktrees are created under (#1199).
+ *
+ * Precedence: `SEQUANT_WORKTREE_ROOT` env var → `run.worktreeRoot` setting →
+ * `<parent of repo>/worktrees`. A relative value resolves against the main
+ * repo root, not the cwd. An empty or whitespace-only value counts as unset.
+ * `scripts/new-feature.sh` applies the same precedence on its own.
+ */
+export function resolveWorktreeRoot(
+  gitRoot: string,
+  configured?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const fromEnv = env.SEQUANT_WORKTREE_ROOT?.trim();
+  const value = fromEnv || configured?.trim();
+  if (!value) {
+    return path.join(path.dirname(gitRoot), "worktrees");
+  }
+  return path.resolve(gitRoot, value);
+}
+
+/**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
+ * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
  */
 export async function ensureWorktree(
   issueNumber: number,
@@ -734,6 +756,7 @@ export async function ensureWorktree(
   packageManager?: string,
   baseBranch?: string,
   chainMode?: boolean,
+  worktreeRoot?: string,
 ): Promise<WorktreeInfo | null> {
   const gitRoot = getGitRoot();
   if (!gitRoot) {
@@ -743,7 +766,7 @@ export async function ensureWorktree(
 
   const slug = slugify(title);
   const branch = `feature/${issueNumber}-${slug}`;
-  const worktreesDir = path.join(path.dirname(gitRoot), "worktrees");
+  const worktreesDir = resolveWorktreeRoot(gitRoot, worktreeRoot);
   const worktreePath = path.join(worktreesDir, branch);
 
   // Check if worktree already exists
@@ -1051,12 +1074,14 @@ export async function ensureWorktree(
 /**
  * Ensure worktrees exist for all issues before execution
  * @param baseBranch - Optional base branch for worktree creation (default: main)
+ * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
  */
 export async function ensureWorktrees(
   issues: Array<{ number: number; title: string }>,
   verbose: boolean,
   packageManager?: string,
   baseBranch?: string,
+  worktreeRoot?: string,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
@@ -1071,6 +1096,7 @@ export async function ensureWorktrees(
       packageManager,
       baseBranch,
       false, // Non-chain mode: don't rebase existing branches
+      worktreeRoot,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -1095,12 +1121,14 @@ export async function ensureWorktrees(
  * Ensure worktrees exist for all issues in chain mode
  * Each issue branches from the previous issue's branch
  * @param baseBranch - Optional starting base branch for the chain (default: main)
+ * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
  */
 export async function ensureWorktreesChain(
   issues: Array<{ number: number; title: string }>,
   verbose: boolean,
   packageManager?: string,
   baseBranch?: string,
+  worktreeRoot?: string,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
@@ -1120,6 +1148,7 @@ export async function ensureWorktreesChain(
       packageManager,
       previousBranch, // Chain from previous branch (or base branch for first issue)
       true, // Chain mode: rebase existing branches onto previous chain link
+      worktreeRoot,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
