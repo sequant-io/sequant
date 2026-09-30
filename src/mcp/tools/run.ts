@@ -22,6 +22,7 @@ import { formatResetTime } from "../../lib/errors.js";
 import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
 import type { RunLog, GapFinding } from "../../lib/workflow/run-log-schema.js";
 import { registerRun, unregisterRun } from "../run-registry.js";
+import { DEFAULT_FORCE_EXIT_TIMEOUT_MS } from "../../lib/shutdown.js";
 
 /** Maximum total response size in bytes (64 KB) */
 const MAX_RESPONSE_SIZE = 64 * 1024;
@@ -1036,7 +1037,16 @@ export function spawnAsync(
   });
 }
 
-const SIGKILL_GRACE_MS = 5000;
+/**
+ * #1222 AC-3: derived from `ShutdownManager`'s own force-exit timeout plus a
+ * buffer, rather than a standalone literal. A cleanup that respects its own
+ * `forceExitTimeout` and calls `process.exit()` right after it fires must not
+ * be cut off by this outer SIGKILL racing it — the previous flat `5000` was
+ * shorter than the 10000ms default `forceExitTimeout`, so SIGKILL routinely
+ * landed mid-cleanup (e.g. mid worktree-removal), before "Finalize run logs"
+ * ever ran.
+ */
+export const SIGKILL_GRACE_MS = DEFAULT_FORCE_EXIT_TIMEOUT_MS + 1000;
 
 function killProcessGroup(proc: ReturnType<typeof spawn>): void {
   let exited = false;

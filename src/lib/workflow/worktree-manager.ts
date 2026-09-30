@@ -17,6 +17,7 @@ import {
 } from "../stacks.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
+import { resolveBaseRef } from "./phase-executor.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
 import type { CacheMetrics } from "./run-log-schema.js";
@@ -397,21 +398,55 @@ export function isWorktreeDirty(worktreePath: string): boolean {
 }
 
 /**
+ * Whether a worktree's branch has commits not reachable from its base
+ * (#1222 AC-2) — real work a clean-but-mid-flight worktree could otherwise
+ * lose, e.g. #1198's 3 committed WIP commits on an exec-in-progress branch.
+ * Base resolution follows the `resolveBaseRef` pattern (#537): a git error
+ * (unresolvable base, detached HEAD, etc.) fails toward preserving — an
+ * unknown state is treated the same as #935 treats a `git status` failure.
+ */
+export function hasCommitsAheadOfBase(
+  worktreePath: string,
+  baseRef?: string,
+): boolean {
+  const base = baseRef ?? resolveBaseRef(worktreePath);
+  const result = spawnSync(
+    "git",
+    ["-C", worktreePath, "rev-list", "--count", `${base}..HEAD`],
+    { stdio: "pipe" },
+  );
+  if (result.status !== 0) return true;
+  const count = parseInt(result.stdout.toString().trim(), 10);
+  return !Number.isFinite(count) || count > 0;
+}
+
+/**
  * Whether a signal-driven shutdown cleanup should leave a worktree in place
- * rather than force-removing it (#935 D13).
+ * rather than force-removing it (#935 D13, #1222 AC-2).
  *
  * `abort` is non-null only for a signal-triggered shutdown (SIGINT/SIGTERM);
  * a `null` abort means a programmatic teardown, which always removes. A
- * dirty worktree holds uncommitted work that exists only on disk — the
- * branch survives removal, the untracked/unstaged changes do not — so it is
- * preserved. A clean worktree has nothing to lose and is still removed, so a
- * killed run doesn't leak worktrees.
+ * worktree is preserved when any of these hold:
+ * - it is dirty: uncommitted work exists only on disk, and removal destroys
+ *   it even though the branch survives (#935);
+ * - its issue has a phase actively running (`phaseInProgress`): the phase's
+ *   work may not be committed yet, so a clean snapshot right now proves
+ *   nothing about a moment later;
+ * - it has commits ahead of its base: real, committed work that a force
+ *   removal would strand with no worktree to recover it from (#1198).
+ *
+ * A worktree with none of these is still removed, so a killed run doesn't
+ * leak worktrees.
  */
 export function shouldPreserveWorktree(
   abort: AbortContext | null,
   worktreePath: string,
+  options?: { phaseInProgress?: boolean; baseRef?: string },
 ): boolean {
-  return abort !== null && isWorktreeDirty(worktreePath);
+  if (abort === null) return false;
+  if (isWorktreeDirty(worktreePath)) return true;
+  if (options?.phaseInProgress) return true;
+  return hasCommitsAheadOfBase(worktreePath, options?.baseRef);
 }
 
 /**
@@ -423,14 +458,23 @@ export function shouldPreserveWorktree(
  * @param log - Optional sink for a one-line outcome message: names the path
  *   when preserved (it still exists), the branch when removed (only the
  *   branch survives).
+ * @param phaseInProgress - Optional predicate, called lazily at shutdown
+ *   time (#1222 AC-2), reporting whether this issue's phase is still
+ *   running. Not a boolean snapshot: phase state changes over the run, and
+ *   this is only read once, when the signal arrives.
  */
 export async function cleanupWorktreeOnShutdown(
   issueNum: number,
   worktree: WorktreeInfo,
   abort: AbortContext | null,
   log?: (message: string) => void,
+  phaseInProgress?: () => boolean,
 ): Promise<void> {
-  if (shouldPreserveWorktree(abort, worktree.path)) {
+  if (
+    shouldPreserveWorktree(abort, worktree.path, {
+      phaseInProgress: phaseInProgress?.() ?? false,
+    })
+  ) {
     log?.(
       `Worktree for #${issueNum} preserved (uncommitted changes): ${worktree.path}`,
     );
@@ -453,9 +497,10 @@ export function registerWorktreeRemovalCleanup(
   issueNum: number,
   worktree: WorktreeInfo,
   log?: (message: string) => void,
+  phaseInProgress?: () => boolean,
 ): void {
   shutdown.registerCleanup(`Cleanup worktree for #${issueNum}`, (abort) =>
-    cleanupWorktreeOnShutdown(issueNum, worktree, abort, log),
+    cleanupWorktreeOnShutdown(issueNum, worktree, abort, log, phaseInProgress),
   );
 }
 

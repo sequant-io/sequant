@@ -46,6 +46,12 @@ function initRepo(root: string): void {
   writeFileSync(path.join(root, "README.md"), "# fixture\n");
   git(root, "add", "README.md");
   git(root, "commit", "--quiet", "-m", "init");
+  // #1222 AC-2's commits-ahead-of-base check resolves a base of
+  // `origin/main` by default. A self-referential remote gives that ref a
+  // real value without network access, so branches created from HEAD start
+  // with zero commits ahead of it — matching a real clone.
+  git(root, "remote", "add", "origin", root);
+  git(root, "fetch", "--quiet", "origin");
 }
 
 function listWorktreePaths(repo: string): string[] {

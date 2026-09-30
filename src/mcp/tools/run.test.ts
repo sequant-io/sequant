@@ -24,7 +24,9 @@ import {
   runToolInputSchema,
   PHASE_TIMEOUT,
   MAX_TOTAL_TIMEOUT,
+  SIGKILL_GRACE_MS,
 } from "./run.js";
+import { DEFAULT_FORCE_EXIT_TIMEOUT_MS } from "../../lib/shutdown.js";
 import type { ProgressEvent } from "./run.js";
 import { formatResetTime } from "../../lib/errors.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
@@ -1042,6 +1044,14 @@ describe("spawnAsync timeout reset (AC-4)", () => {
   it("should export PHASE_TIMEOUT and MAX_TOTAL_TIMEOUT constants", () => {
     expect(PHASE_TIMEOUT).toBe(1_800_000); // 30 minutes
     expect(MAX_TOTAL_TIMEOUT).toBe(7_200_000); // 2 hours
+  });
+
+  it("SIGKILL grace is at least as long as ShutdownManager's force-exit timeout (#1222 AC-3)", () => {
+    // A cleanup task that respects `forceExitTimeout` and exits right after
+    // it fires must not be cut off by this outer SIGKILL racing it.
+    expect(SIGKILL_GRACE_MS).toBeGreaterThanOrEqual(
+      DEFAULT_FORCE_EXIT_TIMEOUT_MS,
+    );
   });
 
   it("should kill process after timeout with no progress", async () => {
