@@ -10,7 +10,7 @@ import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
-  detectPackageManagerSync,
+  detectNodePackageManagerSync,
   resolvePackageManagerConfig,
 } from "./stacks.js";
 
@@ -410,11 +410,11 @@ export function getVersionWarning(
   const isLocalInstall = isLocal ?? isLocalNodeModulesInstall();
 
   if (isLocalInstall) {
-    const pm = detectPackageManagerSync();
+    const pm = detectNodePackageManagerSync();
     // Resolved, not read off PM_CONFIG: `updatePkg` is one of the fields whose
     // yarn spelling depends on the major (berry `yarn up` vs classic
     // `yarn upgrade`), and this string is a command we are telling the user to
-    // run. Both `detectPackageManagerSync` and the resolver read the cwd, which
+    // run. Both `detectNodePackageManagerSync` and the resolver read the cwd, which
     // is the project this local install belongs to (#871).
     const pmConfig = resolvePackageManagerConfig(pm, process.cwd());
     return `sequant ${latestVersion} is available (you have ${currentVersion})

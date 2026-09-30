@@ -33,7 +33,7 @@ import { getPhaseNames } from "../src/lib/workflow/phase-registry.js";
 import { EFFORT_LEVELS } from "../src/lib/settings.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 import {
-  detectPackageManagerSync,
+  detectNodePackageManagerSync,
   getPackageManagerCommands,
 } from "../src/lib/stacks.js";
 
@@ -164,7 +164,9 @@ if (!process.argv.includes("--quiet")) {
   if (installRoot && isHomeStrayInstall(installRoot)) {
     console.warn(chalk.yellow(buildHomeStrayWarning(installRoot)));
   } else if (isLocalNodeModulesInstall()) {
-    const pmCommands = getPackageManagerCommands(detectPackageManagerSync());
+    const pmCommands = getPackageManagerCommands(
+      detectNodePackageManagerSync(),
+    );
     console.warn(
       chalk.yellow(
         "!  Running sequant from local node_modules\n" +
@@ -760,7 +762,7 @@ program
   .action(async (options: Record<string, unknown>) => {
     const mod = await import("../src/commands/serve.js").catch(() => null);
     if (!mod) {
-      const pmCmds = getPackageManagerCommands(detectPackageManagerSync());
+      const pmCmds = getPackageManagerCommands(detectNodePackageManagerSync());
       console.error(
         chalk.red(
           "Error: MCP server requires @modelcontextprotocol/sdk\n" +

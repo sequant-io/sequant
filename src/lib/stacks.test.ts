@@ -10,6 +10,7 @@ import {
   STACKS,
   detectPackageManager,
   detectPackageManagerSync,
+  detectNodePackageManagerSync,
   detectYarnMajor,
   getPackageManagerCommands,
   resolvePackageManagerConfig,
@@ -756,6 +757,43 @@ describe("detectPackageManagerSync (#1231 AC-1)", () => {
 // detectPackageManager everywhere the async detector returns non-null. The
 // async detector is driven through the mocked `./fs.js`, the sync detector
 // through real files in a tmpdir, built from the same file list per fixture.
+// sequant itself is an npm package: hints that install, update or remove it
+// (bin/cli.ts, version-check.ts) must never print a Python command, even in a
+// Python-only directory that detectPackageManagerSync now reads as uv/pip.
+describe("detectNodePackageManagerSync — sequant's own package manager (#1231)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "sequant-pm-node-"));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("answers npm in a Python-only directory the project detector reads as uv", () => {
+    writeFileSync(join(root, "uv.lock"), "");
+    writeFileSync(join(root, "pyproject.toml"), "[project]\nname = 'x'\n");
+
+    expect(detectPackageManagerSync(root)).toBe("uv");
+    expect(detectNodePackageManagerSync(root)).toBe("npm");
+  });
+
+  it("answers npm for a requirements-only directory", () => {
+    writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+    expect(detectPackageManagerSync(root)).toBe("pip");
+    expect(detectNodePackageManagerSync(root)).toBe("npm");
+  });
+
+  it("still follows a JS lockfile", () => {
+    writeFileSync(join(root, "pnpm-lock.yaml"), "");
+    writeFileSync(join(root, "uv.lock"), "");
+
+    expect(detectNodePackageManagerSync(root)).toBe("pnpm");
+  });
+});
+
 describe("detectPackageManagerSync parity with detectPackageManager (#1231 AC-2)", () => {
   let root: string;
 

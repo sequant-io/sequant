@@ -11,7 +11,7 @@
  * Deliberately a separate file from `version-check.test.ts`: that file mocks the
  * `fs` module wholesale, which prevents `detectYarnMajor` from reading the
  * fixtures that decide the answer. Here `fs` is real and only `process.cwd` is
- * redirected, which is what both `detectPackageManagerSync()` and the resolver
+ * redirected, which is what both `detectNodePackageManagerSync()` and the resolver
  * read.
  */
 
@@ -26,7 +26,7 @@ describe("getVersionWarning — yarn major (#871)", () => {
 
   beforeEach(() => {
     project = mkdtempSync(join(tmpdir(), "version-check-yarn-"));
-    // Both detectPackageManagerSync() and resolvePackageManagerConfig read the
+    // Both detectNodePackageManagerSync() and resolvePackageManagerConfig read the
     // cwd; redirecting it points them at the fixture.
     vi.spyOn(process, "cwd").mockReturnValue(project);
   });

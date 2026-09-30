@@ -238,6 +238,28 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
   return null;
 }
 
+function detectNodeLockfile(root: string): PackageManager | null {
+  for (const { file, pm } of LOCKFILE_PRIORITY) {
+    if (existsSync(join(root, file))) {
+      return pm;
+    }
+  }
+  return null;
+}
+
+/**
+ * The package manager that installs sequant itself — JS lockfiles only, `npm`
+ * otherwise. For hints about sequant's own npm packages ("remove local
+ * sequant", "add @modelcontextprotocol/sdk", "update sequant"), where a
+ * Python manager found by {@link detectPackageManagerSync} would print a
+ * wrong command such as `uv add @modelcontextprotocol/sdk` (#1231).
+ */
+export function detectNodePackageManagerSync(
+  root: string = process.cwd(),
+): PackageManager {
+  return detectNodeLockfile(root) ?? "npm";
+}
+
 /**
  * Synchronous version of detectPackageManager for use in startup code.
  *
@@ -256,10 +278,9 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
 export function detectPackageManagerSync(
   root: string = process.cwd(),
 ): PackageManager {
-  for (const { file, pm } of LOCKFILE_PRIORITY) {
-    if (existsSync(join(root, file))) {
-      return pm;
-    }
+  const node = detectNodeLockfile(root);
+  if (node) {
+    return node;
   }
   if (existsSync(join(root, "package.json"))) {
     return "npm";
@@ -297,7 +318,8 @@ export function detectPackageManagerSync(
  * `"npm@10"` spelling) used to index `PM_CONFIG` to `undefined` and throw on
  * the next property access. Such a value now routes to detection instead.
  * Python managers (`pip`/`poetry`/`uv`) are `PM_CONFIG` keys, so a declared
- * Python manager still wins over the JS-only detector.
+ * Python manager wins over detection, and since #1231 detection itself finds
+ * `uv.lock`/`poetry.lock`/`pyproject.toml`/`requirements*.txt` too.
  *
  * The test is `hasOwnProperty`, deliberately not `in`: `in` walks the
  * prototype chain, so `"toString"`, `"constructor"`, and `"__proto__"` would
