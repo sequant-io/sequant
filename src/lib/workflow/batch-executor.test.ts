@@ -2970,7 +2970,7 @@ describe("#1233: the chain checkpoint-failure warning names the right re-run out
     }
   }
 
-  it("says a re-run resumes the link when no qa ran (in_progress)", async () => {
+  it("says a re-run won't skip it when no qa ran (in_progress)", async () => {
     const warning = await checkpointWarning(["exec"]);
     expect(warning).toContain("stays in_progress");
     expect(warning).toContain("a re-run won't skip it");
