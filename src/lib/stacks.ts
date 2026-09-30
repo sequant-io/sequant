@@ -302,10 +302,11 @@ export function resolvePackageManager(
  * Sentinel `ciInstall` value meaning "no install command applies here —
  * skip the install rather than run a no-op or a failing one."
  *
- * Currently only pip resolves to this: `pip install -q` names no package
- * without a `-r <file>` argument, so running it bare is a failing no-op
- * (#1196). Every `ciInstall` consumer must check for this value before
- * splitting/spawning it.
+ * pip and uv (without a `uv.lock`) resolve to this: `pip install -q` and
+ * `uv pip install -q` both name no package without a `-r <file>` argument,
+ * so running either bare is a failing no-op (#1196, #1217). Every
+ * `ciInstall` consumer must check for this value before splitting/spawning
+ * it.
  */
 export const CI_INSTALL_SKIP = "__sequant_skip_install__";
 
@@ -549,6 +550,21 @@ export function resolvePackageManagerConfig(
       ...config,
       ciInstall: requirementsFile
         ? `pip install -q -r ${requirementsFile}`
+        : CI_INSTALL_SKIP,
+    };
+  }
+  if (pm === "uv") {
+    // PM_CONFIG.uv.ciInstall ("uv pip install -q") is the same bare-install
+    // shape as pip's. When a uv.lock is present, use the lockfile-faithful
+    // `uv sync --frozen`; otherwise fall back like pip (#1217).
+    if (existsSync(join(root, "uv.lock"))) {
+      return { ...config, ciInstall: "uv sync --frozen" };
+    }
+    const requirementsFile = findRequirementsFile(root);
+    return {
+      ...config,
+      ciInstall: requirementsFile
+        ? `uv pip install -q -r ${requirementsFile}`
         : CI_INSTALL_SKIP,
     };
   }
