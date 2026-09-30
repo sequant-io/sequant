@@ -2841,6 +2841,66 @@ describe("#972: NEEDS_VERIFICATION maps to awaiting_verification state", () => {
   });
 });
 
+describe("#1233: a successful run without qa leaves the issue non-terminal", () => {
+  const updateIssueStatus = vi.fn();
+  const stateManager = {
+    getIssueState: vi.fn(),
+    initializeIssue: vi.fn(),
+    updateIssueStatus,
+    updatePRInfo: vi.fn(),
+    updatePhaseStatus: vi.fn(),
+    updateResumeHandle: vi.fn(),
+    updateWorktreeInfo: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets status to in_progress after a spec-only run, not ready_for_merge", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1233,
+        config: { phases: ["spec"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("in_progress");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+    expect(finalStatuses).not.toContain("awaiting_verification");
+  });
+
+  it("sets status to in_progress after a spec+exec run with no qa", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1234,
+        config: {
+          phases: ["spec", "exec"],
+          qualityLoop: false,
+          maxIterations: 1,
+        },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("in_progress");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+  });
+});
+
 describe("#1087 Codex usage-limit turn failure under -Q", () => {
   it("does not start a quality-loop iteration after the real Codex-mapped BillingError", async () => {
     const parser = new CodexStreamParser();

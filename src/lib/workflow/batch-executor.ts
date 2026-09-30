@@ -2232,9 +2232,14 @@ export async function runIssueWithLogging(
   // warning also has to name this status, and naming the wrong one is exactly
   // the #837 inaccuracy being fixed here.
   const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
+  // #1233: a terminal "ready" status asserts qa actually reviewed the work.
+  // A successful run that never ran qa (e.g. `--phases spec` or `--phases
+  // exec`) stays `in_progress` so a later `sequant run N --phases exec`
+  // isn't skipped as already-completed.
+  const ranQa = phaseResults.some((p) => p.phase === "qa");
   const finalStatus = readyGateResult
     ? readyGateResult.issueStatus
-    : success
+    : success && ranQa
       ? qaVerdict === "NEEDS_VERIFICATION"
         ? "awaiting_verification"
         : "ready_for_merge"
