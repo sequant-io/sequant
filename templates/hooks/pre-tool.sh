@@ -603,6 +603,35 @@ resolve_cd_target() {
     [[ -n "$target" && -d "$target" ]] && printf '%s' "$target"
 }
 
+# resolve_git_c_target <tool_input> <base_dir> — print the <dir> of the LAST
+# `git -C <dir> reset` in a Bash command, resolved against <base_dir> when
+# relative, if and only if it is a static literal naming an existing
+# directory. Scans the raw command for the same reason resolve_cd_target
+# does: emit_segments blanks `git -C "$WT"` to `git -C   ` (#1228). Prints
+# nothing for a dynamic or missing path — callers fall back, never guess.
+resolve_git_c_target() {
+    local input="$1" base="$2" dir_re line target
+    dir_re="(\"[^\"]*\"|'[^']*'|[^[:space:];&|]+)"
+    line=$(printf '%s\n' "$input" | grep -E "git[[:space:]]+-C[[:space:]]+${dir_re}[[:space:]]+reset([[:space:]]|\$)" | tail -1)
+    [[ -z "$line" ]] && return 0
+
+    target=$(printf '%s' "$line" | sed -nE "s/.*git[[:space:]]+-C[[:space:]]+${dir_re}[[:space:]]+reset([[:space:]].*)?\$/\1/p")
+
+    case "$target" in
+        \"*\") target="${target#\"}"; target="${target%\"}" ;;
+        \'*\') target="${target#\'}"; target="${target%\'}" ;;
+    esac
+
+    # Fail open on anything dynamic (#963), exactly as resolve_cd_target.
+    case "$target" in
+        *'$'*|*'`'*|*'\'*) return 0 ;;
+    esac
+
+    [[ -z "$target" ]] && return 0
+    [[ "$target" != /* && -n "$base" ]] && target="$base/$target"
+    [[ -d "$target" ]] && printf '%s' "$target"
+}
+
 # Path of the session->issue binding the checkout guard maintains (#906).
 # $1 = repo toplevel, $2 = session id. The id is opaque, so squash everything
 # outside a filename-safe set — it must not be able to escape the directory.
@@ -818,27 +847,46 @@ fi
 # - Unpushed commits on main/master
 # - Uncommitted changes (staged or unstaged)
 # - Unfinished merge in progress
-if seg_match 'git reset.*(--hard|origin)'; then
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if seg_match 'git +(-C +[^ ]* +)?reset.*(--hard|origin)'; then
+    # PreToolUse runs outside and before the command's shell, so a `cd <wt> &&`
+    # prefix or a `git -C <wt>` has not taken effect in this process. Every
+    # check below runs in the directory the reset targets: the `-C` path, else
+    # the `cd` target, else the payload cwd — the commit guard's order (#1199).
+    # A target that is not a git repository falls back to the payload cwd, then
+    # this process's cwd, so an unresolvable target never silently allows
+    # (#1228). Like the commit guard, it inherits resolve_cd_target's
+    # last-`cd`-wins reading of a multi-`cd` chain.
+    RESET_BASE=$(resolve_cd_target "$TOOL_INPUT")
+    RESET_BASE="${RESET_BASE:-${HOOK_CWD:-$PWD}}"
+    RESET_DIR=$(resolve_git_c_target "$TOOL_INPUT" "$RESET_BASE")
+    RESET_DIR="${RESET_DIR:-$RESET_BASE}"
+    if ! git -C "$RESET_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+        RESET_DIR="${HOOK_CWD:-$PWD}"
+        git -C "$RESET_DIR" rev-parse --git-dir >/dev/null 2>&1 || RESET_DIR="$PWD"
+    fi
+
+    CURRENT_BRANCH=$(git -C "$RESET_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     BLOCK_REASONS=""
 
     # Check 1: Unpushed commits (only on main/master)
     if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
-        UNPUSHED=$(git log origin/$CURRENT_BRANCH..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+        UNPUSHED=$(git -C "$RESET_DIR" log "origin/$CURRENT_BRANCH..HEAD" --oneline 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$UNPUSHED" -gt 0 ]]; then
             BLOCK_REASONS="${BLOCK_REASONS}  - $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH\n"
         fi
     fi
 
     # Check 2: Uncommitted changes (staged or unstaged)
-    UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    UNCOMMITTED=$(git -C "$RESET_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
     if [[ "$UNCOMMITTED" -gt 0 ]]; then
         BLOCK_REASONS="${BLOCK_REASONS}  - $UNCOMMITTED uncommitted file(s)\n"
     fi
 
-    # Check 3: Unfinished merge
-    GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo ".git")
-    if [[ -f "$GIT_DIR/MERGE_HEAD" ]]; then
+    # Check 3: Unfinished merge. --absolute-git-dir: the main checkout reports
+    # a relative `.git`, which would resolve against this process's cwd; a
+    # linked worktree keeps MERGE_HEAD in its own per-worktree gitdir.
+    RESET_GIT_DIR=$(git -C "$RESET_DIR" rev-parse --absolute-git-dir 2>/dev/null || echo "$RESET_DIR/.git")
+    if [[ -f "$RESET_GIT_DIR/MERGE_HEAD" ]]; then
         BLOCK_REASONS="${BLOCK_REASONS}  - Unfinished merge in progress\n"
     fi
 
@@ -848,6 +896,11 @@ if seg_match 'git reset.*(--hard|origin)'; then
         {
             echo "HOOK_BLOCKED: git reset --hard would lose local work:"
             echo -e "$BLOCK_REASONS"
+            # Name the repository that was checked (#1228): a `cd "$VAR"` or
+            # `git -C "$VAR"` target can't be resolved before the command's
+            # shell runs, so the check falls back to the command's cwd.
+            echo "  Checked: $RESET_DIR"
+            echo "  (Only a literal \`cd <dir>\` or \`git -C <dir>\` target is resolved; a variable path is checked as the command's cwd.)"
             echo "  Resolve with:"
             echo "    git push origin $CURRENT_BRANCH  # push commits"
             echo "    git stash                        # save changes"
