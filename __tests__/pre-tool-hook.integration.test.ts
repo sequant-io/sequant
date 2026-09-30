@@ -2895,7 +2895,12 @@ describe.each(HOOK_COPIES)(
       // evaluates the command's own cwd — clean main allows, dirty main blocks.
       expect(resetFrom('git -C "$WT" reset --hard').code).toBe(0);
       withDirtyMain(() => {
-        expect(resetFrom('git -C "$WT" reset --hard').code).toBe(2);
+        const r = resetFrom('git -C "$WT" reset --hard');
+        expect(r.code).toBe(2);
+        // The block names the repository it checked, so a user whose
+        // variable pointed at a clean worktree can see why (#1228).
+        expect(r.stderr).toContain(`Checked: ${main}`);
+        expect(r.stderr).toMatch(/Only a literal `cd <dir>` or `git -C <dir>`/);
       });
     });
   },

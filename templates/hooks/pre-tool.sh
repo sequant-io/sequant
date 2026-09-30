@@ -896,6 +896,11 @@ if seg_match 'git +(-C +[^ ]* +)?reset.*(--hard|origin)'; then
         {
             echo "HOOK_BLOCKED: git reset --hard would lose local work:"
             echo -e "$BLOCK_REASONS"
+            # Name the repository that was checked (#1228): a `cd "$VAR"` or
+            # `git -C "$VAR"` target can't be resolved before the command's
+            # shell runs, so the check falls back to the command's cwd.
+            echo "  Checked: $RESET_DIR"
+            echo "  (Only a literal \`cd <dir>\` or \`git -C <dir>\` target is resolved; a variable path is checked as the command's cwd.)"
             echo "  Resolve with:"
             echo "    git push origin $CURRENT_BRANCH  # push commits"
             echo "    git stash                        # save changes"
