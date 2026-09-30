@@ -164,6 +164,36 @@ describe("ShutdownManager", () => {
       expect(executionOrder).toEqual(["Third", "Second", "First"]);
     });
 
+    it("runs every 'finalize' cleanup before any 'resource' cleanup, regardless of registration order (#1222 AC-1)", async () => {
+      const mgr = createManager();
+      const executionOrder: string[] = [];
+
+      // Mirrors production: the finalize task registers early, then
+      // resource (worktree-removal) tasks register lazily, later — LIFO
+      // alone would run them before the finalize task ever gets a turn.
+      mgr.registerCleanup(
+        "Finalize run logs",
+        async () => {
+          executionOrder.push("Finalize run logs");
+        },
+        { phase: "finalize" },
+      );
+      mgr.registerCleanup("Cleanup worktree for #1", async () => {
+        executionOrder.push("Cleanup worktree for #1");
+      });
+      mgr.registerCleanup("Cleanup worktree for #2", async () => {
+        executionOrder.push("Cleanup worktree for #2");
+      });
+
+      await mgr.gracefulShutdown("SIGTERM");
+
+      expect(executionOrder).toEqual([
+        "Finalize run logs",
+        "Cleanup worktree for #2",
+        "Cleanup worktree for #1",
+      ]);
+    });
+
     it("should continue cleanup even if a task fails", async () => {
       const mgr = createManager();
       const executionOrder: string[] = [];

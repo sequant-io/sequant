@@ -20,12 +20,16 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { ShutdownManager } from "../shutdown.js";
+import { ShutdownManager, type AbortContext } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import {
   cleanupWorktreeOnShutdown,
   registerWorktreeRemovalCleanup,
 } from "./worktree-manager.js";
+import {
+  phaseInProgressPredicate,
+  registerRunLogFinalizer,
+} from "./run-orchestrator.js";
 
 function git(cwd: string, ...args: string[]): void {
   const result = spawnSync("git", args, { cwd, stdio: "pipe" });
@@ -46,6 +50,12 @@ function initRepo(root: string): void {
   writeFileSync(path.join(root, "README.md"), "# fixture\n");
   git(root, "add", "README.md");
   git(root, "commit", "--quiet", "-m", "init");
+  // #1222 AC-2's commits-ahead-of-base check resolves a base of
+  // `origin/main` by default. A self-referential remote gives that ref a
+  // real value without network access, so branches created from HEAD start
+  // with zero commits ahead of it — matching a real clone.
+  git(root, "remote", "add", "origin", root);
+  git(root, "fetch", "--quiet", "origin");
 }
 
 function listWorktreePaths(repo: string): string[] {
@@ -167,5 +177,92 @@ describe("run-orchestrator shutdown worktree cleanup (#935)", () => {
     expect(logs[0]).toContain("removed");
     expect(logs[0]).toContain("feature/935-dirty-2");
     expect(logs[0]).not.toContain(again);
+  });
+
+  // #1222 AC-2: a kept worktree's log line names the rule that kept it. A
+  // clean tree with committed WIP (the #1198 shape) used to be reported as
+  // "uncommitted changes".
+  it("names why a clean worktree was preserved (#1222)", async () => {
+    const ahead = path.join(sandbox, "ahead-worktree");
+    git(repo, "worktree", "add", "-b", "feature/1222-ahead", ahead);
+    writeFileSync(path.join(ahead, "wip.txt"), "committed wip\n");
+    git(ahead, "add", "wip.txt");
+    git(ahead, "commit", "--quiet", "-m", "wip");
+    const running = path.join(sandbox, "running-worktree");
+    git(repo, "worktree", "add", "-b", "feature/1222-running", running);
+
+    const abort: AbortContext = { signal: "SIGTERM", reason: "test" };
+    const logs: string[] = [];
+    await cleanupWorktreeOnShutdown(
+      4,
+      {
+        issue: 4,
+        path: ahead,
+        branch: "feature/1222-ahead",
+        existed: false,
+        rebased: false,
+      },
+      abort,
+      (msg) => logs.push(msg),
+    );
+    await cleanupWorktreeOnShutdown(
+      5,
+      {
+        issue: 5,
+        path: running,
+        branch: "feature/1222-running",
+        existed: false,
+        rebased: false,
+      },
+      abort,
+      (msg) => logs.push(msg),
+      () => true,
+    );
+
+    expect(logs[0]).toContain("preserved (commits ahead of base)");
+    expect(logs[1]).toContain("preserved (phase in progress)");
+    expect(listWorktreePaths(repo)).toEqual(
+      expect.arrayContaining([ahead, running]),
+    );
+  });
+});
+
+// The orchestrator's own registrations, not just ShutdownManager's ordering:
+// removing `{ phase: "finalize" }` from the run-log finalizer, or the
+// predicate that reaches `isPhaseInProgress`, must fail here (#1222).
+describe("run-orchestrator shutdown wiring (#1222)", () => {
+  it("AC-1: the run-log finalizer runs, as aborted, before a worktree cleanup registered after it", async () => {
+    const order: string[] = [];
+    const shutdown = new ShutdownManager({
+      output: () => {},
+      errorOutput: () => {},
+      exit: () => {},
+    });
+    try {
+      registerRunLogFinalizer(shutdown, {
+        finalize: async (options) => {
+          order.push(options?.aborted ? "finalize (aborted)" : "finalize");
+        },
+      });
+      shutdown.registerCleanup("Cleanup worktree for #1", async () => {
+        order.push("worktree");
+      });
+
+      await shutdown.gracefulShutdown("SIGTERM");
+
+      expect(order).toEqual(["finalize (aborted)", "worktree"]);
+    } finally {
+      shutdown.dispose();
+    }
+  });
+
+  it("AC-2: the phase predicate reads the orchestrator lazily, false until it exists", () => {
+    const ref: { instance?: { isPhaseInProgress(n: number): boolean } } = {};
+    const inProgress = phaseInProgressPredicate(ref, 7);
+
+    expect(inProgress()).toBe(false);
+    ref.instance = { isPhaseInProgress: (n) => n === 7 };
+    expect(inProgress()).toBe(true);
+    expect(phaseInProgressPredicate(ref, 8)()).toBe(false);
   });
 });

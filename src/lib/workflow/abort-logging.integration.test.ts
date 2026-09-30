@@ -161,15 +161,17 @@ describe("abort surfacing end-to-end (#856 AC-4)", () => {
     //
     // Scoped deliberately to the registerCleanup block, not the whole file:
     // matching file-wide would let an unrelated comment mentioning "aborted"
-    // satisfy the assertion.
+    // satisfy the assertion. Since #1222 the registration lives in
+    // `registerRunLogFinalizer`, which `run()` calls.
     const source = readFileSync(
       resolve(__dirname, "run-orchestrator.ts"),
       "utf-8",
     );
     const block = source.match(
-      /registerCleanup\(\s*"Finalize run logs",[\s\S]*?\n {6}\}\);/,
+      /registerCleanup\(\s*"Finalize run logs",[\s\S]*?\n {4}\{ phase: "finalize" \},\n {2}\);/,
     );
     expect(block, "Finalize run logs cleanup block not found").not.toBeNull();
+    expect(source).toMatch(/registerRunLogFinalizer\(shutdown, logWriter\)/);
 
     const body = block![0];
     // The callback must accept the abort parameter...

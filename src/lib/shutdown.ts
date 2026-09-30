@@ -24,12 +24,25 @@
 import chalk from "chalk";
 
 /**
+ * Ordering class for a cleanup task (#1222). `"finalize"` tasks run before
+ * every `"resource"` task, regardless of registration order — registration
+ * order alone can't guarantee this, since resource cleanups (e.g. worktree
+ * removal) are often registered lazily, after a finalize task already is.
+ * Within a phase, tasks still run LIFO.
+ */
+export type CleanupPhase = "finalize" | "resource";
+
+/**
  * Cleanup task with name for user feedback
  */
 interface CleanupTask {
   name: string;
   task: (abort: AbortContext | null) => Promise<void>;
+  phase: CleanupPhase;
 }
+
+/** Ordering tasks run in: every "finalize" task, then every "resource" task. */
+const CLEANUP_PHASE_ORDER: CleanupPhase[] = ["finalize", "resource"];
 
 /**
  * Why the process is shutting down, handed to every cleanup task so they can
@@ -83,6 +96,15 @@ export function describeSignalCause(signal: string): string {
 }
 
 /**
+ * Default cleanup timeout (#1222 AC-3): the MCP `run` tool's SIGKILL grace
+ * (`src/mcp/tools/run.ts`) is derived from this constant, plus a buffer, so
+ * the two can't drift apart the way the standalone `5000`/`10000` literals
+ * did — a cleanup that respects its own timeout must not be cut off by an
+ * outer SIGKILL that fires first.
+ */
+export const DEFAULT_FORCE_EXIT_TIMEOUT_MS = 10000;
+
+/**
  * Options for ShutdownManager
  */
 export interface ShutdownManagerOptions {
@@ -123,7 +145,8 @@ export class ShutdownManager {
   private sigtermHandler: () => void;
 
   constructor(options: ShutdownManagerOptions = {}) {
-    this.forceExitTimeout = options.forceExitTimeout ?? 10000;
+    this.forceExitTimeout =
+      options.forceExitTimeout ?? DEFAULT_FORCE_EXIT_TIMEOUT_MS;
     this.output = options.output ?? console.log.bind(console);
     this.errorOutput = options.errorOutput ?? console.error.bind(console);
     this.exit = options.exit ?? process.exit.bind(process);
@@ -204,12 +227,16 @@ export class ShutdownManager {
    * @param task - Async function to execute during cleanup. Receives the
    *   `AbortContext` when the shutdown was signal-triggered, or `null` on a
    *   programmatic teardown. Tasks that don't care may ignore the argument.
+   * @param options.phase - Ordering class (#1222). Defaults to `"resource"`.
+   *   Every `"finalize"` task runs before any `"resource"` task, regardless
+   *   of registration order.
    */
   registerCleanup(
     name: string,
     task: (abort: AbortContext | null) => Promise<void>,
+    options?: { phase?: CleanupPhase },
   ): void {
-    this.cleanupTasks.push({ name, task });
+    this.cleanupTasks.push({ name, task, phase: options?.phase ?? "resource" });
   }
 
   /**
@@ -275,8 +302,11 @@ export class ShutdownManager {
       this.exit(1);
     }, this.forceExitTimeout);
 
-    // Run cleanup tasks in reverse order (LIFO)
-    const tasksToRun = [...this.cleanupTasks].reverse();
+    // Run cleanup tasks by phase (#1222: all "finalize" before any
+    // "resource"), LIFO within each phase.
+    const tasksToRun = CLEANUP_PHASE_ORDER.flatMap((phase) =>
+      this.cleanupTasks.filter((t) => t.phase === phase).reverse(),
+    );
 
     for (const { name, task } of tasksToRun) {
       try {

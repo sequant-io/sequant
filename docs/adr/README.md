@@ -60,3 +60,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 |-----|-------|--------|
 | [0001](0001-adopt-adrs.md) | Adopt Architecture Decision Records | Accepted |
 | [0002](0002-spec-stays-in-main-checkout.md) | Spec stays in the main checkout; check it instead | Accepted |
+| [0003](0003-cleanup-phase-ordering.md) | Cleanup ordering via a `phase` field, not an aggregate registration | Accepted |

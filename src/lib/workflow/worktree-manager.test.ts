@@ -13,7 +13,13 @@ import {
   buildAutomatedPRBody,
   resolvePrLinkMode,
   resolveWorktreeRoot,
+  shouldPreserveWorktree,
+  hasCommitsAheadOfBase,
+  cleanupWorktreeOnShutdown,
+  registerWorktreeRemovalCleanup,
 } from "./worktree-manager.js";
+import type { WorktreeInfo } from "./worktree-manager.js";
+import { ShutdownManager } from "../shutdown.js";
 import { validateSettings } from "../settings.js";
 
 const git = (cwd: string, ...args: string[]): string =>
@@ -358,4 +364,127 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
     const info = runEnsure(".trees", envRoot);
     expect(info.path).toBe(join(envRoot, "feature", "1199-custom-root"));
   }, 60_000);
+});
+
+describe("#1222 AC-2: preserve a mid-flight worktree on signal shutdown", () => {
+  let root: string;
+  let clone: string;
+  let wt: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1222-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    wt = join(root, "wt");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.name", "sequant-test");
+    git(clone, "config", "user.email", "sequant-test@example.com");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "base.txt", "base");
+    git(clone, "push", "-q", "origin", "main");
+    // Same shape as ensureWorktree: branch off origin/main, tracked base.
+    git(
+      clone,
+      "worktree",
+      "add",
+      "-q",
+      "-b",
+      "feature/1222",
+      wt,
+      "origin/main",
+    );
+    git(wt, "config", "user.name", "sequant-test");
+    git(wt, "config", "user.email", "sequant-test@example.com");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("hasCommitsAheadOfBase is false for a clean branch with no new commits", () => {
+    expect(hasCommitsAheadOfBase(wt, "origin/main")).toBe(false);
+  });
+
+  it("hasCommitsAheadOfBase is true once the branch has committed work (#1198)", () => {
+    commitFile(wt, "wip.txt", "wip");
+    expect(hasCommitsAheadOfBase(wt, "origin/main")).toBe(true);
+  });
+
+  it("shouldPreserveWorktree preserves a clean worktree with commits ahead of base", () => {
+    commitFile(wt, "wip.txt", "wip");
+    const abort = { signal: "SIGTERM", reason: "terminated" };
+    expect(shouldPreserveWorktree(abort, wt, { baseRef: "origin/main" })).toBe(
+      true,
+    );
+  });
+
+  it("shouldPreserveWorktree preserves a clean, base-level worktree whose phase is in progress", () => {
+    const abort = { signal: "SIGTERM", reason: "terminated" };
+    expect(
+      shouldPreserveWorktree(abort, wt, {
+        baseRef: "origin/main",
+        phaseInProgress: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("shouldPreserveWorktree removes a clean, base-level worktree with no phase running", () => {
+    const abort = { signal: "SIGTERM", reason: "terminated" };
+    expect(
+      shouldPreserveWorktree(abort, wt, {
+        baseRef: "origin/main",
+        phaseInProgress: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("cleanupWorktreeOnShutdown preserves a worktree via the phaseInProgress callback (#1222 AC-2)", async () => {
+    const logs: string[] = [];
+    const info: WorktreeInfo = {
+      issue: 1222,
+      path: wt,
+      branch: "feature/1222",
+      existed: false,
+      rebased: false,
+    };
+    await cleanupWorktreeOnShutdown(
+      1222,
+      info,
+      { signal: "SIGTERM", reason: "terminated" },
+      (msg) => logs.push(msg),
+      () => true,
+    );
+    expect(logs[0]).toContain("preserved");
+    // Still on disk: the phase-in-progress path did not remove it.
+    const remaining = git(clone, "worktree", "list", "--porcelain");
+    expect(remaining).toContain(wt);
+  });
+
+  it("registerWorktreeRemovalCleanup wires the phaseInProgress callback through to shutdown", async () => {
+    const logs: string[] = [];
+    const info: WorktreeInfo = {
+      issue: 1222,
+      path: wt,
+      branch: "feature/1222",
+      existed: false,
+      rebased: false,
+    };
+    const shutdown = new ShutdownManager({
+      output: () => {},
+      errorOutput: () => {},
+      exit: () => {},
+    });
+    registerWorktreeRemovalCleanup(
+      shutdown,
+      1222,
+      info,
+      (msg) => logs.push(msg),
+      () => true,
+    );
+    await shutdown.gracefulShutdown("SIGTERM");
+    expect(logs[0]).toContain("preserved");
+    const remaining = git(clone, "worktree", "list", "--porcelain");
+    expect(remaining).toContain(wt);
+  });
 });
