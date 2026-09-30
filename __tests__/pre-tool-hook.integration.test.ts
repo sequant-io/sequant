@@ -2648,3 +2648,93 @@ describe.each(HOOK_COPIES)(
     });
   },
 );
+
+// === Issue #1199: worktree detection asks git, not the path ===
+//
+// The WORKTREE_WARNING check used to grep the hook's own cwd for
+// `worktrees/feature/`, so a worktree under a configured root (run.worktreeRoot
+// / SEQUANT_WORKTREE_ROOT) read as "outside a feature worktree". It now
+// compares `git rev-parse --git-dir` with `--git-common-dir` in the command's
+// directory. The linked worktree here deliberately has no `worktrees` segment
+// in its path, and the hook process runs from the MAIN checkout while the
+// payload's `cwd` names the worktree — so both the detection method and the
+// directory it inspects are pinned.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh detects a linked worktree via git-common-dir (#1199) [%s]",
+  (_label, hookPath) => {
+    let sandbox: string;
+    let main: string;
+    let linked: string;
+    let dataDir: string;
+
+    const git = (cwd: string, ...args: string[]) => {
+      const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+    };
+
+    function commitFrom(processCwd: string, payloadCwd: string, cmd: string) {
+      const env = cleanEnv();
+      for (const k of Object.keys(env)) {
+        if (k.startsWith("SEQUANT_")) delete env[k];
+      }
+      delete env.CLAUDE_PROJECT_DIR;
+      env.CLAUDE_PLUGIN_DATA = dataDir;
+      rmSync(join(dataDir, "logs"), { recursive: true, force: true });
+      spawnSync("bash", [hookPath], {
+        input: JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command: cmd },
+          cwd: payloadCwd,
+        }),
+        cwd: processCwd,
+        env,
+        encoding: "utf8",
+      });
+      const log = join(dataDir, "logs", "claude-quality.log");
+      return existsSync(log) ? readFileSync(log, "utf8") : "";
+    }
+
+    beforeAll(() => {
+      sandbox = mkdtempSync(join(tmpdir(), "pre-tool-1199-"));
+      main = join(sandbox, "repo");
+      linked = join(sandbox, "custom-root", "issue-1199");
+      dataDir = join(sandbox, "data");
+      mkdirSync(main, { recursive: true });
+      git(main, "init", "-q", "-b", "main");
+      git(main, "config", "user.email", "t@example.com");
+      git(main, "config", "user.name", "t");
+      git(main, "config", "commit.gpgsign", "false");
+      writeFileSync(join(main, "a.txt"), "a\n");
+      git(main, "add", ".");
+      git(main, "commit", "-q", "-m", "init");
+      git(main, "worktree", "add", "-q", "-b", "feature/1199-x", linked);
+      // Uncommitted changes in both, so the no-changes guard lets the commit
+      // through to the worktree check.
+      writeFileSync(join(main, "b.txt"), "b\n");
+      writeFileSync(join(linked, "b.txt"), "b\n");
+    });
+
+    afterAll(() => {
+      rmSync(sandbox, { recursive: true, force: true });
+    });
+
+    it("does not warn for a linked worktree at a custom root (payload cwd)", () => {
+      const log = commitFrom(main, linked, 'git commit -m "feat(#1199): x"');
+      expect(log).not.toMatch(/WORKTREE_WARNING/);
+    });
+
+    it("does not warn when the command cd's into the linked worktree", () => {
+      const log = commitFrom(
+        main,
+        main,
+        `cd ${linked} && git commit -m "feat(#1199): x"`,
+      );
+      expect(log).not.toMatch(/WORKTREE_WARNING/);
+    });
+
+    it("warns for a commit in the main checkout", () => {
+      const log = commitFrom(linked, main, 'git commit -m "feat(#1199): x"');
+      expect(log).toMatch(/WORKTREE_WARNING: Committing outside feature worktree/);
+    });
+  },
+);

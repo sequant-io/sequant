@@ -517,8 +517,14 @@ verify_build_against_main() {
   local current_branch=$(git rev-parse --abbrev-ref HEAD)
   local main_repo_dir=""
 
-  # Find the main repository (parent of worktrees)
-  if [[ "$current_dir" == *"/worktrees/"* ]]; then
+  # Find the main repository when inside a linked worktree. Ask git (the
+  # worktree's --git-dir differs from --git-common-dir, both made absolute)
+  # rather than matching a path substring, so a configurable worktree root
+  # (#1199) is still recognised.
+  local git_dir common_dir
+  git_dir=$(d=$(git rev-parse --git-dir 2>/dev/null) && cd "$d" && pwd -P) || git_dir=""
+  common_dir=$(d=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$d" && pwd -P) || common_dir=""
+  if [[ -n "$git_dir" && "$git_dir" != "$common_dir" ]]; then
     main_repo_dir=$(git worktree list | grep -E "\[(main|master)\]" | awk '{print $1}' | head -1)
     if [[ -z "$main_repo_dir" ]]; then
       main_repo_dir=$(git worktree list | head -1 | awk '{print $1}')
