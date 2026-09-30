@@ -111,7 +111,8 @@ beforeAll(() => {
   execRepo = createExecTempRepo();
 });
 afterAll(() => {
-  execRepo.cleanup();
+  // Guard: if createExecTempRepo threw, beforeAll already reported it.
+  execRepo?.cleanup();
 });
 function runInExecRepo(
   issueNumber: number,
