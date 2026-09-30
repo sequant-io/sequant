@@ -181,6 +181,38 @@ describe("#988 AC-3: sequant://install", () => {
       fs.rmSync(manifestPath(), { force: true });
       expect(await readReal()).toEqual({ installed: false });
     });
+
+    it("AC-1: one server sees a manifest written after it started", async () => {
+      fs.rmSync(manifestPath(), { force: true });
+      const { getSkillsInstallStatus } =
+        await import("../commands/version-preflight.js");
+      const { client, close } = await connect({
+        install: () => getSkillsInstallStatus(),
+      });
+      try {
+        const read = async () =>
+          JSON.parse(
+            (await client.readResource({ uri: "sequant://install" }))
+              .contents[0].text as string,
+          );
+        expect(await read()).toEqual({ installed: false });
+        fs.writeFileSync(
+          manifestPath(),
+          JSON.stringify({
+            version: "1.0.0",
+            stack: "generic",
+            installedAt: new Date().toISOString(),
+            files: {},
+          }),
+        );
+        expect(await read()).toMatchObject({
+          installed: true,
+          filesModified: false,
+        });
+      } finally {
+        await close();
+      }
+    });
   });
 });
 
