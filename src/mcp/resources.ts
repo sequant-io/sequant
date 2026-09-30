@@ -11,12 +11,15 @@ import { SETTINGS_PATH } from "../lib/settings.js";
 import type { SkillsInstallStatus } from "../commands/version-preflight.js";
 
 /**
- * Per-server context computed once at startup by `serve` (#988). `install` is
- * `null` when the project has no sequant manifest; `undefined` when the caller
- * did not compute it (tests, embedded use).
+ * Per-server context. `install` is a provider invoked on every read of
+ * `sequant://install` (#1195) — never precomputed — so a manifest written
+ * after the server started is seen without a restart, and a thrown/rejected
+ * read surfaces as `{ error }` instead of collapsing to `{ installed: false
+ * }`. The provider resolves `null` when the project has no sequant manifest;
+ * `undefined` when the caller did not supply one (tests, embedded use).
  */
 export interface ResourceContext {
-  install?: SkillsInstallStatus | null;
+  install?: () => Promise<SkillsInstallStatus | null>;
 }
 
 export function registerResources(
@@ -146,8 +149,10 @@ export function registerResources(
   // sequant://install — skills-install status (#988). Server-computed data
   // lives here, deliberately apart from sequant://config, which is the user's
   // own settings file returned verbatim. Always an object: `{ installed:
-  // false }` when the project has no sequant manifest, otherwise the status
-  // computed once at startup. `filesModified: false` is the contract — the
+  // false }` when the project has no sequant manifest, computed fresh on
+  // every read (#1195) so a manifest written after start is seen without a
+  // restart. A read error surfaces as `{ error }`, never collapsed into
+  // `{ installed: false }`. `filesModified: false` is the contract — the
   // server reports staleness and never applies it.
   server.registerResource(
     "install",
@@ -164,7 +169,7 @@ export function registerResources(
         {
           uri: "sequant://install",
           mimeType: "application/json",
-          text: JSON.stringify(installResourceBody(context)),
+          text: JSON.stringify(await installResourceBody(context)),
         },
       ],
     }),
@@ -173,10 +178,19 @@ export function registerResources(
 
 export type InstallResourceBody =
   | { installed: false }
-  | ({ installed: true } & SkillsInstallStatus);
+  | ({ installed: true } & SkillsInstallStatus)
+  | { error: string };
 
-function installResourceBody(context: ResourceContext): InstallResourceBody {
-  return context.install
-    ? { installed: true, ...context.install }
-    : { installed: false };
+async function installResourceBody(
+  context: ResourceContext,
+): Promise<InstallResourceBody> {
+  if (!context.install) {
+    return { installed: false };
+  }
+  try {
+    const status = await context.install();
+    return status ? { installed: true, ...status } : { installed: false };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
