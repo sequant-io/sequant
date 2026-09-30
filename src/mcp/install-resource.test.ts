@@ -182,13 +182,12 @@ describe("#988 AC-3: sequant://install", () => {
       expect(await readReal()).toEqual({ installed: false });
     });
 
+    // Goes through serve's own wiring, so reverting it to a startup snapshot
+    // fails here, not just a hand-built provider.
     it("AC-1: one server sees a manifest written after it started", async () => {
       fs.rmSync(manifestPath(), { force: true });
-      const { getSkillsInstallStatus } =
-        await import("../commands/version-preflight.js");
-      const { client, close } = await connect({
-        install: () => getSkillsInstallStatus(),
-      });
+      const { serveResourceContext } = await import("../commands/serve.js");
+      const { client, close } = await connect(serveResourceContext());
       try {
         const read = async () =>
           JSON.parse(
