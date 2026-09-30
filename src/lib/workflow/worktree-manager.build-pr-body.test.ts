@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildAutomatedPRBody, resolvePrLinkMode } from "./worktree-manager.js";
+import {
+  buildAutomatedPRBody,
+  resolvePrLinkMode,
+  extractExecSummary,
+  sanitizeImportedClosingKeywords,
+} from "./worktree-manager.js";
 
 describe("buildAutomatedPRBody (#749)", () => {
   it("emits no QA note for READY_FOR_MERGE", () => {
@@ -154,5 +159,122 @@ describe("resolvePrLinkMode (#1197)", () => {
     expect(resolvePrLinkMode(["no-autoclose"], "closes", "tracker-only")).toBe(
       "closes",
     );
+  });
+});
+
+describe("extractExecSummary (#1223 AC-2)", () => {
+  it("extracts the Summary section up to the next heading", () => {
+    const output = [
+      "## Plan",
+      "Some plan text",
+      "## Summary",
+      "- Did thing A",
+      "- Did thing B",
+      "## Next Steps",
+      "More stuff",
+    ].join("\n");
+    expect(extractExecSummary(output)).toBe("- Did thing A\n- Did thing B");
+  });
+
+  it("extracts the Summary section running to the end of the string", () => {
+    const output = "## Summary\nOnly this remains.";
+    expect(extractExecSummary(output)).toBe("Only this remains.");
+  });
+
+  it("uses the last Summary section when more than one is present", () => {
+    const output = [
+      "## Summary",
+      "template example, not the real one",
+      "## Summary",
+      "the real summary",
+    ].join("\n");
+    expect(extractExecSummary(output)).toBe("the real summary");
+  });
+
+  it("returns undefined when no Summary section is present", () => {
+    expect(extractExecSummary("## Plan\nNo summary here.")).toBeUndefined();
+  });
+
+  it("returns undefined for undefined input", () => {
+    expect(extractExecSummary(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined for an empty Summary section", () => {
+    const output = "## Summary\n\n## Next";
+    expect(extractExecSummary(output)).toBeUndefined();
+  });
+
+  it("caps a runaway summary to ~4KB", () => {
+    const huge = "x".repeat(5000);
+    const output = `## Summary\n${huge}`;
+    const result = extractExecSummary(output);
+    expect(result?.length).toBe(4000);
+  });
+});
+
+describe("sanitizeImportedClosingKeywords (#1223 AC-3)", () => {
+  it("rewrites Closes #N to Refs #N", () => {
+    expect(sanitizeImportedClosingKeywords("Closes #279")).toBe("Refs #279");
+  });
+
+  it("rewrites fixes #N (lowercase) to Refs #N", () => {
+    expect(sanitizeImportedClosingKeywords("fixes #1223")).toBe("Refs #1223");
+  });
+
+  it("rewrites resolve #N to Refs #N", () => {
+    expect(sanitizeImportedClosingKeywords("resolve #10")).toBe("Refs #10");
+  });
+
+  it("leaves text without closing keywords untouched", () => {
+    expect(sanitizeImportedClosingKeywords("See #279 for context")).toBe(
+      "See #279 for context",
+    );
+  });
+});
+
+describe("buildAutomatedPRBody — exec summary import (#1223 AC-2, AC-3)", () => {
+  it("uses exec's Summary section in place of the placeholder", () => {
+    const execOutput = "## Summary\n- Implemented the thing\n## Next";
+    const body = buildAutomatedPRBody(1223, { execOutput });
+    expect(body).toContain("- Implemented the thing");
+    expect(body).not.toContain("Automated PR for issue #1223.");
+  });
+
+  it("falls back to the placeholder when exec output has no Summary", () => {
+    const body = buildAutomatedPRBody(1223, {
+      execOutput: "## Plan\nNo summary",
+    });
+    expect(body).toContain("Automated PR for issue #1223.");
+  });
+
+  it("falls back to the placeholder when execOutput is absent", () => {
+    const body = buildAutomatedPRBody(1223);
+    expect(body).toContain("Automated PR for issue #1223.");
+  });
+
+  it("rewrites a Closes reference to an unrelated issue inside the imported summary", () => {
+    const execOutput =
+      "## Summary\nClose #279 with the AC mapping comment after this merges.";
+    const body = buildAutomatedPRBody(1223, { execOutput });
+    expect(body).toContain("Refs #279");
+    expect(body).not.toMatch(/\bClose[sd]?\s+#279/i);
+  });
+
+  it("rewrites a closing reference to the PR's own issue inside the imported summary, while the trailer still closes it", () => {
+    const execOutput = "## Summary\nfixes #1223 in this change.";
+    const body = buildAutomatedPRBody(1223, { execOutput });
+    // Imported text sanitized...
+    expect(body).toContain("Refs #1223 in this change");
+    // ...but the body's own trailer still carries the real close.
+    expect(body).toContain("Fixes #1223");
+  });
+
+  it("sanitizes the imported summary even under linkMode 'refs'", () => {
+    const execOutput = "## Summary\nCloses #279 too.";
+    const body = buildAutomatedPRBody(1223, {
+      execOutput,
+      linkMode: "refs",
+    });
+    expect(body).toContain("Refs #279");
   });
 });

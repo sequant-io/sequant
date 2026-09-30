@@ -1769,6 +1769,106 @@ function rewriteClosingKeywordsToRefs(
 }
 
 /**
+ * Real conventional-commit types (#1223). Deliberately excludes anything not
+ * on this list — a capitalized, non-standard prefix like `Docs: foo` must not
+ * be mistaken for a `type(scope)!?:` prefix.
+ */
+const CONVENTIONAL_COMMIT_TYPES = [
+  "feat",
+  "fix",
+  "docs",
+  "chore",
+  "refactor",
+  "test",
+  "perf",
+  "build",
+  "ci",
+  "style",
+  "revert",
+];
+
+const CONVENTIONAL_PREFIX_RE = new RegExp(
+  `^(${CONVENTIONAL_COMMIT_TYPES.join("|")})(\\([^)]*\\))?!?:\\s*`,
+);
+
+/**
+ * Build the PR title from the issue title and number (#1223).
+ *
+ * When the issue title already starts with a conventional-commit prefix
+ * (`type(scope)!?:` or `type:`), its **type** is reused and `#N` replaces the
+ * scope — `feat(adopt): x` becomes `feat(#1209): x` — instead of doubling the
+ * prefix (`feat(#1209): feat(adopt): x`, the #1223 bug). Titles without a
+ * recognized prefix keep today's label-derived `isBug ? "fix" : "feat"`.
+ *
+ * @internal Exported for testing
+ */
+export function buildPRTitle(
+  issueTitle: string,
+  issueNumber: number,
+  labels?: string[],
+): string {
+  const match = issueTitle.match(CONVENTIONAL_PREFIX_RE);
+  if (match) {
+    const rest = issueTitle.slice(match[0].length);
+    return `${match[1]}(#${issueNumber}): ${rest}`;
+  }
+  const isBug = labels?.some((l) => /^bug/i.test(l));
+  const prefix = isBug ? "fix" : "feat";
+  return `${prefix}(#${issueNumber}): ${issueTitle}`;
+}
+
+/** Cap on the imported exec summary so a runaway section can't bloat the PR body. */
+const EXEC_SUMMARY_MAX_LENGTH = 4000;
+
+/**
+ * Extract the last `## Summary` section from exec's captured phase output
+ * (#1223 AC-2), running up to the next `## ` heading or the end of the
+ * string. Returns `undefined` when no summary section is present so the
+ * caller can fall back to the placeholder text.
+ *
+ * @internal Exported for testing
+ */
+export function extractExecSummary(
+  execOutput: string | undefined,
+): string | undefined {
+  if (!execOutput) return undefined;
+  const headingRe = /^##\s+Summary\s*$/gim;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = headingRe.exec(execOutput)) !== null) {
+    lastMatch = match;
+  }
+  if (!lastMatch) return undefined;
+  const rest = execOutput.slice(lastMatch.index + lastMatch[0].length);
+  const nextHeading = rest.match(/^##\s+/m);
+  const end = nextHeading?.index ?? rest.length;
+  const summary = rest.slice(0, end).trim();
+  if (!summary) return undefined;
+  return summary.length > EXEC_SUMMARY_MAX_LENGTH
+    ? summary.slice(0, EXEC_SUMMARY_MAX_LENGTH).trim()
+    : summary;
+}
+
+/**
+ * Rewrite any closing-verb + `#N` reference inside imported summary text to
+ * `Refs #N` (#1223 AC-3). GitHub reads a closing keyword anywhere in the PR
+ * body, so an agent-written summary containing e.g. "Close #279 with the AC
+ * mapping comment" would auto-close an unrelated issue on merge. Unlike
+ * {@link rewriteClosingKeywordsToRefs}, this is unconditional (not gated on
+ * `linkMode`) and scoped to *any* issue number, not just the PR's own —
+ * applied only to imported text, never to the body's own trailer.
+ *
+ * @internal Exported for testing
+ */
+export function sanitizeImportedClosingKeywords(text: string): string {
+  const pattern = new RegExp(
+    `\\b(?:${CLOSING_KEYWORDS})\\s*:?\\s+#(\\d+)`,
+    "gi",
+  );
+  return text.replace(pattern, "Refs #$1");
+}
+
+/**
  * Resolve which closing-keyword mode a PR's issue link should use (#1197).
  *
  * An issue carrying `noCloseLabel` always resolves to `"refs"`, regardless of
@@ -1808,6 +1908,9 @@ export function resolvePrLinkMode(
  *   emits `Refs #N` instead of `Fixes #N`, and rewrites any other closing-verb
  *   reference to `issueNumber` in the assembled body to `Refs #N` (AC-4).
  *   Defaults to `"closes"` — today's behavior — when omitted.
+ * @param opts.execOutput The exec phase's captured `PhaseResult.output`
+ *   (#1223 AC-2). Its last `## Summary` section, sanitized of closing
+ *   keywords (AC-3), replaces the placeholder line when present.
  * @internal Exported for testing
  */
 export function buildAutomatedPRBody(
@@ -1817,19 +1920,17 @@ export function buildAutomatedPRBody(
     qaVerdict?: string;
     readyGateReport?: string;
     linkMode?: "closes" | "refs";
+    execOutput?: string;
   },
 ): string {
   const linkMode = opts?.linkMode ?? "closes";
   const closingLine =
     linkMode === "refs" ? `Refs #${issueNumber}` : `Fixes #${issueNumber}`;
-  const bodyLines = [
-    `## Summary`,
-    ``,
-    `Automated PR for issue #${issueNumber}.`,
-    ``,
-    closingLine,
-    ``,
-  ];
+  const execSummary = extractExecSummary(opts?.execOutput);
+  const summaryLine = execSummary
+    ? sanitizeImportedClosingKeywords(execSummary)
+    : `Automated PR for issue #${issueNumber}.`;
+  const bodyLines = [`## Summary`, ``, summaryLine, ``, closingLine, ``];
   // #749: surface a non-A+ QA verdict in the PR body (not just the run log) so
   // a reviewer sees why the run broke to PR rather than reaching A+.
   //
@@ -1886,6 +1987,9 @@ export function buildAutomatedPRBody(
  *   issue carrying `prNoCloseLabel`, via {@link resolvePrLinkMode}.
  * @param prNoCloseLabel `settings.run.prNoCloseLabel` (#1197 AC-2), default
  *   `"no-autoclose"`.
+ * @param opts.execOutput The exec phase's captured output (#1223 AC-2),
+ *   threaded through to {@link buildAutomatedPRBody}. Added as a trailing
+ *   options object rather than another positional parameter.
  * @returns PRCreationResult with PR info or error
  * @internal Exported for testing
  */
@@ -1901,6 +2005,7 @@ export function createPR(
   readyGateReport?: string,
   prIssueLink?: "closes" | "refs",
   prNoCloseLabel?: string,
+  opts?: { execOutput?: string },
 ): PRCreationResult {
   const github = new GitHubProvider();
 
@@ -1949,15 +2054,14 @@ export function createPR(
     console.log(chalk.gray(`    Creating PR for #${issueNumber}...`));
   }
 
-  const isBug = labels?.some((l) => /^bug/i.test(l));
-  const prefix = isBug ? "fix" : "feat";
-  const prTitle = `${prefix}(#${issueNumber}): ${issueTitle}`;
+  const prTitle = buildPRTitle(issueTitle, issueNumber, labels);
   const linkMode = resolvePrLinkMode(labels, prIssueLink, prNoCloseLabel);
   const prBody = buildAutomatedPRBody(issueNumber, {
     stackManifest: stackOptions?.stackManifest,
     qaVerdict,
     readyGateReport,
     linkMode,
+    execOutput: opts?.execOutput,
   });
 
   const prResult = github.createPRCliSync(

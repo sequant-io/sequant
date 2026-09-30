@@ -11,6 +11,7 @@ import {
   rebaseBeforePR,
   installWorktreeDeps,
   buildAutomatedPRBody,
+  buildPRTitle,
   resolvePrLinkMode,
   resolveWorktreeRoot,
   shouldPreserveWorktree,
@@ -486,5 +487,48 @@ describe("#1222 AC-2: preserve a mid-flight worktree on signal shutdown", () => 
     expect(logs[0]).toContain("preserved");
     const remaining = git(clone, "worktree", "list", "--porcelain");
     expect(remaining).toContain(wt);
+  });
+});
+
+describe("#1223 buildPRTitle: conventional-commit prefix reuse", () => {
+  it("reuses the title's own type and replaces the scope with #N", () => {
+    expect(buildPRTitle("feat(adopt): x", 1209)).toBe("feat(#1209): x");
+  });
+
+  it("prefers the title's type over the label-derived prefix", () => {
+    expect(buildPRTitle("fix(run): y", 932, ["enhancement"])).toBe(
+      "fix(#932): y",
+    );
+  });
+
+  it("does not double the prefix", () => {
+    const title = buildPRTitle("feat(adopt): x", 1209);
+    expect(title).not.toContain("feat(#1209): feat(adopt)");
+  });
+
+  it("falls back to label-derived fix for a bug-labeled title with no prefix", () => {
+    expect(buildPRTitle("crash on startup", 932, ["bug"])).toBe(
+      "fix(#932): crash on startup",
+    );
+  });
+
+  it("falls back to label-derived feat with no bug label and no prefix", () => {
+    expect(buildPRTitle("add dark mode", 42, ["enhancement"])).toBe(
+      "feat(#42): add dark mode",
+    );
+  });
+
+  it("does not mistake a mid-title colon for a conventional prefix", () => {
+    expect(buildPRTitle("Docs: foo", 42)).toBe("feat(#42): Docs: foo");
+  });
+
+  it("handles a scope-less breaking-change marker", () => {
+    expect(buildPRTitle("feat!: drop legacy flag", 55)).toBe(
+      "feat(#55): drop legacy flag",
+    );
+  });
+
+  it("handles a breaking-change marker with a scope", () => {
+    expect(buildPRTitle("fix(run)!: y", 932)).toBe("fix(#932): y");
   });
 });
