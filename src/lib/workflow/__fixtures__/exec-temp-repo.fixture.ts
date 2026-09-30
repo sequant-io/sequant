@@ -24,9 +24,21 @@ export interface ExecTempRepo {
 
 export function createExecTempRepo(): ExecTempRepo {
   const path = mkdtempSync(join(tmpdir(), "sequant-exec-repo-"));
+  const cleanup = () => rmSync(path, { recursive: true, force: true });
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: path, stdio: "pipe" }).toString().trim();
 
+  try {
+    initRepo(path, git);
+  } catch (error) {
+    // Don't leak the temp dir, and surface git's own error unchanged.
+    cleanup();
+    throw error;
+  }
+  return { path, cleanup };
+}
+
+function initRepo(path: string, git: (...args: string[]) => string): void {
   git("init", "-q", "-b", "feature/test");
   // Identity before the first commit: CI runners have no global git identity.
   git("config", "user.name", "sequant-test");
@@ -41,9 +53,4 @@ export function createExecTempRepo(): ExecTempRepo {
   writeFileSync(join(path, "work.txt"), "work\n");
   git("add", "work.txt");
   git("commit", "-q", "-m", "work");
-
-  return {
-    path,
-    cleanup: () => rmSync(path, { recursive: true, force: true }),
-  };
 }
