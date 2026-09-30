@@ -16,6 +16,7 @@ import {
 } from "http";
 import { existsSync, statSync } from "fs";
 import { createServer } from "../mcp/server.js";
+import type { ResourceContext } from "../mcp/resources.js";
 import { getVersion } from "../lib/version.js";
 import {
   formatSkillsInstallWarning,
@@ -49,6 +50,16 @@ function applyProjectDir(): void {
   process.chdir(projectDir);
 }
 
+/**
+ * The resource context `serve` hands the MCP server. `install` is a provider,
+ * never a value: it recomputes on every read of sequant://install, so a
+ * manifest written after the server started is seen without a restart
+ * (#1195 AC-1). Exported so that wiring has a regression test.
+ */
+export function serveResourceContext(): ResourceContext {
+  return { install: () => getSkillsInstallStatus() };
+}
+
 export async function serveCommand(options: ServeOptions): Promise<void> {
   applyProjectDir();
 
@@ -56,11 +67,14 @@ export async function serveCommand(options: ServeOptions): Promise<void> {
 
   // Install status is read-only and reported, never acted on (#988): a
   // server start used to trigger the CLI's auto-sync and rewrite the project.
-  // The check must never prevent the server from starting.
+  // The check must never prevent the server from starting, so the one-shot
+  // snapshot for the startup warning swallows errors. The resource (#1195)
+  // gets an uncaught provider that recomputes on every read, so a read error
+  // reaches the resource's own try/catch and surfaces as `{ error }`.
   const install: SkillsInstallStatus | null =
     await getSkillsInstallStatus().catch(() => null);
 
-  const server = createServer(version, { install });
+  const server = createServer(version, serveResourceContext());
   const transportType = options.transport || "stdio";
   const warning = formatSkillsInstallWarning(install);
 

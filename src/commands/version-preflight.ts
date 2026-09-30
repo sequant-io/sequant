@@ -18,7 +18,7 @@
  * customizations (#711); the same rule now covers version bumps.
  */
 
-import { getManifest } from "../lib/manifest.js";
+import { getManifest, readManifestStrict } from "../lib/manifest.js";
 import { resolveCliInvocation } from "../lib/version-check.js";
 import {
   areSkillsOutdated,
@@ -107,14 +107,29 @@ export interface SkillsInstallStatus {
   filesModified: false;
 }
 
+// The install status reads the manifest strictly: a manifest that exists but
+// can't be read or parsed throws, so sequant://install reports `{ error }`
+// rather than "not installed" (#1195 AC-2). The per-command pre-flight keeps
+// the lenient read — it must never block a command.
+const installStatusDeps: Pick<
+  VersionPreflightDeps,
+  "getManifest" | "areSkillsOutdated"
+> = {
+  getManifest: readManifestStrict,
+  areSkillsOutdated,
+};
+
 export async function getSkillsInstallStatus(
-  deps: Pick<VersionPreflightDeps, "getManifest" | "areSkillsOutdated"> = defaultDeps,
+  deps: Pick<
+    VersionPreflightDeps,
+    "getManifest" | "areSkillsOutdated"
+  > = installStatusDeps,
 ): Promise<SkillsInstallStatus | null> {
   const manifest = await deps.getManifest();
   if (!manifest) return null;
 
   // `cache: false` — the fingerprint cache is a write, and `serve` must stay
-  // side-effect-free; the ~15ms scan once per server start is fine.
+  // side-effect-free; the ~15ms scan per read of sequant://install is fine.
   const status = await deps.areSkillsOutdated({ cache: false });
   const cli = resolveCliInvocation();
   const managed = status.currentVersion !== null;
