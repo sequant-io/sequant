@@ -134,7 +134,7 @@ describe("#988 AC-3: sequant://install", () => {
   // The real provider `serve` wires in, not a synthetic thrower: the lenient
   // getManifest() used to swallow these into `null`, so the resource read
   // "not installed" for a manifest that exists but is broken.
-  describe("AC-2 through the real getSkillsInstallStatus provider", () => {
+  describe("through the real provider (AC-1, AC-2)", () => {
     const manifestPath = () => path.join(root, ".sequant-manifest.json");
 
     afterAll(() => {
