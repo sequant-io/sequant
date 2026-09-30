@@ -1821,9 +1821,9 @@ export function buildPRTitle(
 const EXEC_SUMMARY_MAX_LENGTH = 4000;
 
 /**
- * Extract the last `## Summary` section from exec's captured phase output
- * (#1223 AC-2), running up to the next `## ` heading or the end of the
- * string. Returns `undefined` when no summary section is present so the
+ * Extract the last `## Summary` or `### Summary` section from exec's captured
+ * phase output (#1223 AC-2), running up to the next heading of the same or a
+ * higher level, or the end of the string. Returns `undefined` when no summary section is present so the
  * caller can fall back to the placeholder text.
  *
  * @internal Exported for testing
@@ -1832,7 +1832,10 @@ export function extractExecSummary(
   execOutput: string | undefined,
 ): string | undefined {
   if (!execOutput) return undefined;
-  const headingRe = /^##\s+Summary\s*$/gim;
+  // `##` or `###`: real exec output uses both. Of 20 exec sessions on
+  // 2026-09-30, 3 ended with `## Summary`, 4 with `### Summary`, and 13 with
+  // none, so an `##`-only match missed most of the summaries that exist.
+  const headingRe = /^(#{2,3})\s+Summary\s*$/gim;
   let lastMatch: RegExpExecArray | null = null;
   let match: RegExpExecArray | null;
   while ((match = headingRe.exec(execOutput)) !== null) {
@@ -1840,7 +1843,10 @@ export function extractExecSummary(
   }
   if (!lastMatch) return undefined;
   const rest = execOutput.slice(lastMatch.index + lastMatch[0].length);
-  const nextHeading = rest.match(/^##\s+/m);
+  // Ends at the next heading of the same or a higher level: a `### Summary`
+  // stops at `###`, `##` or `#`; a `## Summary` keeps its `###` subsections.
+  const level = lastMatch[1].length;
+  const nextHeading = rest.match(new RegExp(`^#{1,${level}}\\s+`, "m"));
   const end = nextHeading?.index ?? rest.length;
   const summary = rest.slice(0, end).trim();
   if (!summary) return undefined;

@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildAutomatedPRBody,
   resolvePrLinkMode,
@@ -197,6 +199,39 @@ describe("extractExecSummary (#1223 AC-2)", () => {
 
   it("returns undefined for undefined input", () => {
     expect(extractExecSummary(undefined)).toBeUndefined();
+  });
+
+  // Real exec output (#1222's run, 2026-09-30) ends with `### Summary` after a
+  // `### Pre-PR Confidence Check`. 4 of the 7 exec sessions that wrote a
+  // summary that day used `###`, so an `##`-only match misses most of them.
+  it("reads a real exec ending that uses ### Summary", () => {
+    const output = readFileSync(
+      join(__dirname, "__fixtures__/exec-output/1222-h3-summary.txt"),
+      "utf-8",
+    );
+    const summary = extractExecSummary(output);
+
+    expect(summary).toMatch(/^- \*\*AC-1\*\*/);
+    expect(summary).toContain("All three ACs are mutation-verified");
+    expect(summary).not.toContain("Pre-PR Confidence Check");
+    expect(summary).not.toContain("Weakest part");
+  });
+
+  it("keeps a ## Summary's ### subsections and stops at the next ##", () => {
+    const output = [
+      "## Summary",
+      "- Did A",
+      "### Details",
+      "- detail",
+      "## Test plan",
+      "- ran it",
+    ].join("\n");
+    expect(extractExecSummary(output)).toBe("- Did A\n### Details\n- detail");
+  });
+
+  it("stops a ### Summary at the next ### heading", () => {
+    const output = "### Summary\n- Did A\n### Next steps\n- later";
+    expect(extractExecSummary(output)).toBe("- Did A");
   });
 
   it("returns undefined for an empty Summary section", () => {
