@@ -1201,6 +1201,7 @@ export class RunOrchestrator {
           config.verbose,
           manifest.packageManager,
           chainBase,
+          settings.run.worktreeRoot,
         );
       } else {
         worktreeMap = await ensureWorktrees(
@@ -1208,6 +1209,7 @@ export class RunOrchestrator {
           config.verbose,
           manifest.packageManager,
           baseBranch,
+          settings.run.worktreeRoot,
         );
       }
       for (const [issueNum, worktree] of worktreeMap.entries()) {

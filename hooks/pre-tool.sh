@@ -1193,11 +1193,27 @@ fi
 # --- Worktree Validation (AC-8) ---
 # Warn (but don't block) when committing outside a feature worktree
 # This catches accidental commits to main repo during feature work
+
+# in_linked_worktree <dir> — true when <dir> is inside a linked git worktree:
+# its --git-dir differs from its --git-common-dir, both made absolute (the
+# main checkout reports a relative `.git` for both). Asks git rather than
+# matching a path substring, so a configurable worktree root (#1199) is
+# still recognised. Fails (false) outside a git repository.
+in_linked_worktree() {
+    local dir="$1" git_dir common_dir d
+    git_dir=$(cd "$dir" 2>/dev/null && d=$(git rev-parse --git-dir 2>/dev/null) && cd "$d" && pwd -P) || return 1
+    common_dir=$(cd "$dir" 2>/dev/null && d=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$d" && pwd -P) || return 1
+    [[ "$git_dir" != "$common_dir" ]]
+}
+
 QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
 if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
-    CWD=$(pwd)
-    if ! echo "$CWD" | grep -qE 'worktrees/feature/'; then
-        echo "$(date +%H:%M:%S) WORKTREE_WARNING: Committing outside feature worktree ($CWD)" >> "$QUALITY_LOG"
+    # Check where the commit runs: a resolvable `cd` target, else the
+    # command's own cwd from the payload — not this hook process's cwd.
+    COMMIT_DIR=$(resolve_cd_target "$TOOL_INPUT")
+    COMMIT_DIR="${COMMIT_DIR:-${HOOK_CWD:-$PWD}}"
+    if ! in_linked_worktree "$COMMIT_DIR"; then
+        echo "$(date +%H:%M:%S) WORKTREE_WARNING: Committing outside feature worktree ($COMMIT_DIR)" >> "$QUALITY_LOG"
         # Warning only - does not block
     fi
 fi

@@ -12,7 +12,9 @@ import {
   installWorktreeDeps,
   buildAutomatedPRBody,
   resolvePrLinkMode,
+  resolveWorktreeRoot,
 } from "./worktree-manager.js";
+import { validateSettings } from "../settings.js";
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -244,4 +246,116 @@ describe("#1197 PR issue link: closes vs refs", () => {
     expect(body).toContain("| Refs #1197 | row |");
     expect(body).toContain("Refs sequant-io/sequant#1197");
   });
+});
+
+describe("#1199 worktree root resolution", () => {
+  const repo = "/home/u/code/app";
+
+  it("defaults to <parent of repo>/worktrees", () => {
+    expect(resolveWorktreeRoot(repo, undefined, {})).toBe(
+      "/home/u/code/worktrees",
+    );
+  });
+
+  it("uses the worktreeRoot setting when no env var is set", () => {
+    expect(resolveWorktreeRoot(repo, "/srv/trees", {})).toBe("/srv/trees");
+  });
+
+  it("resolves a relative setting against the repo root, not the cwd", () => {
+    expect(resolveWorktreeRoot(repo, "../trees", {})).toBe(
+      "/home/u/code/trees",
+    );
+    expect(resolveWorktreeRoot(repo, ".wt", {})).toBe("/home/u/code/app/.wt");
+  });
+
+  it("SEQUANT_WORKTREE_ROOT beats the setting", () => {
+    expect(
+      resolveWorktreeRoot(repo, "/srv/trees", {
+        SEQUANT_WORKTREE_ROOT: "/tmp/wt",
+      }),
+    ).toBe("/tmp/wt");
+  });
+
+  it("treats an empty or whitespace env var as unset", () => {
+    expect(
+      resolveWorktreeRoot(repo, "/srv/trees", { SEQUANT_WORKTREE_ROOT: "  " }),
+    ).toBe("/srv/trees");
+    expect(resolveWorktreeRoot(repo, "", { SEQUANT_WORKTREE_ROOT: "" })).toBe(
+      "/home/u/code/worktrees",
+    );
+  });
+
+  it("run.worktreeRoot is a known, schema-valid setting", () => {
+    const { settings, warnings } = validateSettings({
+      run: { worktreeRoot: "../trees" },
+    });
+    expect(settings.run.worktreeRoot).toBe("../trees");
+    expect(warnings).toEqual([]);
+  });
+});
+
+// #1199 AC-1: ensureWorktree creates the worktree under the resolved root.
+// getGitRoot() reads the process cwd, so this runs ensureWorktree in a child
+// process rooted in a scratch repo instead of spying on process.cwd (#870).
+describe("#1199 ensureWorktree honours the configured root", () => {
+  let root: string;
+  let clone: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1199-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    git(clone, "config", "commit.gpgsign", "false");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "a.txt", "init");
+    git(clone, "push", "-q", "-u", "origin", "main");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const runEnsure = (
+    worktreeRoot: string | undefined,
+    envRoot?: string,
+  ): { path: string } => {
+    const script = join(root, "ensure.mts");
+    const modPath = join(__dirname, "worktree-manager.ts");
+    writeFileSync(
+      script,
+      `import { ensureWorktree } from ${JSON.stringify(modPath)};
+const info = await ensureWorktree(1199, "custom root", false, undefined, "main", false, ${JSON.stringify(worktreeRoot)});
+process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
+    );
+    const env = { ...process.env };
+    delete env.SEQUANT_WORKTREE_ROOT;
+    if (envRoot !== undefined) env.SEQUANT_WORKTREE_ROOT = envRoot;
+    const out = execFileSync("npx", ["tsx", script], {
+      cwd: clone,
+      env,
+      encoding: "utf8",
+    });
+    const line = out.split("\n").find((l) => l.startsWith("RESULT="));
+    return JSON.parse(line!.slice("RESULT=".length));
+  };
+
+  it("creates the worktree under a relative run.worktreeRoot", () => {
+    const info = runEnsure(".trees");
+    expect(info.path).toBe(
+      join(clone, ".trees", "feature", "1199-custom-root"),
+    );
+    expect(git(info.path, "branch", "--show-current")).toBe(
+      "feature/1199-custom-root",
+    );
+  }, 60_000);
+
+  it("SEQUANT_WORKTREE_ROOT overrides the setting", () => {
+    const envRoot = join(root, "env-trees");
+    const info = runEnsure(".trees", envRoot);
+    expect(info.path).toBe(join(envRoot, "feature", "1199-custom-root"));
+  }, 60_000);
 });
