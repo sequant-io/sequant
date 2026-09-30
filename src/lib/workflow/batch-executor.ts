@@ -101,6 +101,7 @@ import {
   type ReadyResult,
   type ReadyPhaseRunner,
 } from "./ready-gate.js";
+import { isCompletedIssueStatus } from "./completed-status.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -2232,9 +2233,18 @@ export async function runIssueWithLogging(
   // warning also has to name this status, and naming the wrong one is exactly
   // the #837 inaccuracy being fixed here.
   const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
+  // #1233: a terminal "ready" status asserts qa actually reviewed the work.
+  // A successful run that never ran qa (e.g. `--phases spec` or `--phases
+  // exec`) stays `in_progress` so a later `sequant run N --phases exec`
+  // isn't skipped as already-completed.
+  // This reads what ran, so a `--resume` run that skips an already-completed
+  // qa also records `in_progress`. That's the conservative side: main used to
+  // mark such a run ready without looking at the earlier verdict. A
+  // `--phases qa` run restores the terminal status.
+  const ranQa = phaseResults.some((p) => p.phase === "qa");
   const finalStatus = readyGateResult
     ? readyGateResult.issueStatus
-    : success
+    : success && ranQa
       ? qaVerdict === "NEEDS_VERIFICATION"
         ? "awaiting_verification"
         : "ready_for_merge"
@@ -2251,13 +2261,17 @@ export async function runIssueWithLogging(
   // #760: chain resume rebases the next link onto this checkpoint, so a failure
   // here is not silent — warn prominently and record it on the result (AC-4).
   //
-  // Note a completed status was already written above — `ready_for_merge`, or
-  // `waiting_for_human_merge` when #817's `--ready-gate` owned the terminal
-  // status (#837) — so a re-run reads this link as a completed prefix and does
-  // NOT redo it. Its uncommitted work is therefore absent from the branch tip,
-  // which `computeChainResumePlan` detects (dirty worktree → fail fast) rather
-  // than wrong-basing the next link. The message states that outcome exactly:
-  // the work must be committed, or --force.
+  // When qa ran and passed, a completed status was already written above —
+  // `ready_for_merge`, or `waiting_for_human_merge` when #817's `--ready-gate`
+  // owned the terminal status (#837) — so a re-run reads this link as a
+  // completed prefix and does NOT redo it. Its uncommitted work is therefore
+  // absent from the branch tip, which `computeChainResumePlan` detects (dirty
+  // worktree → fail fast) rather than wrong-basing the next link: the work must
+  // be committed, or --force.
+  //
+  // A run without qa records `in_progress` instead (#1233). That link is not a
+  // completed prefix, so a re-run doesn't skip it. The warning below names
+  // whichever of the two outcomes applies.
   //
   // A gate that halted (`blocked`) is NOT a completed prefix, so that link is
   // re-executed on resume rather than skipped — see COMPLETED_STATUSES in
@@ -2272,12 +2286,19 @@ export async function runIssueWithLogging(
     );
     if (!checkpointOk) {
       checkpointFailed = true;
+      // The consequence depends on the status actually recorded: a completed
+      // status is skipped by the next run, a non-terminal one (#1233: a run
+      // without qa) is resumed. Name the one that applies (#837).
+      const reRunConsequence = isCompletedIssueStatus(finalStatus)
+        ? `so a re-run will skip it and refuse to resume the chain here until the ` +
+          `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`
+        : `so a re-run won't skip it (the chain resumes at its first unfinished link); ` +
+          `commit the work in ${worktreePath} first so the next link builds on it.`;
       log(
         chalk.yellow(
           `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
             `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
-            `${finalStatus}, so a re-run will skip it and refuse to resume the chain here until the ` +
-            `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`,
+            `${finalStatus}, ${reRunConsequence}`,
         ),
       );
     }

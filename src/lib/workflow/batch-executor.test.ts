@@ -97,7 +97,11 @@ import {
   runIssueWithLogging,
   recordIssueCompletion,
 } from "./batch-executor.js";
-import { createPR } from "./worktree-manager.js";
+import {
+  createCheckpointCommit,
+  createPR,
+  filterResumedPhases,
+} from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
 const mockCreatePR = vi.mocked(createPR);
@@ -2838,6 +2842,145 @@ describe("#972: NEEDS_VERIFICATION maps to awaiting_verification state", () => {
     const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
     expect(finalStatuses).toContain("ready_for_merge");
     expect(finalStatuses).not.toContain("awaiting_verification");
+  });
+});
+
+describe("#1233: a successful run without qa leaves the issue non-terminal", () => {
+  const updateIssueStatus = vi.fn();
+  const stateManager = {
+    getIssueState: vi.fn(),
+    initializeIssue: vi.fn(),
+    updateIssueStatus,
+    updatePRInfo: vi.fn(),
+    updatePhaseStatus: vi.fn(),
+    updateResumeHandle: vi.fn(),
+    updateWorktreeInfo: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets status to in_progress after a spec-only run, not ready_for_merge", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1233,
+        config: { phases: ["spec"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("in_progress");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+    expect(finalStatuses).not.toContain("awaiting_verification");
+  });
+
+  it("sets status to in_progress when --resume skips an already-completed qa", async () => {
+    // Documented, conservative behaviour: status reflects what ran in *this*
+    // run. main used to mark such a run ready without reading the earlier
+    // verdict; `--phases qa` restores the terminal status.
+    vi.mocked(filterResumedPhases).mockReturnValue({
+      phases: ["exec"],
+      skipped: ["qa"],
+    });
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1235,
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: false,
+          maxIterations: 1,
+        },
+        options: { autoDetectPhases: false, resume: true },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    expect(mockExecutePhase.mock.calls.map((c) => c[1])).toEqual(["exec"]);
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("in_progress");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+  });
+
+  it("sets status to in_progress after a spec+exec run with no qa", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1234,
+        config: {
+          phases: ["spec", "exec"],
+          qualityLoop: false,
+          maxIterations: 1,
+        },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("in_progress");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+  });
+});
+
+describe("#1233: the chain checkpoint-failure warning names the right re-run outcome", () => {
+  // The warning quotes the recorded status. After #1233 a chain link run
+  // without qa records `in_progress`, which the next run resumes rather than
+  // skips, so the old "a re-run will skip it" sentence would be wrong (#837).
+  async function checkpointWarning(phases: string[]): Promise<string> {
+    vi.mocked(createCheckpointCommit).mockReturnValue(false);
+    vi.mocked(createPR).mockReturnValue({ success: false } as never);
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await runIssueWithLogging({
+        ...makeCtx({
+          issueNumber: 1233,
+          config: {
+            phases: phases as ExecutionConfig["phases"],
+            qualityLoop: false,
+            maxIterations: 1,
+          },
+          options: { autoDetectPhases: false },
+        }),
+        worktree: { path: "/tmp/wt-1233", branch: "feature/1233" },
+        chain: { enabled: true, isLast: false },
+      });
+      return log.mock.calls
+        .map((c) => String(c[0]))
+        .filter((line) => line.includes("could not be created"))
+        .join("\n");
+    } finally {
+      log.mockRestore();
+    }
+  }
+
+  it("says a re-run won't skip it when no qa ran (in_progress)", async () => {
+    const warning = await checkpointWarning(["exec"]);
+    expect(warning).toContain("stays in_progress");
+    expect(warning).toContain("a re-run won't skip it");
+    expect(warning).not.toContain("will skip it");
+  });
+
+  it("still says a re-run will skip it when qa ran and passed (ready_for_merge)", async () => {
+    const warning = await checkpointWarning(["exec", "qa"]);
+    expect(warning).toContain("stays ready_for_merge");
+    expect(warning).toContain("a re-run will skip it");
   });
 });
 
