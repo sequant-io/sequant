@@ -419,6 +419,59 @@ export function isVersionBelow(version: string, floor: string): boolean {
   return false;
 }
 
+/** Core skills every `sequant run` loads from the phase worktree. */
+const COMMITTED_CORE_SKILLS = ["spec", "exec", "qa"];
+
+/** Run a git command in the cwd; returns trimmed stdout, or null on failure. */
+function gitOutput(args: string): string | null {
+  try {
+    return execSync(`git ${args}`, { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Warn when the repo has no remote, or none that points at GitHub. */
+function checkGitHubRemote(): Check {
+  const remotes = gitOutput("remote -v") ?? "";
+  if (remotes === "") {
+    return {
+      name: "GitHub Remote",
+      status: "warn",
+      message:
+        "No git remote. `sequant run` needs a GitHub remote to read issues and open PRs: run `gh repo create` or `git remote add origin <url>`",
+    };
+  }
+  if (!/github/i.test(remotes)) {
+    return {
+      name: "GitHub Remote",
+      status: "warn",
+      message:
+        "No GitHub remote found. `sequant run` reads issues and opens PRs on GitHub; add one with `git remote add <name> <github-url>`",
+    };
+  }
+  return {
+    name: "GitHub Remote",
+    status: "pass",
+    message: "GitHub remote configured",
+  };
+}
+
+/** Core skills present on disk under .claude/skills/ but not tracked by git. */
+async function untrackedCoreSkills(): Promise<string[]> {
+  const untracked: string[] = [];
+  for (const skill of COMMITTED_CORE_SKILLS) {
+    const path = `.claude/skills/${skill}/SKILL.md`;
+    if (!(await fileExists(path))) continue;
+    if (!gitOutput(`ls-files -- ${path}`)) {
+      untracked.push(`.claude/skills/${skill}`);
+    }
+  }
+  return untracked;
+}
+
 /** True when the cwd is inside a git work tree, including subdirectories. */
 function isInsideGitWorkTree(): boolean {
   try {
@@ -651,6 +704,30 @@ export async function doctorCommand(
       message:
         "Not inside a git repository. Run sequant from your project's git checkout (or `git init` first)",
     });
+  }
+
+  // Check 7b/7c (#1257): inside a repo, the two setup gaps that pass every
+  // other check yet stop `sequant run` — no GitHub remote, and core skills
+  // that exist on disk but were never committed (phase worktrees are checked
+  // out from git, so they never see them).
+  if (gitExists) {
+    checks.push(checkGitHubRemote());
+    const untracked = await untrackedCoreSkills();
+    if (untracked.length > 0) {
+      checks.push({
+        name: "Skills Committed",
+        status: "warn",
+        message:
+          `Not committed to git: ${untracked.join(", ")}. Phase worktrees are checked out from git and won't see them. ` +
+          "Commit .claude/skills/ before your first `sequant run`",
+      });
+    } else {
+      checks.push({
+        name: "Skills Committed",
+        status: "pass",
+        message: "Core skills are committed",
+      });
+    }
   }
 
   // Check 8: GitHub CLI installed
