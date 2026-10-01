@@ -30,10 +30,15 @@ suites that live at the repo root.
 - **Opt-in webhook.** `hooks/post-tool.sh` sends a `curl -s -X POST` to
   `$CLAUDE_HOOKS_WEBHOOK_URL` only when that environment variable is set.
   Unset (the default), no webhook call is made.
-- **Local files it writes.** The hooks write session logs under
-  `~/.sequant/logs/` (quality, timing, coverage, and test-run logs) and
-  maintain `.sequant/` state in the current project. Nothing outside those
-  paths and the project's own git working tree is modified.
+- **Local files it writes.** `pre-tool.sh` and `post-tool.sh` write session
+  logs (quality, timing, coverage, and test-run logs) to
+  `${CLAUDE_PLUGIN_DATA}/logs/` when Claude Code sets that variable,
+  otherwise to `~/.sequant/logs/`, falling back to a temp directory if
+  neither is writable. `capture-tokens.sh` (a `SessionEnd` hook) writes
+  `.sequant/.token-usage-<session-id>.json` in the current project. The
+  `sequant` CLI/MCP server the launcher starts maintains further `.sequant/`
+  state in the current project when running workflow commands. Nothing
+  outside those paths and the project's own git working tree is modified.
 
 ## Contents
 
