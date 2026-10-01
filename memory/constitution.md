@@ -83,6 +83,7 @@ Every rule below names its enforcing mechanism. Rules without a named enforcer a
 | No force-push or amend on pushed branches | `templates/hooks/pre-tool.sh` (pre-tool hook, `HOOK_BLOCKED: Force push`) |
 | No edits outside the issue worktree | `templates/hooks/pre-tool.sh` (worktree-only editing guard) |
 | Gate tests must be mutation-verified | `/qa` §6i + `SEQUANT_MUTATION` marker in PR body (#939); `Missing` caps at `AC_MET_BUT_NOT_A_PLUS`, `Failed` floors at `AC_NOT_MET` |
+| One producer per artifact; a second producer needs a parity test on every field and a recorded reason | `/spec` Design Review Q5 (producers and consumers, whole-repo grep) (#1250) |
 | All §1 Definition of Done gates | `/qa` §7 verdict algorithm (see §1 above) |
 
 ---

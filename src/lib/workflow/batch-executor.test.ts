@@ -16,7 +16,11 @@ import {
   withActivityHook,
   AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS,
 } from "./batch-executor.js";
-import { AUTO_WAIT_BUFFER_MS, parseQaSummary } from "./phase-executor.js";
+import {
+  AUTO_WAIT_BUFFER_MS,
+  parseQaSummary,
+  parseSpecDivergence,
+} from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
 import { readFileSync } from "node:fs";
 import { CodexStreamParser, evaluateCodexRun } from "./drivers/codex.js";
@@ -3169,5 +3173,74 @@ describe("runIssueWithLogging — #1198: phase log model fields (AC-1)", () => {
     const options = loggedOptionsFor("exec");
     expect(options?.requestedModel).toBeUndefined();
     expect(options?.model).toBe("claude-opus-5-5");
+  });
+});
+
+// #1250 AC-3: a spec that declares the issue's prescribed lever wrong
+// (`SPEC_DIVERGENCE`) halts the run before exec, printing the #995 bundle.
+describe("#1250: a spec-phase SPEC_DIVERGENCE halts the run before exec", () => {
+  const divergence = {
+    acs: "AC-2",
+    message: "AC-2 patches the second producer; Q5 says collapse them",
+  };
+
+  async function runWithSpec(spec: PhaseResult) {
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation(async (_n, phase) =>
+      phase === "spec" ? spec : successResult(phase),
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = await runIssueWithLogging(
+        makeCtx({ issueNumber: 1250, options: { autoDetectPhases: true } }),
+      );
+      const printed = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      return { result, printed };
+    } finally {
+      logSpy.mockRestore();
+    }
+  }
+
+  it("a successful spec that declares divergence never reaches exec", async () => {
+    const { result, printed } = await runWithSpec({
+      ...successResult("spec"),
+      output: '<!-- SEQUANT_SPEC: {"phases":["exec","qa"]} -->',
+      specDivergence: divergence,
+    });
+
+    expect(mockExecutePhase.mock.calls.map((c) => c[1])).toEqual(["spec"]);
+    expect(result.success).toBe(false);
+    expect(printed).toContain("Ladder halt: SPEC_DIVERGENCE");
+    expect(printed).toContain("Declared impossible: AC-2");
+  });
+
+  it("a failed spec that declares divergence prints the bundle before halting", async () => {
+    const { result, printed } = await runWithSpec({
+      phase: "spec",
+      success: false,
+      durationSeconds: 10,
+      error: "spec declared divergence",
+      specDivergence: divergence,
+    });
+
+    expect(mockExecutePhase.mock.calls.map((c) => c[1])).toEqual(["spec"]);
+    expect(result.success).toBe(false);
+    expect(printed).toContain("Ladder halt: SPEC_DIVERGENCE");
+    expect(printed).toContain("Declared impossible: AC-2");
+  });
+
+  it("a spec without divergence still proceeds to exec", async () => {
+    const { result } = await runWithSpec(successResult("spec"));
+
+    expect(mockExecutePhase.mock.calls.map((c) => c[1])).toContain("exec");
+    expect(result.phaseResults.some((p) => p.phase === "exec")).toBe(true);
+  });
+
+  it("parseSpecDivergence reads the outcome from a spec-phase marker", () => {
+    const parsed = parseSpecDivergence(
+      '<!-- SEQUANT_PHASE: {"phase":"spec","status":"failed","timestamp":"2026-09-30T00:00:00.000Z","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"lever is wrong"} -->',
+    );
+
+    expect(parsed).toEqual({ acs: "AC-2", message: "lever is wrong" });
   });
 });
