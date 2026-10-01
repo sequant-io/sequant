@@ -304,10 +304,12 @@ See [verification-criteria.md](references/verification-criteria.md) for detailed
 
 1. **Where does this logic belong?** [Module/layer that owns this change]
 2. **What's the simplest correct approach?** [Minimum implementation, rejected alternatives]
-3. **What existing pattern does this follow?** [Named pattern, confirm it fits]
+3. **What existing pattern does this follow, and how often has it been re-patched?** [Named pattern; prior fixes from `git log -S '<symbol>' --oneline` + an issue search, cited by number. ≥2 prior fix issues = **stop**, not precedent: fix the class, or record `deliberately local, reason: …, class tracked in #N`]
 4. **What would a senior reviewer challenge?** [Anticipated "why didn't you just...?" pushback]
+5. **Every producer and consumer of the artifact this changes (whole-repo grep).** [List each. ≥2 producers → collapse them, or add a parity test on every field and record why]
 
-<!-- Simple tier: Q1 and Q3 only. Standard/Complex: all four. -->
+<!-- Simple tier: Q1 and Q3 (the recurrence count included). Standard/Complex: all five; Q5 is Standard/Complex only. -->
+<!-- Halt on divergence: when Q3 or Q5 contradicts the lever the issue prescribes (the AC fixes a site the review says is wrong), post the plan, then end your final response message with a bare (unfenced) `SEQUANT_PHASE` marker: `"status":"failed"`, `"outcome":"SPEC_DIVERGENCE"`, `"divergenceAcs":"AC-N"` and a one-sentence `"error"`, instead of `completed`. The run reads that marker from your response text, never from the posted comment (a body-file comment never reaches the output, #814); repeat it in the comment for the record. `sequant run` then stops before exec. Semantics as in the exec skill's "When the spec is impossible as written". Resume = the owner edits the AC lines and re-runs; a decision comment alone does not re-open the work. A plan that fixes the class or records `deliberately local` is not a divergence. -->
 <!-- ADR: when the recommended plan chooses between designs (Q2 names a rejected alternative, or the plan presents options), say so here and require the exec PR to include an ADR in docs/adr/ (next NNNN, shape per docs/adr/README.md). -->
 
 ---

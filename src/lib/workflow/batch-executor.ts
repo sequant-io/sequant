@@ -1199,6 +1199,49 @@ export async function runIssueWithLogging(
     }
   }
 
+  // #1250: hoisted above the spec path so a spec-phase SPEC_DIVERGENCE halt
+  // reuses the one bundle builder. Both arrays are still empty at spec time —
+  // the "no SHA tried, no rung spent" record.
+  /** Per-iteration verdicts/SHAs replayed in a ladder halt's evidence bundle. */
+  const iterationRecords: DivergenceIterationRecord[] = [];
+  /** Every rung this issue actually spent — the bundle's "no rung was spent" proof. */
+  const modelEscalations: ModelEscalationRecord[] = [];
+  /**
+   * #995: assemble the evidence bundle for a ladder halt.
+   *
+   * Reads only state this function already keeps, so a halt costs no extra
+   * `git` call on top of the ladder's existing per-iteration snapshot. The
+   * `escalationHistory` it hands over is the live `modelEscalations` array —
+   * empty on a `SPEC_DIVERGENCE` or `DIVERGENCE_SUSPECT` halt, which is what
+   * makes "no rung was spent" a fact in the record rather than a claim in a
+   * comment (#971 AC-3/AC-4).
+   */
+  const buildBundle = (
+    reason: LadderHaltReason,
+    phase: string,
+    declared?: { acs?: string; message?: string },
+  ): EvidenceBundle => ({
+    issueNumber,
+    phase,
+    reason,
+    shasTried: [
+      ...new Set(
+        iterationRecords
+          .map((r) => r.sha)
+          .filter((sha): sha is string => Boolean(sha)),
+      ),
+    ],
+    iterations: [...iterationRecords],
+    escalationHistory: [...modelEscalations],
+    // `declaredAcs` is present-but-empty when the agent halted without naming
+    // an AC; the formatter reports that explicitly rather than omitting the
+    // line, because AC-14 requires the halt output to name the AC.
+    ...(reason === "SPEC_DIVERGENCE"
+      ? { declaredAcs: declared?.acs ?? "" }
+      : {}),
+    ...(declared?.message ? { message: declared.message } : {}),
+  });
+
   // Determine phases for this specific issue
   let phases: Phase[];
   let detectedQualityLoop = false;
@@ -1373,7 +1416,22 @@ export async function runIssueWithLogging(
     // `resumeAt` so `sequant resume` can re-enter after the window reopens.
     await recordWindowHaltState(stateManager, issueNumber, "spec", specResult);
 
-    if (!specResult.success) {
+    // #1250: spec declared the issue's prescribed lever wrong
+    // (`SPEC_DIVERGENCE`). Print the bundle and halt before exec — the same
+    // halt the phase loop applies (#995). Outside the success split for the
+    // same reason: a spec that declares divergence and still emits a valid
+    // `SEQUANT_SPEC` passes the #1193 guard and would otherwise reach exec.
+    if (specResult.specDivergence) {
+      log(
+        chalk.yellow(
+          formatEvidenceBundle(
+            buildBundle("SPEC_DIVERGENCE", "spec", specResult.specDivergence),
+          ),
+        ),
+      );
+    }
+
+    if (!specResult.success || specResult.specDivergence) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       // Archive relay state on early exit (spec failure).
       if (relayActivation) {
@@ -1555,10 +1613,6 @@ export async function runIssueWithLogging(
   let haltedByDivergence: LadderHaltReason | null = null;
   /** The bundle printed and persisted at the halt. Null until one fires. */
   let divergenceBundle: EvidenceBundle | null = null;
-  /** Per-iteration verdicts/SHAs replayed in the bundle above. */
-  const iterationRecords: DivergenceIterationRecord[] = [];
-  /** Every rung this issue actually spent — the bundle's "no rung was spent" proof. */
-  const modelEscalations: ModelEscalationRecord[] = [];
   /**
    * #995 (#971 AC-3): consecutive iterations classified `divergence-suspect`.
    * The halt fires at two, not one: a single divergence-suspect iteration is
@@ -1589,42 +1643,6 @@ export async function runIssueWithLogging(
    */
   const ladderConfigured = isLadderConfigured(issueConfig);
   const takeSnapshot = snapshotProgressFn ?? snapshotLoopProgress;
-
-  /**
-   * #995: assemble the evidence bundle for a ladder halt.
-   *
-   * Reads only state this function already keeps, so a halt costs no extra
-   * `git` call on top of the ladder's existing per-iteration snapshot. The
-   * `escalationHistory` it hands over is the live `modelEscalations` array —
-   * empty on a `SPEC_DIVERGENCE` or `DIVERGENCE_SUSPECT` halt, which is what
-   * makes "no rung was spent" a fact in the record rather than a claim in a
-   * comment (#971 AC-3/AC-4).
-   */
-  const buildBundle = (
-    reason: LadderHaltReason,
-    phase: string,
-    declared?: { acs?: string; message?: string },
-  ): EvidenceBundle => ({
-    issueNumber,
-    phase,
-    reason,
-    shasTried: [
-      ...new Set(
-        iterationRecords
-          .map((r) => r.sha)
-          .filter((sha): sha is string => Boolean(sha)),
-      ),
-    ],
-    iterations: [...iterationRecords],
-    escalationHistory: [...modelEscalations],
-    // `declaredAcs` is present-but-empty when the agent halted without naming
-    // an AC; the formatter reports that explicitly rather than omitting the
-    // line, because AC-14 requires the halt output to name the AC.
-    ...(reason === "SPEC_DIVERGENCE"
-      ? { declaredAcs: declared?.acs ?? "" }
-      : {}),
-    ...(declared?.message ? { message: declared.message } : {}),
-  });
 
   while (iteration < maxIterations) {
     iteration++;
