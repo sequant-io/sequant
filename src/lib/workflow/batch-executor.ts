@@ -71,6 +71,7 @@ import {
   createCheckpointCommit,
   rebaseBeforePR,
   createPR,
+  extractExecSummary,
   readCacheMetrics,
   filterResumedPhases,
 } from "./worktree-manager.js";
@@ -1099,6 +1100,80 @@ export async function runIssueWithLogging(
         }
       : undefined;
 
+  // #1247: the one call site of `createPR` (the only PR producer under the
+  // orchestrator). It runs after each successful exec pass, so a PR exists
+  // while qa reads the PR body, and again after QA, where `createPR`'s update
+  // path adds the QA note and the ready-gate report to the same PR.
+  const openOrUpdatePR = async (
+    prPath: string,
+    prBranch: string,
+    after: {
+      qaVerdict?: string;
+      readyGateReport?: string;
+    } = {},
+  ): Promise<ReturnType<typeof createPR>> => {
+    // #605: under --stacked, target predecessor branch (only for non-first,
+    // non-last issues). Last PR keeps `main` so partial progress can land.
+    const stackOptions =
+      chain?.predecessorBranch || chain?.stackManifest
+        ? {
+            prBase: chain.predecessorBranch,
+            stackManifest: chain.stackManifest,
+          }
+        : undefined;
+    // #1223 AC-2: surface exec's own `## Summary` in the PR body instead of
+    // the placeholder text.
+    // The latest exec pass: a quality-loop iteration re-runs exec, and the
+    // first pass's summary describes code the loop has since changed.
+    const latestExec = [...phaseResults]
+      .reverse()
+      .find((p) => p.phase === "exec");
+    const execOutput = latestExec?.output;
+    // #1247 AC-3: a run with no exec pass (qa-only re-run) falls back to the
+    // summary the last exec pass recorded on the issue's state.
+    let execSummary: string | undefined;
+    if (!latestExec && stateManager) {
+      try {
+        execSummary = (await stateManager.getIssueState(issueNumber))
+          ?.execSummary;
+      } catch {
+        // State read errors fall back to the placeholder text
+      }
+    }
+    const prResult = createPR(
+      prPath,
+      issueNumber,
+      issueTitle,
+      prBranch,
+      config.verbose,
+      labels,
+      stackOptions,
+      after.qaVerdict,
+      after.readyGateReport,
+      // #1197: closing-keyword mode + its label override, resolved once by
+      // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
+      config.prIssueLink,
+      config.prNoCloseLabel,
+      { execOutput, execSummary },
+    );
+    if (
+      prResult.success &&
+      prResult.prNumber &&
+      prResult.prUrl &&
+      stateManager
+    ) {
+      try {
+        await stateManager.updatePRInfo(issueNumber, {
+          number: prResult.prNumber,
+          url: prResult.prUrl,
+        });
+      } catch {
+        // State tracking errors shouldn't stop execution
+      }
+    }
+    return prResult;
+  };
+
   // Activate relay (#383) if enabled. Tolerates errors — relay must never
   // block the underlying run.
   let relayActivation: ActivationResult | null = null;
@@ -1923,6 +1998,45 @@ export async function runIssueWithLogging(
         }
       }
 
+      // #1247 AC-3: keep exec's summary on the issue's state, so a later
+      // qa-only run (exec → qa AC_NOT_MET → qa re-run) can still put it in
+      // the PR body instead of the placeholder.
+      if (stateManager && phase === "exec" && result.success) {
+        try {
+          await stateManager.updateExecSummary(
+            issueNumber,
+            extractExecSummary(result.output),
+          );
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
+      }
+
+      // #1247 AC-5 (owner decision, option B): open the PR as soon as exec
+      // has committed work, so qa — which reads the mutation records, the AC
+      // table and the test-plan boxes from the PR body — has a body to read.
+      // A failure here only warns: the post-QA call retries and stays fatal
+      // (#879). An exec that declared the spec impossible (`SPEC_DIVERGENCE`)
+      // halts below even on success, and opens no PR.
+      if (
+        phase === "exec" &&
+        result.success &&
+        !result.specDivergence &&
+        worktreePath &&
+        branch &&
+        !options.noPr &&
+        hasExecChanges(worktreePath)
+      ) {
+        const early = await openOrUpdatePR(worktreePath, branch);
+        if (early.attempted && !early.success) {
+          log(
+            chalk.yellow(
+              `    !  PR after exec failed (retried after QA): ${early.error ?? "unknown error"}`,
+            ),
+          );
+        }
+      }
+
       // Durable halt-and-resume (#892 AC-1): a waitable-window halt writes
       // `resumeAt`; success or a non-window failure clears any stale record.
       await recordWindowHaltState(stateManager, issueNumber, phase, result);
@@ -2349,58 +2463,18 @@ export async function runIssueWithLogging(
   }
   const shouldCreatePR = wouldCreatePR && !prSkippedReason;
   if (shouldCreatePR) {
-    // #605: under --stacked, target predecessor branch (only for non-first,
-    // non-last issues). Last PR keeps `main` so partial progress can land.
-    const stackOptions =
-      chain?.predecessorBranch || chain?.stackManifest
-        ? {
-            prBase: chain.predecessorBranch,
-            stackManifest: chain.stackManifest,
-          }
-        : undefined;
     // #749: surface a non-A+ qa verdict (e.g. AC_MET_BUT_NOT_A_PLUS) in the PR
     // body so a reviewer sees why the run broke to PR rather than reaching A+.
     const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
-    // #1223 AC-2: surface exec's own `## Summary` in the PR body instead of
-    // the placeholder text.
-    // The latest exec pass: a quality-loop iteration re-runs exec, and the
-    // first pass's summary describes code the loop has since changed.
-    const execOutput = [...phaseResults]
-      .reverse()
-      .find((p) => p.phase === "exec")?.output;
-    const prResult = createPR(
-      worktreePath,
-      issueNumber,
-      issueTitle,
-      branch,
-      config.verbose,
-      labels,
-      stackOptions,
+    const prResult = await openOrUpdatePR(worktreePath, branch, {
       qaVerdict,
       // #817 AC-6: surface the ready-gate outcome in the PR body the same way
       // `sequant ready` reports it (threshold reached vs guard halt).
-      readyGateResult?.report,
-      // #1197: closing-keyword mode + its label override, resolved once by
-      // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
-      config.prIssueLink,
-      config.prNoCloseLabel,
-      { execOutput },
-    );
+      readyGateReport: readyGateResult?.report,
+    });
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;
       prUrl = prResult.prUrl;
-
-      // Update workflow state with PR info
-      if (stateManager) {
-        try {
-          await stateManager.updatePRInfo(issueNumber, {
-            number: prResult.prNumber,
-            url: prResult.prUrl,
-          });
-        } catch {
-          // State tracking errors shouldn't stop execution
-        }
-      }
     } else if (prResult.attempted && !prResult.success) {
       // #879: PR creation was attempted (branch/QA passed) but failed. This is
       // a run failure — the deliverable never reached GitHub.

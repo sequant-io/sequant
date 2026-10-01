@@ -328,6 +328,12 @@ export const IssueStateSchema = z.object({
   phases: z.record(z.string(), PhaseStateSchema),
   /** PR information (if PR created) */
   pr: PRInfoSchema.optional(),
+  /**
+   * The last successful exec pass's `## Summary` section (#1247 AC-3), as
+   * extracted by `extractExecSummary`. A later qa-only run has no exec output
+   * of its own, so the PR it opens reads exec's summary from here.
+   */
+  execSummary: z.string().optional(),
   /** Quality loop state (if loop enabled) */
   loop: LoopStateSchema.optional(),
   /** Acceptance criteria tracking (if extracted by /spec) */

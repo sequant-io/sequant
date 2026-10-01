@@ -177,6 +177,7 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 3. **Verify, then use, the provided path** - `SEQUANT_WORKTREE` is authoritative *when valid*, but it is never trusted unchecked: run the existence guard in "Feature Worktree Workflow" below and halt if it fails (#899)
 4. **Reduce GitHub comment frequency** - Defer progress updates to the orchestrator
 5. **Trust issue context** - The orchestrator has already fetched and validated issue data
+6. **Skip PR creation** - Commit and push the branch, but open no PR: the orchestrator is the only PR producer: it opens the PR right after exec and updates it after QA (#1247). See "PR Creation and Verification" below
 
 **Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
 
@@ -242,13 +243,15 @@ fi
   the block**, exactly as you substitute `<issue-number>`. Read it with
   `gh issue view <issue-number> --json title -q .title` when `gh` is installed.
   A claude.ai cloud sandbox has no `gh`: read it with the GitHub MCP
-  `issue_read` tool instead, and open the PR at the end with the MCP
-  pull-request tool in place of `gh pr create`. The block never calls `gh`
-  itself, so it runs the same way in both places.
+  `issue_read` tool instead. When standalone (`SEQUANT_ORCHESTRATOR` unset),
+  open the PR at the end with the MCP pull-request tool in place of
+  `gh pr create`; when orchestrated, open no PR by either means (#1247). The
+  block never calls `gh` itself, so it runs the same way in both places.
 - **Already on a non-base branch:** keep it. Do not create a second branch.
 - **The current clone is the worktree.** Everywhere below that says "the
   worktree" or "the worktree path", read `$PWD`. Run `npm test`, `npm run build`,
-  commits, `git push -u origin <branch>` and `gh pr create` from here.
+  commits and `git push -u origin <branch>` from here, and `gh pr create` too
+  when standalone.
 - **Never** run `./scripts/new-feature.sh` or `./scripts/dev/new-feature.sh`,
   never run `git worktree add`, and never run `npx sequant worktree resolve` or
   `npx sequant worktree verify`. The sections that call them are marked below
@@ -260,9 +263,10 @@ fi
   isolation (`isolateParallel`) is off in this mode, because it runs
   `git worktree add`.
 - Everything else is unchanged: the AC loop, the quality gates, the mutation
-  record, PR creation and the progress comment. If `SEQUANT_ORCHESTRATOR` is
-  also set, its non-worktree behaviors (fewer GitHub comments, trusted issue
-  context) still apply.
+  record and the progress comment. PR creation is unchanged only when
+  standalone. If `SEQUANT_ORCHESTRATOR` is also set, its non-worktree
+  behaviors (fewer GitHub comments, trusted issue context) still apply, and
+  so does "PR Creation and Verification": push the branch, open no PR (#1247).
 
 <!-- END: in-place-checkout (#1136) -->
 
@@ -977,6 +981,8 @@ Not all interface fields need CLI registration. Fields are internal-only if:
 ---
 
 ### PR Creation and Verification
+
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - except step 1: commit and push the branch (`git push -u origin <branch>`), then report the branch and stop. Open no PR by any means: no `gh pr create`, and no GitHub MCP pull-request tool either. The orchestrator is the only PR producer (#1247). It opens the PR as soon as exec finishes, so QA reads your summary, AC table and mutation markers from the PR body, and it updates the same PR after QA with the QA verdict and the ready-gate report. The body is built from your last `## Summary` section. Put the AC verification table and every `SEQUANT_MUTATION` marker inside that final `## Summary` section so they reach the PR body. Under `--no-pr` the orchestrator opens none either.
 
 After implementation is complete and all checks pass, create and verify the PR:
 
@@ -2287,7 +2293,7 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 - [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and `npm test`
 - [ ] **CLI Wiring Check** - If option interfaces modified, verified CLI flags are registered (Section 3g)
 - [ ] **Quality Plan Alignment** - Included if quality plan was available (or marked N/A if no quality plan)
-- [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions)
+- [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions); under `SEQUANT_ORCHESTRATOR`, "left to the orchestrator" with the pushed branch name (#1247)
 - [ ] **Progress Update Draft** - Formatted comment for GitHub issue
 - [ ] **Documentation Reminder** - Note if README/docs need updating (checked in /qa)
 - [ ] **Next Steps** - Clear guidance on remaining work

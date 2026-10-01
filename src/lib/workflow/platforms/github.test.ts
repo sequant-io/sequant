@@ -488,6 +488,67 @@ describe("GitHubProvider", () => {
 
   // #605: async createPR(opts) must forward opts.base to the underlying
   // `gh pr create` call. Previously dropped silently.
+  describe("updatePRSync (#1247)", () => {
+    it("PATCHes the pull via gh api with the fields as JSON on stdin", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from("{}"),
+        stderr: Buffer.from(""),
+      } as never);
+
+      const result = provider.updatePRSync(
+        7,
+        { title: "fix(#1): t", body: "line `x`\n$(not run)", base: "feature/0" },
+        "/wt",
+      );
+
+      expect(result).toEqual({ success: true });
+      const [cmd, args, opts] = mockSpawnSync.mock.calls[0] as [
+        string,
+        string[],
+        { cwd?: string; input?: string },
+      ];
+      expect(cmd).toBe("gh");
+      expect(args).toEqual([
+        "api",
+        "-X",
+        "PATCH",
+        "repos/{owner}/{repo}/pulls/7",
+        "--input",
+        "-",
+      ]);
+      expect(args).not.toContain("edit");
+      expect(opts.cwd).toBe("/wt");
+      expect(JSON.parse(opts.input ?? "")).toEqual({
+        title: "fix(#1): t",
+        body: "line `x`\n$(not run)",
+        base: "feature/0",
+      });
+    });
+
+    it("omits unset fields and reports gh's stderr on failure", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("HTTP 422: Validation Failed\n"),
+      } as never);
+
+      const result = provider.updatePRSync(7, { base: "main" });
+
+      const opts = mockSpawnSync.mock.calls[0][2] as { input?: string };
+      expect(JSON.parse(opts.input ?? "")).toEqual({ base: "main" });
+      expect(result).toEqual({
+        success: false,
+        error: "HTTP 422: Validation Failed",
+      });
+    });
+
+    it("makes no call when there is nothing to update", () => {
+      expect(provider.updatePRSync(7, {})).toEqual({ success: true });
+      expect(mockSpawnSync).not.toHaveBeenCalled();
+    });
+  });
+
   describe("createPR (async) forwards opts.base", () => {
     it("passes --base <opts.base> to gh pr create", async () => {
       mockSpawnSync.mockReturnValue({
