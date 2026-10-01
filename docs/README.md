@@ -35,6 +35,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 ### Guides
 
+- [Write Issues Sequant Can Execute](guides/writing-issues.md) — The issue format Sequant plans and checks against, with a copy-paste template
 - [Complete Workflow](guides/workflow.md) — Full workflow including post-QA patterns
 - [Customization](guides/customization.md) — Override templates safely
 - [MCP Integrations](guides/mcp-integrations.md) — Optional MCP server setup
