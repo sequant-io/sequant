@@ -337,8 +337,8 @@ describe("run command flag surface (#705)", () => {
     it("run --help describes --qa-gate as deprecated, not as gating", () => {
       const help = execSync(`node ${cliPath} run --help`, execOptions);
 
-      expect(help).toMatch(/--qa-gate/);
-      expect(help).toMatch(/DEPRECATED/);
+      // Scoped to the --qa-gate line so another deprecated flag can't satisfy it.
+      expect(help).toMatch(/--qa-gate\s+Deprecated: no-op/);
       // The removed promise: help text must no longer claim it waits for QA.
       expect(help).not.toMatch(/Wait for QA pass/);
     });

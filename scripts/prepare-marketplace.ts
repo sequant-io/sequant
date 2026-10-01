@@ -393,7 +393,8 @@ AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-en
 ### Plugin (interactive users)
 
 \`\`\`
-/plugin install sequant@sequant-io/sequant
+/plugin marketplace add sequant-io/sequant
+/plugin install sequant@sequant
 \`\`\`
 
 Or browse in \`/plugin > Discover\`.

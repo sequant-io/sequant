@@ -68,9 +68,10 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   console.log(chalk.blue("\nChecking for updates...\n"));
   console.log(
     chalk.yellow(
-      "Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
-        "   /plugin install sequant@claude-plugin-directory\n" +
-        "   Plugin users get auto-updates without running update manually.\n",
+      "Note: To install sequant as a Claude Code plugin instead:\n" +
+        "   /plugin marketplace add sequant-io/sequant\n" +
+        "   /plugin install sequant@sequant\n" +
+        "   Plugins do not auto-update: run `claude plugin update sequant@sequant` for new versions.\n",
     ),
   );
 
