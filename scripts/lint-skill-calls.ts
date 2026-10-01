@@ -9,7 +9,7 @@
  * to Anthropic's version. Qualifying as `sequant:<name>` avoids this.
  *
  * Scans every `**\/*.md` under `.claude/skills/`, `templates/skills/`,
- * and `skills/` (not just `SKILL.md`) — referenced markdown files are
+ * `skills/`, and `plugin/skills/` (not just `SKILL.md`) — referenced markdown files are
  * loaded by the harness too and can contain runtime-dangerous calls.
  * Multi-line `Skill(\n  skill: "...",\n)` invocations are detected.
  *
@@ -52,7 +52,12 @@ export const ANTHROPIC_TOP_LEVEL_NAMES: readonly string[] = [
   "fewer-permission-prompts",
 ];
 
-const SCAN_DIRS = [".claude/skills", "templates/skills", "skills"];
+const SCAN_DIRS = [
+  ".claude/skills",
+  "templates/skills",
+  "skills",
+  "plugin/skills",
+];
 
 export interface Violation {
   file: string;

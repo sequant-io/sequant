@@ -1,11 +1,11 @@
 // #988 AC-4: the .mcp.json that plugin users actually install is pinned.
-// `marketplace.json` declares the plugin `source` ("./" today), so the shipped
-// MCP config is whatever `.mcp.json` sits at that path — the repo root — not
+// `marketplace.json` declares the plugin `source` (`./plugin` since #1265),
+// so the shipped MCP config is whatever `.mcp.json` sits at that path — not
 // the copy prepare-marketplace stamps under dist/. #793 pinned only the dist
 // copy, which the GitHub marketplace never installs, and users kept getting
 // `sequant@latest` (the trigger for the #988 incident).
 //
-// Mutation-verified: setting the root .mcp.json arg back to `sequant@latest`
+// Mutation-verified: setting the shipped .mcp.json arg back to `sequant@latest`
 // fails the pin assertion.
 
 import { describe, it, expect } from "vitest";
@@ -13,6 +13,24 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const PROJECT_ROOT = resolve(__dirname, "..");
+
+// Resolves the .mcp.json that plugin users actually install, by reading
+// marketplace.json's `source` field — never hardcode the path (#1265: the
+// #1084 block below used to hardcode the repo root, which stopped being the
+// shipped file once `source` moved to `./plugin`).
+function shippedMcpJsonPath(): string {
+  const marketplace = JSON.parse(
+    readFileSync(
+      join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"),
+      "utf8",
+    ),
+  ) as { plugins: Array<{ name: string; source: string }> };
+  const entry = marketplace.plugins.find((p) => p.name === "sequant");
+  if (!entry) {
+    throw new Error("marketplace.json must list the sequant plugin");
+  }
+  return join(PROJECT_ROOT, entry.source, ".mcp.json");
+}
 
 function readSequantPin(mcpJson: unknown): string | undefined {
   const config = mcpJson as Record<string, unknown>;
@@ -30,21 +48,9 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
   const pkg = JSON.parse(
     readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
   ) as { version: string };
-  const marketplace = JSON.parse(
-    readFileSync(
-      join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"),
-      "utf8",
-    ),
-  ) as { plugins: Array<{ name: string; source: string }> };
 
   it("resolves the shipped .mcp.json from marketplace.json `source` and finds the exact pin", () => {
-    const entry = marketplace.plugins.find((p) => p.name === "sequant");
-    expect(
-      entry,
-      "marketplace.json must list the sequant plugin",
-    ).toBeDefined();
-
-    const shipped = join(PROJECT_ROOT, entry!.source, ".mcp.json");
+    const shipped = shippedMcpJsonPath();
     const pin = readSequantPin(JSON.parse(readFileSync(shipped, "utf8")));
 
     expect(pin).toBe(`sequant@${pkg.version}`);
@@ -66,7 +72,7 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
 
 describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no placeholders", () => {
   const shipped = JSON.parse(
-    readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
+    readFileSync(shippedMcpJsonPath(), "utf8"),
   ) as {
     mcpServers?: {
       sequant?: {

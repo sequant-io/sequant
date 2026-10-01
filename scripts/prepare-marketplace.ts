@@ -50,8 +50,8 @@ function countSkills(dir: string): number {
 
 /**
  * The `.mcp.json` that plugin users actually receive (#988). `marketplace.json`
- * declares each plugin's `source`; for sequant that is `"./"`, so the shipped
- * MCP config is the repo-root `.mcp.json` — NOT the pinned copy written under
+ * declares each plugin's `source` (`./plugin` since #1265), so the shipped
+ * MCP config is `plugin/.mcp.json` — NOT the pinned copy written under
  * `dist/`. #793's pin only ever landed in the dist copy, which the GitHub
  * marketplace never installs; users kept getting `sequant@latest`.
  */
