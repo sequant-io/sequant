@@ -1,0 +1,238 @@
+<title>Sequant How-To Research</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Public+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: single reading column (~68ch) with full-width tables; verdict-coloured pills mirror sequant's own QA states. */
+:root{
+  --bg:#f6f7f5; --surface:#ffffff; --fg:#1b2420; --muted:#5b6862; --line:#d9dfdb;
+  --accent:#1f6f5c; --met:#2f7d4a; --partial:#a3670f; --notmet:#b23a32;
+  --met-bg:#e5f2e9; --partial-bg:#f8eedb; --notmet-bg:#f8e3e1; --code-bg:#eef1ef;
+  --display:"Fraunces",Georgia,serif; --body:"Public Sans",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121715; --surface:#19201d; --fg:#e3e9e6; --muted:#9aa8a1; --line:#2c3632;
+  --accent:#5cc4a6; --met:#6fc78f; --partial:#e0a84c; --notmet:#ef7f75;
+  --met-bg:#1d3326; --partial-bg:#3a2d16; --notmet-bg:#3c1f1d; --code-bg:#202a26; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121715; --surface:#19201d; --fg:#e3e9e6; --muted:#9aa8a1; --line:#2c3632;
+  --accent:#5cc4a6; --met:#6fc78f; --partial:#e0a84c; --notmet:#ef7f75;
+  --met-bg:#1d3326; --partial-bg:#3a2d16; --notmet-bg:#3c1f1d; --code-bg:#202a26; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body);padding-inline:16px;padding-block:40px 80px}
+main{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:14px;min-width:0}
+h1,h2{font-family:var(--display);font-weight:600;text-wrap:balance;line-height:1.2;margin:0}
+h1{font-size:2.1rem}
+h2{font-size:1.45rem;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:1rem;margin:10px 0 0}
+p,ul,ol{margin:0;max-width:68ch}
+li+li{margin-top:6px}
+.eyebrow{font:600 .75rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.lede{font-size:1.1rem;color:var(--muted)}
+code{font:.86em var(--mono);background:var(--code-bg);padding:1px 5px;border-radius:4px}
+a{color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.stat b{font:600 1.6rem/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:.88rem}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.92rem;min-width:640px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font:600 .72rem/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--code-bg)}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;font:600 .7rem/1 var(--mono);padding:4px 7px;border-radius:999px;white-space:nowrap}
+.p0{background:var(--notmet-bg);color:var(--notmet)}
+.p1{background:var(--partial-bg);color:var(--partial)}
+.p2{background:var(--met-bg);color:var(--met)}
+.callout{border-left:3px solid var(--notmet);background:var(--surface);padding:14px 16px;border-radius:0 8px 8px 0;display:flex;flex-direction:column;gap:8px}
+.callout.ok{border-left-color:var(--accent)}
+.personas{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.persona{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.persona h3{margin:0}
+.persona .q{font-family:var(--display);font-size:1.05rem}
+.muted{color:var(--muted)}
+footer{color:var(--muted);font-size:.85rem}
+</style>
+
+<main>
+<header style="display:flex;flex-direction:column;gap:12px">
+  <div class="eyebrow">Research brief · 2026-09-30</div>
+  <h1>How-to guides for Sequant: what to write, what to fix first</h1>
+  <p class="lede">Three blind reads (a top-of-funnel visitor, a new user, an experienced user), a mine of 400 issues, 261 recorded runs and 180 Entire checkpoints, and a distribution scan. The result is a short list of fixes to make before any guide, then 12 guides ranked by who they help.</p>
+</header>
+
+<section>
+  <div class="eyebrow">The reframe</div>
+  <h2>The problem is the first ten humans, not converting downloads</h2>
+  <div class="stats">
+    <div class="stat"><b>840</b><span>npm downloads, last 7 days</span></div>
+    <div class="stat"><b>14</b><span>unique GitHub page views, last 14 days</span></div>
+    <div class="stat"><b>1</b><span>referrer (Google, 1 visit)</span></div>
+    <div class="stat"><b>0</b><span>directories or awesome-lists that list Sequant</span></div>
+  </div>
+  <p>Downloads outnumber page views about 120 to 1. People don't install a tool they've never looked at, so the downloads are mirrors, bots and CI, the same pattern measured on 2026-09-13. The guides' job is to make the first ten people who arrive succeed on their first run and come back for a second. The target is ten humans who ran Sequant twice, not stars.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Stop-ship</div>
+  <h2>Fix these before writing any guide</h2>
+  <div class="callout">
+    <strong>1. <code>sequant init</code> crashes for every interactive user (v2.18.0).</strong>
+    <p>Inquirer 14 removed the <code>list</code> prompt type. Init calls it in all stack paths (<code>src/commands/init.ts:811</code>, <code>:835</code>, <code>:854</code>; <code>src/lib/wizard.ts:267</code>), so a real terminal gets <code>UnknownPromptTypeError: Prompt type "list" is not registered</code>. Reproduced locally against inquirer 14.2.2. The caret range came in with dependency bump #678 on 2026-05-30. Non-interactive and <code>-y</code> runs skip the prompt, which is likely why the tests stayed green. The fix is <code>type: "select"</code>, plus one test that drives the interactive path.</p>
+  </div>
+  <div class="callout">
+    <strong>2. The GitHub Action comment trigger lets anyone start a run.</strong>
+    <p><code>sequant-action/examples/comment-trigger.yml</code> and <code>docs/features/github-actions-integration.md</code> gate only on <code>contains(comment.body, '@sequant run')</code>. On a public repo, any commenter starts a run with write permissions and the owner's API key, on issue text the attacker wrote. Neither the action nor the example checks <code>author_association</code>. This is a security fix with its own issue, not a guide topic.</p>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Priority</th><th>Problem</th><th>Who it hits</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill p0">P0</span></td><td><code>doctor</code> reports "All 18 checks passed" with no GitHub remote and uncommitted <code>.claude/skills/</code>. <code>run 1 --dry-run</code> shows <code>✔ passed</code> for an issue that doesn't exist.</td><td>New user</td></tr>
+      <tr><td><span class="pill p0">P0</span></td><td>The README says Sequant "never merges, an invariant", but the quickstart and cheat sheet offer <code>--auto-merge</code>. <code>sync</code> prints "Plugin users get auto-updates", but the README says they don't.</td><td>Everyone</td></tr>
+      <tr><td><span class="pill p1">P1</span></td><td>The hero GIF shows auth being built in 9 seconds, which reads as staged. It shows no PR and no proof. The stars badge displays "1".</td><td>Visitor</td></tr>
+      <tr><td><span class="pill p1">P1</span></td><td><code>reference/run-command.md</code> says issues run "one at a time", while every other source says 3 run in parallel. Its options table is missing about 13 live flags.</td><td>Experienced user</td></tr>
+      <tr><td><span class="pill p1">P1</span></td><td>The docs index has no Features section, so the pages that explain <em>when</em> to use parallel vs. chain, MCP or the Action can only be found with grep. It also links <code>internal/</code> pages.</td><td>Experienced user</td></tr>
+      <tr><td><span class="pill p2">P2</span></td><td>Five install instructions and three plugin IDs, with nothing saying which to pick. Internal issue numbers (#383, #858) appear in <code>--help</code>.</td><td>New user</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <div class="eyebrow">Blind reads</div>
+  <h2>What each persona saw</h2>
+  <div class="personas">
+    <div class="persona">
+      <h3>Top-of-funnel visitor</h3>
+      <p class="q">"Would close the tab, maybe star."</p>
+      <p class="muted">Jargon stopped them before they saw any value: AC, worktree, quality gates, constitution. Version and permission warnings sit above Install. The most convincing fact, that second looks caught would-ship bugs, is two clicks deep.</p>
+      <p><strong>Couldn't answer:</strong> cost per run, Pro/Max vs. API key, what the output looks like, how long it takes, how to write an issue.</p>
+    </div>
+    <div class="persona">
+      <h3>New user</h3>
+      <p class="q">"Crashed at step one. A realistic first run is 20–40 minutes."</p>
+      <p class="muted">Blockers in order: the init crash; a GitHub remote nothing checks for; an issue with correctly formatted ACs and no example to copy; skills that must be committed; and slash commands that only work inside Claude Code, which the quickstart never says.</p>
+      <p><strong>Wanted:</strong> "Your first issue", "Pick your install path", "Is this repo ready?"</p>
+    </div>
+    <div class="persona">
+      <h3>Experienced user</h3>
+      <p class="q">"2 of 10 scenarios answered well, 1 not at all."</p>
+      <p class="muted">Worst served: the worktree gone after a merge, overlapping issues (the docs contradict themselves), vague ACs, and what to do after AC_NOT_MET. <code>sequant abort</code> is in no doc. Best served: prompt-injection hardening and halt/resume.</p>
+      <p><strong>Wanted:</strong> recovery recipes, plus when-to-use guidance for batching, rigor levels, MCP and CI.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Evidence from history</div>
+  <h2>What people actually do with Sequant</h2>
+  <p class="muted">Caveat: this is almost all the maintainer's own usage, so frequency means "how often the maintainer did it", not how often outside users do. The non-Node adoption work (#1203) is the closest proxy for an outside user.</p>
+  <ul>
+    <li><strong>Re-running only QA after a fix is the second most common run</strong>: 74 of 261 runs, and barely documented. 24 issues hit AC_NOT_MET, and 20 of them still reached a PR, almost always through <code>sequant run N --phases qa</code>.</li>
+    <li>53 of 58 issues in the log window reached a PR.</li>
+    <li><code>--chain</code> succeeded on 28.6% of attempts vs. 80% for single issues. Guides should steer people away from it.</li>
+    <li>Quality loops pay off since 2.9/2.10. Issue graphs pay off for related work before a release and are ceremony for simple issues.</li>
+    <li>The MCP server has the most friction of any surface (39 issues). Nothing shows anyone using the GitHub Action.</li>
+  </ul>
+  <h3>Real walkthroughs to build guides on (all in the public repo)</h3>
+  <ul>
+    <li><strong>Clean:</strong> #1199 → PR #1226. READY_FOR_MERGE, 4/4 ACs, about 25 minutes.</li>
+    <li><strong>Failed and recovered:</strong> #1100 → PR #1102. Exec was killed at 30 minutes, AC_NOT_MET twice, then a QA-only re-run produced the PR.</li>
+    <li><strong>Fixed by rewriting the AC, not the code:</strong> #1094 → PR #1128.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">The guide list</div>
+  <h2>12 guides, grouped by what the reader is trying to do</h2>
+  <p>Each guide does one job, opens with the command, and ends on a real link (issue, PR, QA comment). Priority follows the funnel: nobody reaches a recovery guide if the first run fails.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Guide</th><th>Reader</th><th>Job to be done</th><th>Source material</th><th>Visual</th></tr></thead>
+    <tbody>
+      <tr><td colspan="6"><strong>Start: get to the first PR</strong></td></tr>
+      <tr><td>1</td><td>Your first issue to PR in 10 minutes</td><td>New</td><td>Write one issue, run it, read the verdict, open the PR</td><td>#1199 → PR #1226</td><td>VHS of the run, plus a browser shot of the QA comment and PR</td></tr>
+      <tr><td>2</td><td>Write issues Sequant can execute</td><td>New, experienced</td><td>AC grammar, the required checkbox, <code>Evidence:</code>, <code>Blocked by</code>, with a copy-paste template</td><td>AC parser rules, #1094</td><td>Annotated issue screenshot</td></tr>
+      <tr><td>3</td><td>Pick your install path</td><td>New</td><td>One table covering plugin, npx and global installs: what to commit and how each updates</td><td>README, installation.md</td><td>None needed (it's a table)</td></tr>
+      <tr><td>4</td><td>Is this repo ready? A pre-flight checklist</td><td>New</td><td>Remote, <code>gh</code> auth, committed skills, a real issue, and what dry-run proves and doesn't</td><td>New-user trace</td><td>VHS of <code>doctor</code> (once it's honest)</td></tr>
+      <tr><td colspan="6"><strong>Solve: daily work</strong></td></tr>
+      <tr><td>5</td><td>Pick the cheapest correct path for an issue</td><td>Experienced</td><td>Typo fix, bug or feature: which phases and which rigor flags to use</td><td>Phase-selection data, run logs</td><td>Decision table</td></tr>
+      <tr><td>6</td><td>Run related issues without conflicts</td><td>Experienced</td><td>Parallel, sequential or graph, plus merge order (and why to skip <code>--chain</code>)</td><td>Chain-mode analysis, wave graphs</td><td>Mermaid dependency diagram</td></tr>
+      <tr><td>7</td><td>Sequant on Python, Go and Rust</td><td>New (non-Node)</td><td>Make test, build and lint commands authoritative; give worktrees their environment</td><td>#1203, #1243</td><td>Config snippet</td></tr>
+      <tr><td colspan="6"><strong>Resolve: when it goes wrong</strong></td></tr>
+      <tr><td>8</td><td>QA said AC_NOT_MET: what now</td><td>Experienced</td><td>Re-run QA, loop, re-exec or rewrite the AC, and how to tell which</td><td>74 QA-only runs, #1100, #1094</td><td>Browser shot of a NOT_MET comment</td></tr>
+      <tr><td>9</td><td>Post-mortem a failed, timed-out or killed run</td><td>Experienced</td><td><code>status</code>, <code>logs</code>, <code>abort</code>; clear locks, state and worktrees in order</td><td>Incidents, the 30-minute MCP kill</td><td>VHS of <code>logs -v</code></td></tr>
+      <tr><td>10</td><td>Resume a batch after a rate limit</td><td>Experienced</td><td><code>resume</code> vs. <code>--resume</code> vs. a plain re-run</td><td>halt-and-resume.md</td><td>VHS</td></tr>
+      <tr><td>11</td><td>After the merge: worktrees and follow-ups</td><td>Experienced</td><td>What cleanup deletes, how to keep notes, and starting follow-up work on fresh main</td><td>Worktree-loss incidents</td><td>None needed</td></tr>
+      <tr><td colspan="6"><strong>Strategy</strong></td></tr>
+      <tr><td>12</td><td>Run Sequant on a public repo safely</td><td>Experienced</td><td>Who can trigger runs, sandboxing, branch protection, Action hardening</td><td>Threat model, comment-trigger fix</td><td>None needed</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Deferred until someone has asked for them: cost control (needs real dollar numbers first), MCP vs. terminal, CI via the Action (no evidence of use), and upgrading safely.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Voice</div>
+  <h2>Writing rules for every guide</h2>
+  <ol>
+    <li>Put the outcome in the first sentence: "You'll end with a PR that has a checked list of requirements."</li>
+    <li>Then the command, before any explanation.</li>
+    <li>Use plain words, with the term of art defined once: "requirement (Sequant calls these ACs)", "an isolated branch checkout (a worktree)".</li>
+    <li>State cost and time with real measured numbers, or say they haven't been measured. Invented numbers sank trust in a comparable tool's Show HN thread.</li>
+    <li>Every guide ends on a real public link: an issue, a PR, a QA comment.</li>
+    <li>Mark behaviour by version ("since 2.18") so people on older installs aren't misled.</li>
+  </ol>
+</section>
+
+<section>
+  <div class="eyebrow">Screenshots</div>
+  <h2>Screenshot strategy</h2>
+  <p>Proof is what persuades people, and the current visuals don't show any. Every image should show something a reader can verify.</p>
+  <ul>
+    <li><strong>Terminal:</strong> VHS only, with a <code>.tape</code> committed next to the guide and re-rendered per release. <code>vhs</code> is installed, three tapes exist, and two have no committed GIF. No hand-taken PNGs; they go stale.</li>
+    <li><strong>Proof shots:</strong> browser screenshots of a real issue's QA comment (requirements ✅/❌ with evidence) next to the PR at "checks green, awaiting your merge". Take them from a public example repo full of fictional issues so nothing private leaks, and link the live pages.</li>
+    <li><strong>Hero GIF:</strong> replace the 9-second staged run with a real-time-labelled cut, e.g. "25 min, compressed", that ends on the PR and the checklist, not on "completed". <code>sequant-demo-video</code> already has <code>render:gif</code>, <code>render:clip</code> and thumbnail targets.</li>
+    <li><strong>Rules:</strong> at most one hero image per guide, a still frame per step only where the output is hard to describe, and alt text that states what the image proves.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">Distribution</div>
+  <h2>Where these guides go</h2>
+  <div class="callout ok">
+    <strong>Check the plugin directory submission first.</strong>
+    <p>Anthropic moved plugin submissions to <code>claude.ai/directory/manage</code> around 2026-09-28 and says the earlier Console form "is no longer supported". The 2026-08-30 submission probably went to the old form. Check <code>platform.claude.com/plugins/submissions</code>, then withdraw and resubmit, or email <code>directory@anthropic.com</code>.</p>
+  </div>
+  <ol>
+    <li><strong>Lists people read:</strong> hesreallyhim/awesome-claude-code (54.9k stars; web form only, written by a human, no PRs), then jqueryscript's awesome-claude-code, buildwithclaude, claude-code-templates and the official MCP registry. These need a one-line description and a three-command quickstart.</li>
+    <li><strong>Guide 1 plus a new hero GIF.</strong> Together they meet the "demo GIF" precondition you set for HN.</li>
+    <li><strong>A research post with a reconciled number:</strong> rerun the 44% figure through the #1067 reconstruction before amplifying it. Post it on r/ClaudeCode as a text post from your personal account, on dev.to with <code>#claudecode</code> and the canonical URL on sequant.io, and in the Claude Discord.</li>
+    <li><strong>High-signal seeding:</strong> Anthropic's Project Showcase form, console.dev, Node Weekly, and a demo slot at a Claude Community meetup.</li>
+    <li><strong>Hold</strong> HN and Product Hunt until the GIF, 3 findings and users who can vouch exist. That's the existing decision, unchanged.</li>
+  </ol>
+  <p>The comparable tools that took off (superpowers, ccpm) did it with a narrative post on the author's own site and then one big amplifier. Being listed in a directory alone did nothing: two listed issue-to-PR plugins have 0 and 2 stars.</p>
+  <h3>Social handles</h3>
+  <p>Taken: <code>sequant</code> on GitHub (an inactive org) and <code>@SeQuant</code> on X (dormant since 2009). Worth claiming once there's a post to put on them: X <code>@sequant_io</code>, Bluesky with <code>sequant.io</code> as the handle (free, verified through DNS), dev.to <code>sequant</code>, and YouTube <code>@sequant</code> once a video exists. Skip Mastodon, Medium and Hashnode for now.</p>
+</section>
+
+<section>
+  <div class="eyebrow">Guardrails</div>
+  <h2>Where files land, and redaction</h2>
+  <ul>
+    <li>Anything merged into <code>docs/guides/</code> publishes itself to sequant.io on the next landing build, with no review step. Plans and research go in <code>docs/marketing/</code>, which is excluded from the sync.</li>
+    <li>Redact before publishing: #1243 names a private downstream repo; #850 and #972 name downstream projects; #900 shows a home-directory layout; <code>docs/features/interactive-relay.md:146</code> links an old personal-account URL. Opencode field evidence stays out entirely.</li>
+    <li><code>.sequant/GTM-PLAN.md</code> is still uncommitted, in a folder that rotates. Commit it to <code>docs/marketing/</code>.</li>
+  </ul>
+</section>
+
+<section>
+  <div class="eyebrow">Next</div>
+  <h2>Proposed order</h2>
+  <ol>
+    <li>Fix the init crash and the comment-trigger gate (two issues, both small).</li>
+    <li>Fix the doctor and dry-run false passes and the docs contradictions (one issue).</li>
+    <li>Rescue the directory submission and file the awesome-list form (your login, about 30 minutes).</li>
+    <li>Set up a public example repo, then write guides 1–4 with their VHS and proof shots.</li>
+    <li>Rerun the blind new-user agent against the fixed quickstart. Done means it reaches a PR without guessing.</li>
+    <li>Write guides 8 and 6, then the research post and cross-posts.</li>
+  </ol>
+</section>
+
+<footer>Raw reports live in the sequant repo at docs/marketing/research/2026-09-30-howto-guides/ (excluded from the sequant.io sync). Nothing was posted, registered or submitted.</footer>
+</main>
