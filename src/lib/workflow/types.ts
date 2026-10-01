@@ -666,7 +666,7 @@ export interface RunOptions {
    */
   noRebase?: boolean;
   /**
-   * Skip PR creation after successful QA.
+   * Skip PR creation: both the PR opened after exec and its update after QA.
    * When true, branches are pushed but no PR is created.
    * Useful for manual workflows where PRs are created separately.
    */

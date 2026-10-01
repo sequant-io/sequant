@@ -70,6 +70,7 @@ Design decisions behind these behaviours are recorded in [docs/adr/](adr/README.
 - [Ready Command](reference/ready-command.md) — Post-resolve A+ QA gate (`sequant ready`)
 - [Merge Command](reference/merge-command.md) — Post-QA integration and merge
 - [Halt and Resume](reference/halt-and-resume.md) — Durable rate-limit recovery (`sequant resume`)
+- [Abort Command](reference/abort-command.md) — Stop a running or stuck `sequant run` from another terminal (`sequant abort`)
 - [State Command](reference/state-command.md) — Workflow state management
 - [Conventions Command](reference/conventions-command.md) — Codebase convention detection and overrides
 - [Analytics](reference/analytics.md) — Usage tracking and metrics
