@@ -1,4 +1,4 @@
-# ADR-0004: Spec can halt the run before exec
+# ADR-0005: Spec can halt the run before exec
 
 **Status:** Accepted
 **Date:** 2026-09-30

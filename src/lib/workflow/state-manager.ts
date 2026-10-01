@@ -475,6 +475,29 @@ export class StateManager {
   }
 
   /**
+   * Record (or clear, with `undefined`) the last successful exec pass's
+   * summary (#1247 AC-3), so a later qa-only run's PR body carries it.
+   */
+  async updateExecSummary(
+    issueNumber: number,
+    summary: string | undefined,
+  ): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
+
+      issueState.execSummary = summary;
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
+  }
+
+  /**
    * Record or clear an in-progress auto-wait (#860). `wakeAtMs` sets the
    * pause marker (and which phase is paused); `null` clears it on wake.
    *

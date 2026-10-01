@@ -276,9 +276,11 @@ describe("run --ready-gate wiring (#817)", () => {
   it("AC-6: surfaces the gate report in the PR body", async () => {
     await runIssueWithLogging(makeCtx({ config: { readyGate: true } }));
 
-    expect(mockCreatePR).toHaveBeenCalledTimes(1);
-    // createPR's 10th positional arg is the readyGateReport.
-    expect(mockCreatePR.mock.calls[0][8]).toBe(cannedGate.report);
+    // #1247 AC-5: once after exec, once after the gate. createPR's 9th
+    // positional arg is the readyGateReport; only the post-gate call has it.
+    expect(mockCreatePR).toHaveBeenCalledTimes(2);
+    expect(mockCreatePR.mock.calls[0][8]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[1][8]).toBe(cannedGate.report);
   });
 
   it("gate failure is non-fatal — the run still reaches PR with the standard status", async () => {
@@ -298,7 +300,8 @@ describe("run --ready-gate wiring (#817)", () => {
       817,
       "ready_for_merge",
     );
-    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    // #1247 AC-5: after exec, then the post-QA update.
+    expect(mockCreatePR).toHaveBeenCalledTimes(2);
   });
 
   it("a failed gate is reported, not swallowed", async () => {
