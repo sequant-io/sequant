@@ -87,6 +87,21 @@ describe("hook sync (#645)", () => {
     expect(drift).toEqual([]);
   });
 
+  it("plugin/hooks/hooks.json is byte-identical to hooks/hooks.json (#1265)", () => {
+    // hooks.json has no templates/ source (it's the hook-registration
+    // manifest, not a hook script) — scripts/sync-hooks.sh copies it from
+    // the hand-maintained root hooks/hooks.json instead. Nothing previously
+    // checked that copy stayed in sync (QA finding, #1265 round 3).
+    const rootPath = path.join(process.cwd(), "hooks", "hooks.json");
+    const pluginPath = path.join(process.cwd(), PLUGIN_DIR, "hooks.json");
+    expect(fs.existsSync(rootPath)).toBe(true);
+    expect(fs.existsSync(pluginPath)).toBe(true);
+
+    const rootBytes = fs.readFileSync(rootPath);
+    const pluginBytes = fs.readFileSync(pluginPath);
+    expect(pluginBytes.equals(rootBytes)).toBe(true);
+  });
+
   it(".claude/hooks/ may have extra local-only files (e.g. capture-tokens.sh)", () => {
     // This is documentation-as-test: we intentionally allow `.claude/hooks/`
     // to contain files that aren't in templates. If we ever decide that's

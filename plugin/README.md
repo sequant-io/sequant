@@ -9,9 +9,9 @@ to the agent.
 This folder is the slim plugin bundle installed from the `sequant@sequant`
 marketplace entry (`.claude-plugin/marketplace.json` at the repo root, which
 points its `source` at this directory). It ships only what Claude Code loads
-at runtime — skills, hooks, the MCP config, this repo's own constitution, and
-this disclosure file — not the dev-only `node_modules`, `src/`, or test
-suites that live at the repo root.
+at runtime — skills, hooks, the MCP config, the project-constitution
+template, and this disclosure file — not the dev-only `node_modules`, `src/`,
+or test suites that live at the repo root.
 
 ## What it runs, sends, or fetches
 
@@ -41,6 +41,17 @@ suites that live at the repo root.
 - **Opt-in webhook.** `hooks/post-tool.sh` sends a `curl -s -X POST` to
   `$CLAUDE_HOOKS_WEBHOOK_URL` only when that environment variable is set.
   Unset (the default), no webhook call is made.
+- **Post-merge worktree cleanup (destructive, automatic).** After a `gh pr
+  merge` command succeeds, `hooks/post-tool.sh` looks up the merged branch's
+  worktree via `git worktree list` and runs `git worktree remove --force` on
+  it, then `git branch -D` on the local branch — deleting that worktree
+  directory and local branch ref outright, with no prompt. This can remove a
+  directory outside the project you're currently in, if the merged PR's
+  worktree lives elsewhere (e.g. `../worktrees/feature/...`).
+- **File-locking during parallel edits.** `pre-tool.sh` creates a per-file
+  lock file under the OS temp directory (`${TMPDIR:-/tmp}/claude-lock-*.lock`)
+  while an `Edit`/`Write` is in flight, to serialize concurrent agents
+  touching the same file. Disable with `CLAUDE_HOOKS_FILE_LOCKING=false`.
 - **Local files it writes.** `pre-tool.sh` and `post-tool.sh` write session
   logs (quality, timing, coverage, and test-run logs) to
   `${CLAUDE_PLUGIN_DATA}/logs/` when Claude Code sets that variable,
@@ -48,19 +59,25 @@ suites that live at the repo root.
   neither is writable. `capture-tokens.sh` (a `SessionEnd` hook) writes
   `.sequant/.token-usage-<session-id>.json` in the current project. The
   `sequant` CLI/MCP server the launcher starts maintains further `.sequant/`
-  state in the current project when running workflow commands. Nothing
-  outside those paths and the project's own git working tree is modified.
+  state in the current project when running workflow commands. Beyond those
+  paths, the project's own git working tree, and the post-merge worktree
+  cleanup and temp lock files described above, nothing else is modified.
 
 ## Contents
 
 - `skills/` — the `spec`, `exec`, `qa`, and other workflow skills.
 - `hooks/` (`hooks.json` + scripts) — pre/post-tool guardrails and logging.
 - `.mcp.json` — the MCP server launch config described above.
-- `memory/constitution.md` — **this `sequant-io/sequant` repository's own**
-  project constitution (its development policy, e.g. "no force-push on
-  pushed branches"), not a generic template for a target project. It is a
-  copy of `templates/memory/constitution.md`, used by the skills that read
-  repo-level policy when operating on this repository.
+- `memory/constitution.md` — the project-constitution **template**.
+  `/sequant:setup` reads it via `${CLAUDE_PLUGIN_ROOT}/memory/constitution.md`
+  (which for a plugin install resolves here) and copies it into a target
+  project's `.claude/memory/constitution.md`, substituting the
+  `{{PROJECT_NAME}}` placeholder for the detected project name
+  (`skills/setup/SKILL.md`, "Copy Constitution Template"). It is a copy of
+  `templates/memory/constitution.md`, and — because this repository has never
+  filled in its own `{{PROJECT_NAME}}` placeholder either — is currently
+  identical to this repository's own `memory/constitution.md`, though the two
+  are not the same artifact and can diverge.
 
 See the main repository README at
 <https://github.com/sequant-io/sequant> for full documentation, including

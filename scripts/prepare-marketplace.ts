@@ -200,10 +200,10 @@ function main(): void {
     //     marketplace submission path. The file is gitignored but tracked via
     //     `git add -f` (see .gitignore), so the release commit must re-add it.
     const shippedMcp = shippedMcpJsonPath();
+    const packageVersion = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+    ).version as string;
     if (existsSync(shippedMcp)) {
-      const packageVersion = JSON.parse(
-        readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
-      ).version as string;
       const stamped = readFileSync(shippedMcp, "utf8").replace(
         /sequant@[^"\s]+/g,
         `sequant@${packageVersion}`,
@@ -212,6 +212,23 @@ function main(): void {
       console.log(
         `📌 Pinned shipped .mcp.json (${shippedMcp.replace(PROJECT_ROOT + "/", "")}) to sequant@${packageVersion}`,
       );
+    }
+
+    // 4b. The repo-root `.mcp.json` is dual-use: it's also this checkout's
+    //     own project MCP config (#1265's Decision — it stays, unlike root
+    //     hooks/skills). Before #1265, `shippedMcpJsonPath()` WAS this file
+    //     (source: "./"), so 4a stamped it as a side effect; now that
+    //     `source` resolves to `plugin/.mcp.json`, this file needs its own
+    //     stamp so a contributor developing this repo through its own
+    //     `.mcp.json` doesn't keep connecting to a release-old pin.
+    const rootMcp = join(PROJECT_ROOT, ".mcp.json");
+    if (existsSync(rootMcp) && rootMcp !== shippedMcp) {
+      const stamped = readFileSync(rootMcp, "utf8").replace(
+        /sequant@[^"\s]+/g,
+        `sequant@${packageVersion}`,
+      );
+      writeFileSync(rootMcp, stamped);
+      console.log(`📌 Pinned root .mcp.json to sequant@${packageVersion}`);
     }
 
     console.log("📋 Copying MCP server config...");

@@ -589,15 +589,27 @@ jobs:
             exit 1
           }
 
-          echo "Verifying skills still load after the upgrade..."
-          output=$(claude --print "list available skills" 2>&1 || true)
-          if echo "$output" | grep -qi "sequant\|assess\|spec\|exec"; then
-            echo "Plugin still loads skills after upgrade."
-          else
-            echo "Error: could not verify skill discovery post-upgrade"
-            echo "Output: $output"
+          echo "Verifying skills are present in the installed cache after the upgrade..."
+          # A model call (`claude --print "list available skills"`) needs API
+          # auth, which this CI job has no reason to carry — reproduced
+          # locally as "Not logged in · Please run /login", which the old
+          # grep silently missed and then hard-failed on (#1265 round 3).
+          # Check the installed files directly instead: no model call, no
+          # auth dependency, and it verifies the actual artifact the upgrade
+          # produced rather than the agent's self-report.
+          INSTALLED_DIR=$(find "$CLAUDE_CONFIG_DIR/plugins/cache/sequant/sequant" -mindepth 1 -maxdepth 1 -type d | head -1)
+          if [[ -z "$INSTALLED_DIR" ]]; then
+            echo "Error: no installed plugin directory found under the cache"
             exit 1
           fi
+          echo "Installed at: $INSTALLED_DIR"
+          for skill in assess spec exec qa; do
+            if [[ ! -s "$INSTALLED_DIR/skills/$skill/SKILL.md" ]]; then
+              echo "Error: $skill/SKILL.md missing or empty after the upgrade"
+              exit 1
+            fi
+          done
+          echo "Skills present in the installed cache after upgrade."
 
           echo "Verifying the MCP server still connects after the upgrade..."
           mcp_status=$(claude mcp list 2>&1)

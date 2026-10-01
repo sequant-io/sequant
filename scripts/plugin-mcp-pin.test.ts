@@ -57,6 +57,21 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
     expect(pin).not.toBe("sequant@latest");
   });
 
+  it("root .mcp.json is also pinned to the package version (#1265 — it's dual-use, not just a relic of the pre-#1265 shipped path)", () => {
+    // Before #1265, shippedMcpJsonPath() WAS the root .mcp.json (source:
+    // "./"), so the shipped-file stamp above pinned it as a side effect.
+    // Now that source resolves to plugin/.mcp.json, root .mcp.json needs its
+    // own stamp — prepare-marketplace.ts's "4b" step — or its pin falls
+    // behind every release for contributors developing this repo through
+    // its own project .mcp.json.
+    const root = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
+    );
+    const pin = readSequantPin(root);
+    expect(pin).toBe(`sequant@${pkg.version}`);
+    expect(pin).not.toBe("sequant@latest");
+  });
+
   it("prepare-marketplace stamps and validates that same file, not only the dist copy", () => {
     const script = readFileSync(
       join(PROJECT_ROOT, "scripts", "prepare-marketplace.ts"),
@@ -67,6 +82,15 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
     expect(
       script.match(/shippedMcpJsonPath\(\)/g)?.length ?? 0,
     ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("prepare-marketplace also stamps root .mcp.json independently of the shipped-file resolution", () => {
+    const script = readFileSync(
+      join(PROJECT_ROOT, "scripts", "prepare-marketplace.ts"),
+      "utf8",
+    );
+    expect(script).toContain('join(PROJECT_ROOT, ".mcp.json")');
+    expect(script).toContain("Pinned root .mcp.json");
   });
 });
 
