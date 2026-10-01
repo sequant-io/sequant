@@ -264,7 +264,7 @@ export async function runSetupWizard(
     try {
       const response = await inquirer.prompt([
         {
-          type: "list",
+          type: "select",
           name: "action",
           message: "What would you like to do?",
           choices: [
