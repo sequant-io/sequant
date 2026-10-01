@@ -113,6 +113,8 @@ jobs:
 
 Comment `@sequant run spec,exec,qa` on any issue to trigger a workflow.
 
+> **Keep the `author_association` check.** Without it, anyone who can comment on a public repository can start a run with write permissions and your API key, on issue text they wrote. The check limits triggers to the repo owner, organization members and collaborators.
+
 Create `.github/workflows/sequant-comment.yml`:
 
 ```yaml
@@ -128,7 +130,10 @@ concurrency:
 
 jobs:
   parse-and-run:
-    if: contains(github.event.comment.body, '@sequant run')
+    # Only repo owners, org members and collaborators can trigger a run.
+    if: >-
+      contains(github.event.comment.body, '@sequant run') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
