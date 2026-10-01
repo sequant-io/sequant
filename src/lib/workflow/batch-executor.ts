@@ -310,15 +310,27 @@ export function emitRunIdLine(runId: string): void {
   process.stderr.write(`SEQUANT_RUN_ID:${runId}\n`);
 }
 
+/** gh's error for a number the repo has no issue or PR for (#1257). */
+const ISSUE_NOT_FOUND_RE = /Could not resolve to an issue or pull request/i;
+
 export async function getIssueInfo(
   issueNumber: number,
-): Promise<{ title: string; labels: string[] }> {
+): Promise<{ title: string; labels: string[]; notFound?: true }> {
   try {
     const result = spawnSync(
       "gh",
       ["issue", "view", String(issueNumber), "--json", "title,labels"],
       { stdio: "pipe" },
     );
+
+    // #1257 AC-5: tell "this issue doesn't exist" apart from every other gh
+    // failure (offline, no auth, no remote), which keep the silent default.
+    if (
+      result.status !== 0 &&
+      ISSUE_NOT_FOUND_RE.test(result.stderr?.toString() ?? "")
+    ) {
+      return { title: `Issue #${issueNumber}`, labels: [], notFound: true };
+    }
 
     if (result.status === 0) {
       const data = JSON.parse(result.stdout.toString());
