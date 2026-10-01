@@ -26,8 +26,12 @@ concurrency:
 
 jobs:
   parse-and-run:
-    # Only run for @sequant commands (not every comment)
-    if: contains(github.event.comment.body, '@sequant run')
+    # Only run for @sequant commands from people with write access.
+    # SECURITY: without the author_association check, anyone who can comment
+    # on a public repo starts a run with write permissions and your API key.
+    if: >-
+      contains(github.event.comment.body, '@sequant run') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
