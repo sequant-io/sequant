@@ -371,4 +371,30 @@ describe("wizard", () => {
       expect(shouldRunSetupWizard({ yes: true })).toBe(true);
     });
   });
+  // #1256: inquirer is mocked above, so check the wizard's prompt types
+  // against the real installed module — 14 removed `list`.
+  describe("prompt types are registered by the installed inquirer (#1256)", () => {
+    it("missing-dependency action prompt uses a registered type", async () => {
+      mockCommandExists.mockImplementation((cmd) => cmd !== "claude");
+      mockIsGhAuthenticated.mockReturnValue(true);
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ setupDeps: true })
+        .mockResolvedValueOnce({ action: "skip" });
+
+      await runSetupWizard(checkAllDependencies());
+
+      const actual =
+        await vi.importActual<typeof import("inquirer")>("inquirer");
+      const registered = Object.keys(
+        (actual.default.prompt as unknown as { prompts: object }).prompts,
+      );
+      const asked = mockInquirerPrompt.mock.calls.flatMap((call) =>
+        (call[0] as unknown as Array<{ type?: string }>).map(
+          (q) => q.type ?? "input",
+        ),
+      );
+      expect(asked.length).toBeGreaterThan(1);
+      for (const type of asked) expect(registered).toContain(type);
+    });
+  });
 });
