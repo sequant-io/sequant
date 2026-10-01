@@ -133,7 +133,6 @@ Claude: Looking critically...
 
 **Files typically updated:**
 - `CHANGELOG.md` - For user-visible changes
-- `docs/internal/what-weve-built.md` - For feature tracking
 - `README.md` - If public API changes
 - Feature-specific docs in `docs/`
 

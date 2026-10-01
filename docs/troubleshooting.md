@@ -619,7 +619,7 @@ CI-safe content-drift check that never prompts, use `sequant sync`.
 4. Open Ubuntu from Start menu and complete setup
 5. Run Sequant commands from within WSL
 
-See the [README Windows Users section](../README.md#windows-users) for full setup instructions.
+Then install Node.js, Git and the GitHub CLI inside WSL and run every `sequant` command from the WSL shell.
 
 ### Line ending issues (CRLF vs LF)
 

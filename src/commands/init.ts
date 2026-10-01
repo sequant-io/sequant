@@ -908,7 +908,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Show what will be created
   console.log(chalk.gray("\nWill create:"));
   console.log(chalk.gray("  .claude/"));
-  console.log(chalk.gray("  ├── skills/         (14 workflow skills)"));
+  console.log(chalk.gray("  ├── skills/         (workflow skills)"));
   console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
   console.log(chalk.gray("  ├── memory/         (constitution & context)"));
   console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
