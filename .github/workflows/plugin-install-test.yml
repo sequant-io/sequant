@@ -236,6 +236,52 @@ jobs:
           echo "Testing claude plugin install sequant@sequant..."
           claude plugin install sequant@sequant
 
+      - name: Verify README install commands work verbatim (#1263)
+        run: |
+          echo "Extracting install commands from README.md's plugin section..."
+          # Pull the fenced code block that follows the "Inside Claude Code
+          # (plugin)" heading — this is the block users copy-paste, so it is
+          # the one that must actually work.
+          awk '
+            /\*\*Inside Claude Code \(plugin\)\*\*/ { found=1; next }
+            found && /^```$/ { if (infence) exit; infence=1; next }
+            found && infence { print }
+          ' README.md > /tmp/readme-install-lines.txt
+
+          echo "Extracted block:"
+          cat /tmp/readme-install-lines.txt
+
+          install_lines=$(grep '^/plugin ' /tmp/readme-install-lines.txt || true)
+          if [ -z "$install_lines" ]; then
+            echo "Error: no '/plugin ...' lines found in README.md's plugin section"
+            exit 1
+          fi
+
+          # Isolated profile so this never touches the runner's real Claude
+          # config, and so a stale marketplace/install from an earlier step
+          # in this job can't mask a broken README command.
+          export CLAUDE_CONFIG_DIR
+          CLAUDE_CONFIG_DIR=$(mktemp -d)
+          echo "Using isolated CLAUDE_CONFIG_DIR: $CLAUDE_CONFIG_DIR"
+
+          while IFS= read -r line; do
+            # Translate the slash-command form documented in README.md to the
+            # equivalent shell CLI form (CI has no interactive session).
+            cmd="${line/\/plugin/claude plugin}"
+            if [[ "$cmd" == "claude plugin marketplace add "* ]]; then
+              # Point the marketplace add at this checkout instead of GitHub:
+              # marketplace.json's own "name" field ("sequant") is what the
+              # later install line resolves against, so this keeps the test
+              # hermetic while still catching a documented install line that
+              # names the wrong marketplace (the #1263 bug).
+              cmd="claude plugin marketplace add ./"
+            fi
+            echo "Running: $cmd"
+            eval "$cmd"
+          done <<< "$install_lines"
+
+          echo "README install commands succeeded verbatim"
+
   hooks-test:
     name: Hooks Validation
     runs-on: ubuntu-latest
