@@ -730,4 +730,30 @@ describe("1087: classifyCodexTurnFailure", () => {
     expect(err).toBeInstanceOf(SequantError);
     expect(err.metadata.code).toBe(CODEX_ERROR_CODES.turnFailed);
   });
+
+  it("maps the real usage-limit fixture to RateLimitError when now sits inside its 7-day horizon (#1248)", () => {
+    const parser = new CodexStreamParser();
+    parser.feed(
+      readFileSync(
+        new URL(
+          "./__fixtures__/codex-turn-failed-usage-limit.jsonl",
+          import.meta.url,
+        ),
+        "utf-8",
+      ),
+    );
+    const insideHorizonNow = new Date(2026, 9, 10).getTime();
+    const result = evaluateCodexRun(parser.end(), {
+      exitCode: 1,
+      signal: null,
+      phaseTimeout: 600,
+      stderrTail: [],
+      stdoutTail: [],
+      now: insideHorizonNow,
+    });
+    expect(result.structuredError).toBeInstanceOf(RateLimitError);
+    expect(result.structuredError?.metadata.resetsAt).toBe(
+      new Date(2026, 9, 16, 1, 4).getTime(),
+    );
+  });
 });
