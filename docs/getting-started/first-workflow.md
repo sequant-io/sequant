@@ -69,16 +69,13 @@ This command:
 
 ## Step 5: Merge
 
-If QA passes, merge the feature branch:
+Sequant has already opened a pull request for the issue. If QA passes, review the PR on GitHub and merge it there, or from the terminal:
 
 ```bash
-# Create a pull request
-gh pr create --fill
-
-# Or merge directly (if your workflow allows)
-git checkout main
-git merge feature/123-issue-title
+gh pr merge <pr-number>
 ```
+
+Sequant never merges on its own: the merge is always your call.
 
 ## One-Command Alternative
 

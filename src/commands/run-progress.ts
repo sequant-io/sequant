@@ -46,6 +46,8 @@ export function buildProgressWiring(args: {
   basePhases?: string[];
   /** #624 Item 3 / D2: total allowed quality-loop iterations (from settings). */
   maxLoopIterations?: number;
+  /** #1257: a dry run only plans phases, so progress lines say "planned". */
+  dryRun?: boolean;
 }): ProgressWiring {
   const {
     tuiEnabled,
@@ -55,6 +57,7 @@ export function buildProgressWiring(args: {
     autoDetectPhases,
     basePhases,
     maxLoopIterations,
+    dryRun,
   } = args;
 
   const heartbeat =
@@ -79,6 +82,7 @@ export function buildProgressWiring(args: {
               : undefined,
           rows: process.stdout.rows,
           maxLoopIterations,
+          dryRun,
         })
       : null;
   if (renderer) {

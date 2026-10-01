@@ -808,7 +808,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       if (selectedStacks.length > 1) {
         const { primaryStack } = await inquirer.prompt([
           {
-            type: "list",
+            type: "select",
             name: "primaryStack",
             message:
               "Which stack should be the primary? (determines dev URL and commands)",
@@ -832,7 +832,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       } else if (detected && !skipPrompts) {
         const { confirmedStack } = await inquirer.prompt([
           {
-            type: "list",
+            type: "select",
             name: "confirmedStack",
             message: `Detected ${detected} project. Is this correct?`,
             choices: [
@@ -851,7 +851,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       } else if (!stack) {
         const { selectedStack } = await inquirer.prompt([
           {
-            type: "list",
+            type: "select",
             name: "selectedStack",
             message: "Select your project stack:",
             choices: [
@@ -908,7 +908,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Show what will be created
   console.log(chalk.gray("\nWill create:"));
   console.log(chalk.gray("  .claude/"));
-  console.log(chalk.gray("  ├── skills/         (14 workflow skills)"));
+  console.log(chalk.gray("  ├── skills/         (workflow skills)"));
   console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
   console.log(chalk.gray("  ├── memory/         (constitution & context)"));
   console.log(chalk.gray("  └── settings.json   (hooks configuration)"));

@@ -57,6 +57,8 @@ export interface RunSnapshotConfig {
   baseSha?: string;
   baseFetchedAt?: Date;
   qualityLoop: boolean;
+  /** #1257: set only for a dry run, where phases plan but never execute. */
+  dryRun?: boolean;
 }
 
 /**

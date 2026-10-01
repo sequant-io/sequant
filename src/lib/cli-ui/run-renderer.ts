@@ -129,6 +129,7 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
   protected readonly wallClock: () => Date;
   protected readonly noColor: boolean;
   protected readonly runStartedAt: number;
+  protected readonly dryRun: boolean;
   protected paused = false;
   protected disposed = false;
 
@@ -141,6 +142,7 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
     this.wallClock = options.wallClock ?? (() => new Date());
     this.noColor = Boolean(options.noColor) || Boolean(process.env.NO_COLOR);
     this.runStartedAt = this.now();
+    this.dryRun = Boolean(options.dryRun);
   }
 
   registerIssue(reg: IssueRegistration): void {
@@ -512,8 +514,11 @@ export class NonTTYRenderer extends BaseRenderer {
         event.durationSeconds !== undefined
           ? ` ${formatElapsedTime(event.durationSeconds)}`
           : "";
+      // #1257: a dry-run phase executed nothing, so it gets no green check.
       this.emitLine(
-        `${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}`,
+        this.dryRun
+          ? `${c.cyan("○")} #${event.issue} ${event.phase} planned`
+          : `${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}`,
       );
     } else {
       // #624 Item 4: failure dedup. The third tier (final attempt) emits the
@@ -923,7 +928,10 @@ export class TTYRenderer extends BaseRenderer {
           ? `  ${formatElapsedTime(event.durationSeconds)}`
           : "";
       const prSuffix = state.prUrl ? `  →  PR #${state.prNumber}` : "";
-      line = `  ${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}${prSuffix}`;
+      // #1257: a dry-run phase executed nothing, so it gets no green check.
+      line = this.dryRun
+        ? `  ${c.cyan("○")} #${event.issue} ${event.phase} planned`
+        : `  ${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}${prSuffix}`;
     } else {
       // #624 Item 4: failure dedup. Abbreviated form only fires when the
       // signature matches a *prior* attempt of THIS phase and we are not at
@@ -1509,6 +1517,11 @@ function renderSummaryBlock(
   const c = colorize(ctx.noColor);
   const passed = issues.filter((i) => i.success).length;
   const failed = issues.filter((i) => !i.success).length;
+  // #1257: a dry run executes nothing, so no issue has passed. Counting the
+  // planned rows as "passed" told a new user a nonexistent issue succeeded.
+  const tally = input.dryRun
+    ? `${issues.length} planned · nothing executed`
+    : `${passed} passed · ${failed} failed`;
   const totalStr =
     input.totalDurationSeconds !== undefined
       ? ` · ${formatElapsedTime(input.totalDurationSeconds)}`
@@ -1517,7 +1530,7 @@ function renderSummaryBlock(
   out.push("");
   out.push(
     c.bold(
-      `SUMMARY · ${issues.length} issue${issues.length === 1 ? "" : "s"}${totalStr} · ${passed} passed · ${failed} failed`,
+      `SUMMARY · ${issues.length} issue${issues.length === 1 ? "" : "s"}${totalStr} · ${tally}`,
     ),
   );
   out.push("");
@@ -1525,7 +1538,7 @@ function renderSummaryBlock(
   if (ctx.columns < NARROW_TERMINAL_THRESHOLD) {
     // AC-25 fallback: indented key:value pairs.
     for (const r of issues) {
-      const status = r.success ? c.green("✔ passed") : c.red("✘ failed");
+      const status = summaryStatus(r, input.dryRun, c);
       const detail = renderSummaryDetail(r, ctx);
       out.push(`  ${status}  #${r.issueNumber}  ${detail.summary}`);
       for (const extra of detail.extras) out.push(`     ${extra}`);
@@ -1534,17 +1547,31 @@ function renderSummaryBlock(
       }
     }
   } else {
-    out.push(renderSummaryGrid(issues, ctx));
+    out.push(renderSummaryGrid(issues, ctx, input.dryRun));
   }
 
   out.push("");
-  out.push(`  ${c.green(`${passed} passed`)} · ${c.red(`${failed} failed`)}`);
+  out.push(
+    input.dryRun
+      ? `  ${c.cyan(`${issues.length} planned`)} · ${c.dim("nothing executed")}`
+      : `  ${c.green(`${passed} passed`)} · ${c.red(`${failed} failed`)}`,
+  );
   if (input.logPath) {
     out.push(`  ${c.dim(`Log: ${input.logPath}`)}`);
   }
   out.push("");
 
   ctx.stdoutWrite(out.join("\n"));
+}
+
+/** Result cell for one issue: a dry run only plans, so it never "passed". */
+function summaryStatus(
+  r: IssueSummary,
+  dryRun: boolean | undefined,
+  c: ReturnType<typeof colorize>,
+): string {
+  if (dryRun) return c.cyan("○ planned");
+  return r.success ? c.green("✔ passed") : c.red("✘ failed");
 }
 
 function renderSummaryDetail(
@@ -1579,6 +1606,7 @@ function renderSummaryDetail(
 function renderSummaryGrid(
   issues: IssueSummary[],
   ctx: SummaryRenderCtx,
+  dryRun?: boolean,
 ): string {
   const c = colorize(ctx.noColor);
   const dim = c.dim;
@@ -1626,7 +1654,7 @@ function renderSummaryGrid(
   const headerRow = `  ${dim("│")} ${c.cyan(padEndVisible("Issue", issueW))} ${dim("│")} ${c.cyan(padEndVisible("Result", resultW))} ${dim("│")} ${c.cyan(padEndVisible("Detail", detailW))} ${dim("│")} ${c.cyan(padEndVisible("Total", totalW))} ${dim("│")}`;
   const out: string[] = [top, headerRow, sep];
   issues.forEach((r, i) => {
-    const result = r.success ? c.green("✔ passed") : c.red("✘ failed");
+    const result = summaryStatus(r, dryRun, c);
     const detail = renderSummaryDetail(r, ctx);
     const detailLines = [detail.summary, ...detail.extras];
     const total =

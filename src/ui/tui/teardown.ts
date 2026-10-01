@@ -14,10 +14,14 @@ import type {
   IssueRuntimeState,
 } from "../../lib/workflow/run-state.js";
 
-/** One transcript line per issue, e.g. `✔ #699 Upgrade ready to the Ink TUI`. */
-function issueLine(issue: IssueRuntimeState): string {
-  const glyph = issue.status === "failed" ? "✘" : "✔";
+/**
+ * One transcript line per issue, e.g. `✔ #699 Upgrade ready to the Ink TUI`.
+ * A dry run executed nothing, so its issues read `○ #1 … (planned)` (#1257).
+ */
+function issueLine(issue: IssueRuntimeState, dryRun: boolean): string {
   const title = issue.title ? ` ${issue.title}` : "";
+  if (dryRun) return `○ #${issue.number}${title} (planned)`;
+  const glyph = issue.status === "failed" ? "✘" : "✔";
   return `${glyph} #${issue.number}${title}`;
 }
 
@@ -31,5 +35,6 @@ function issueLine(issue: IssueRuntimeState): string {
  */
 export function composeTeardownSummary(snapshot: RunSnapshot): string {
   if (!snapshot.issues.length) return "";
-  return snapshot.issues.map(issueLine).join("\n");
+  const dryRun = Boolean(snapshot.config.dryRun);
+  return snapshot.issues.map((i) => issueLine(i, dryRun)).join("\n");
 }

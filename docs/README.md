@@ -41,6 +41,27 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Git Workflows](guides/git-workflows.md) — Worktree and merge workflows
 - [Writing an Agent Driver](guides/writing-an-agent-driver.md) — The driver contract and the conformance suite that enforces it
 
+### Features: when to use what
+
+Running issues
+- [Parallel Execution](features/parallel-execution.md) — Running several issues at once, and when to use `--sequential` or `--chain` instead
+- [Stacked PRs](features/stacked-prs.md) — Chained issues that build on each other, one PR per issue
+- [Spec Phase by Default](features/spec-by-default.md) — Which issues get a planning phase, and how to skip it
+- [Automatic PR Creation](features/run-pr-creation.md) — When `sequant run` opens and updates the PR
+- [Run Ready Gate](features/run-ready-gate.md) — Extra QA rounds before you merge (`--ready-gate`)
+
+Reading results and recovering
+- [QA Verdicts → Workflow States](features/qa-verdict-workflow-states.md) — What each QA verdict means and what happens next
+- [QA Incremental Re-Runs](features/qa-incremental-rerun.md) — Faster QA re-runs that skip checks whose inputs haven't changed
+- [Error Capture](features/error-capture.md) — Where a failed phase's error output goes
+
+Other ways to run Sequant
+- [MCP Server](features/mcp-server.md) — Driving runs from inside Claude Code or another MCP client
+- [GitHub Actions Integration](features/github-actions-integration.md) — Running Sequant in CI from labels, comments or manual dispatch
+- [Plugin Distribution](features/plugin-distribution.md) — Installing as a Claude Code plugin
+
+Design decisions behind these behaviours are recorded in [docs/adr/](adr/README.md).
+
 ### Reference
 
 - [Cheat Sheet](reference/cheat-sheet.md) — Quick reference for all commands, flags, and workflows
@@ -71,10 +92,6 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 - [Common Issues](troubleshooting.md) — Solutions to frequent problems
 
-### Internal
-
-- [What We've Built](internal/what-weve-built.md) — Project changelog and history
-- [Release Checklist](internal/release-checklist.md) — Release process
 
 ---
 
