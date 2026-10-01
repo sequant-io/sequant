@@ -1,5 +1,5 @@
 /**
- * Drift guard for hooks (#645).
+ * Drift guard for hooks (#645, #1265).
  *
  * PR #638 added relay support to `templates/hooks/` but never updated the
  * active hooks in `.claude/hooks/`. The installed `post-tool.sh` was
@@ -13,8 +13,12 @@
  * local hook, was promoted into `templates/hooks/` so consumer projects and
  * plugin users get the token-usage fallback too.
  *
- * Run `npm run sync-hooks` to regenerate `.claude/hooks/` from the
- * templates after editing any template hook.
+ * #1265 added `plugin/hooks/` as a second mirror (the slim plugin folder
+ * `marketplace.json` now ships) and holds it to the same byte-identity bar.
+ *
+ * Run `npm run sync-hooks` (scripts/sync-hooks.sh) to regenerate
+ * `.claude/hooks/` and `plugin/hooks/` from the templates after editing any
+ * template hook.
  */
 
 import * as fs from "fs";
@@ -23,6 +27,7 @@ import { describe, expect, it } from "vitest";
 
 const TEMPLATES_DIR = "templates/hooks";
 const ACTIVE_DIR = ".claude/hooks";
+const PLUGIN_DIR = "plugin/hooks";
 
 function listHookFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -54,6 +59,28 @@ describe("hook sync (#645)", () => {
       const aBytes = fs.readFileSync(aPath);
       if (!aBytes.equals(tBytes)) {
         drift.push(`DRIFT: .claude/hooks/${name}`);
+      }
+    }
+
+    expect(drift).toEqual([]);
+  });
+
+  it("every file in templates/hooks/ exists byte-identically in plugin/hooks/", () => {
+    const pluginPath = path.join(process.cwd(), PLUGIN_DIR);
+    expect(fs.existsSync(pluginPath)).toBe(true);
+
+    const templateFiles = listHookFiles(templatesPath);
+    const drift: string[] = [];
+    for (const name of templateFiles) {
+      const tBytes = fs.readFileSync(path.join(templatesPath, name));
+      const pPath = path.join(pluginPath, name);
+      if (!fs.existsSync(pPath)) {
+        drift.push(`MISSING: plugin/hooks/${name}`);
+        continue;
+      }
+      const pBytes = fs.readFileSync(pPath);
+      if (!pBytes.equals(tBytes)) {
+        drift.push(`DRIFT: plugin/hooks/${name}`);
       }
     }
 
