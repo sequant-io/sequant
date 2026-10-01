@@ -16,12 +16,12 @@ journey through planning, implementation, testing, and review
 | Slash Commands | 20 |
 | CLI Commands | 20 |
 | Core Library Modules | 145 |
-| Test Files | 356 |
+| Test Files | 359 |
 | Documentation Files | 117 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~70,600 |
 
-*Counted 2026-09-30 (v2.19.0) with the commands in `/release` Step 4.6.*
+*Counted 2026-10-01 (v2.19.0) with the commands in `/release` Step 4.6.*
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)
@@ -749,6 +749,7 @@ Shell scripts in `templates/scripts/`:
 - **Configurable Worktree Root** - `run.worktreeRoot` / `SEQUANT_WORKTREE_ROOT` for `sequant run` and `new-feature.sh` (#1199)
 - **Cheap Adoption** - `init --manifest-only` and `sync --only skills` (#1209); `run.prIssueLink` / `run.prNoCloseLabel` make a PR reference an issue (`Refs #N`) instead of closing it (#1197)
 - **Verdicts Carry Their Evidence** - the run log records each phase's model and the sequant version (#1198); the MCP `sequant_run` result carries each issue's QA summary and findings (#1200)
+- **First-Run Fixes** - interactive `init` works on inquirer 14 (#1256); `doctor` fails outside a git repo and `run --dry-run` says "planned", not "passed" (#1257); CLI and docs agree on plugin install and merge behaviour; the Action's comment-trigger example is gated on `author_association`
 - **Run Correctness** - exact base ref per worktree (#1234); no `ready_for_merge` without QA (#1233); a watchdog kill writes the run log first and keeps mid-flight worktrees (#1222); non-Node repos install with uv/poetry/pip (#1196, #1217, #1231)
 
 ### Recent Additions (v2.18.0)
