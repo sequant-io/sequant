@@ -122,6 +122,7 @@ export async function runCommand(
     // #624 Item 3 / D2: route the resolved maxIterations into the renderer so
     // `(attempt N/M)` and `loop N/M` reflect actual configured limits.
     maxLoopIterations: resolved.config.maxIterations,
+    dryRun: resolved.config.dryRun,
   });
 
   if (tuiEnabled) {

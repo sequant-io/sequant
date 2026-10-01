@@ -419,6 +419,21 @@ export function isVersionBelow(version: string, floor: string): boolean {
   return false;
 }
 
+/** True when the cwd is inside a git work tree, including subdirectories. */
+function isInsideGitWorkTree(): boolean {
+  try {
+    return (
+      execSync("git rev-parse --is-inside-work-tree", {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim() === "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -619,8 +634,10 @@ export async function doctorCommand(
     });
   }
 
-  // Check 7: Git repo
-  const gitExists = await fileExists(".git");
+  // Check 7: Git repo. Every run needs one (worktrees, branches, PRs), so a
+  // missing repo fails doctor instead of warning (#1257). `.git` only exists
+  // at the repo root, so ask git itself before failing a subdirectory.
+  const gitExists = (await fileExists(".git")) || isInsideGitWorkTree();
   if (gitExists) {
     checks.push({
       name: "Git Repository",
@@ -630,8 +647,9 @@ export async function doctorCommand(
   } else {
     checks.push({
       name: "Git Repository",
-      status: "warn",
-      message: "Not a git repository (worktree features won't work)",
+      status: "fail",
+      message:
+        "Not inside a git repository. Run sequant from your project's git checkout (or `git init` first)",
     });
   }
 

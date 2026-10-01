@@ -193,6 +193,11 @@ export interface RenderOptions {
   /** Don't subscribe to SIGWINCH (used in tests). */
   noSignalListeners?: boolean;
   /**
+   * #1257: the run is a dry run. Phases only print their plan, so a
+   * completed phase renders as "planned" instead of a green check.
+   */
+  dryRun?: boolean;
+  /**
    * AC-26: when a running phase has been active for longer than this many ms
    * with no completion event, the status header flips to `⚠ stalled · …`.
    * Defaults to half the phase timeout when wired from settings; effectively
