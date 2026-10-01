@@ -177,7 +177,7 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 3. **Verify, then use, the provided path** - `SEQUANT_WORKTREE` is authoritative *when valid*, but it is never trusted unchecked: run the existence guard in "Feature Worktree Workflow" below and halt if it fails (#899)
 4. **Reduce GitHub comment frequency** - Defer progress updates to the orchestrator
 5. **Trust issue context** - The orchestrator has already fetched and validated issue data
-6. **Skip PR creation** - Commit and push the branch, but open no PR: the orchestrator is the only PR producer and opens or updates the PR itself after QA (#1247). See "PR Creation and Verification" below
+6. **Skip PR creation** - Commit and push the branch, but open no PR: the orchestrator is the only PR producer: it opens the PR right after exec and updates it after QA (#1247). See "PR Creation and Verification" below
 
 **Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
 
@@ -982,7 +982,7 @@ Not all interface fields need CLI registration. Fields are internal-only if:
 
 ### PR Creation and Verification
 
-**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - except step 1: commit and push the branch (`git push -u origin <branch>`), then report the branch and stop. Open no PR by any means: no `gh pr create`, and no GitHub MCP pull-request tool in in-place mode. The orchestrator is the only PR producer; it opens the PR after QA, or updates the one already on the branch, with a body built from your last `## Summary` section, the QA verdict and the ready-gate report (#1247). Put the AC verification table and every `SEQUANT_MUTATION` marker inside that final `## Summary` section so they reach the PR body. Under `--no-pr` the orchestrator opens none either.
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - except step 1: commit and push the branch (`git push -u origin <branch>`), then report the branch and stop. Open no PR by any means: no `gh pr create`, and no GitHub MCP pull-request tool either. The orchestrator is the only PR producer (#1247). It opens the PR as soon as exec finishes, so QA reads your summary, AC table and mutation markers from the PR body, and it updates the same PR after QA with the QA verdict and the ready-gate report. The body is built from your last `## Summary` section. Put the AC verification table and every `SEQUANT_MUTATION` marker inside that final `## Summary` section so they reach the PR body. Under `--no-pr` the orchestrator opens none either.
 
 After implementation is complete and all checks pass, create and verify the PR:
 

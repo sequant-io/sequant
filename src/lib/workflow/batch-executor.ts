@@ -2016,10 +2016,12 @@ export async function runIssueWithLogging(
       // has committed work, so qa — which reads the mutation records, the AC
       // table and the test-plan boxes from the PR body — has a body to read.
       // A failure here only warns: the post-QA call retries and stays fatal
-      // (#879).
+      // (#879). An exec that declared the spec impossible (`SPEC_DIVERGENCE`)
+      // halts below even on success, and opens no PR.
       if (
         phase === "exec" &&
         result.success &&
+        !result.specDivergence &&
         worktreePath &&
         branch &&
         !options.noPr &&

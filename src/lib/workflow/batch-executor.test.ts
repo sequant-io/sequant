@@ -1659,8 +1659,11 @@ describe("#1223: the PR body gets the latest exec pass's output", () => {
     });
 
     expect(execPass).toBeGreaterThan(1);
-    expect(mockCreatePR).toHaveBeenCalledTimes(1);
-    const opts = mockCreatePR.mock.calls[0].at(-1) as { execOutput?: string };
+    // #1247 AC-5: one call after each exec pass, then the post-QA update.
+    expect(mockCreatePR).toHaveBeenCalledTimes(execPass + 1);
+    const opts = mockCreatePR.mock.calls.at(-1)!.at(-1) as {
+      execOutput?: string;
+    };
     expect(opts.execOutput).toBe(`## Summary\nexec pass ${execPass}`);
   });
 });
@@ -1709,16 +1712,18 @@ describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () =
       worktree: { path: "/tmp/wt-749", branch: "feature/749" },
     });
 
-    // Break-to-PR: createPR was called, and the loop never ran.
-    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    // Break-to-PR: createPR was called after exec (#1247 AC-5) and again
+    // after QA, and the loop never ran.
+    expect(mockCreatePR).toHaveBeenCalledTimes(2);
     const loopCalls = mockExecutePhase.mock.calls.filter(
       (c) => c[1] === "loop",
     );
     expect(loopCalls).toHaveLength(0);
 
     // The verdict is forwarded as the 8th arg so the PR body surfaces the
-    // "not A+" note.
-    expect(mockCreatePR.mock.calls[0][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
+    // "not A+" note. The after-exec call has no verdict yet.
+    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[1][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
   });
 });
 
@@ -2148,7 +2153,9 @@ describe("#879: a failed createPR fails the run (AC-5)", () => {
       worktree: { path: "/tmp/wt-879", branch: "feature/879" },
     });
 
-    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    // #1247 AC-5: the after-exec attempt only warns; the post-QA attempt is
+    // the one that fails the run.
+    expect(mockCreatePR).toHaveBeenCalledTimes(2);
     expect(result.success).toBe(false);
     expect(result.prCreationError).toContain("No commits between main");
   });
@@ -2247,7 +2254,8 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
       } as PhaseResult;
     });
 
-    // Run 1: exec succeeds, qa fails — no PR.
+    // Run 1: exec succeeds, so the PR opens right after it (#1247 AC-5) with
+    // no QA verdict; qa fails, so there is no post-QA update.
     const run1 = makeCtx({
       issueNumber: 1247,
       config: { phases: ["exec", "qa"], qualityLoop: false },
@@ -2258,10 +2266,12 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
       ...run1,
       worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
     });
-    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
     expect(stateManager.issues.get(1247)?.execSummary).toBe(
       "The exec summary from run 1.",
     );
+    mockCreatePR.mockClear();
 
     // Run 2: qa only, passes — the PR is opened with run 1's summary.
     mockExecutePhase.mockResolvedValue({
@@ -2346,6 +2356,113 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
     expect(mockCreatePR).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.prNumber).toBeUndefined();
+  });
+
+  describe("AC-5: the PR opens right after exec, before qa reads it", () => {
+    const qaPass = {
+      phase: "qa",
+      success: true,
+      durationSeconds: 10,
+      verdict: "READY_FOR_MERGE",
+    } as PhaseResult;
+    const ctx1247 = (
+      options: Record<string, unknown> = {},
+    ): Parameters<typeof runIssueWithLogging>[0] => ({
+      ...makeCtx({
+        issueNumber: 1247,
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false, ...options },
+      }),
+      worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
+    });
+
+    beforeEach(() => {
+      mockHasExecChanges.mockReturnValue(true);
+    });
+
+    it("createPR runs after exec and before qa starts, then updates after qa with the verdict", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec"
+          ? { ...successResult("exec"), output: "## Summary\nexec work" }
+          : qaPass,
+      );
+
+      await runIssueWithLogging(ctx1247());
+
+      expect(mockCreatePR).toHaveBeenCalledTimes(2);
+      const qaCall = mockExecutePhase.mock.calls.findIndex(
+        (c) => c[1] === "qa",
+      );
+      const qaOrder = mockExecutePhase.mock.invocationCallOrder[qaCall];
+      const [afterExec, afterQa] = mockCreatePR.mock.invocationCallOrder;
+      // The PR exists when qa starts, so qa has a PR body to read.
+      expect(afterExec).toBeLessThan(qaOrder);
+      expect(afterQa).toBeGreaterThan(qaOrder);
+      // After exec: exec's summary, no verdict yet. After qa: the verdict.
+      expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
+      expect(
+        (mockCreatePR.mock.calls[0].at(-1) as { execOutput?: string })
+          .execOutput,
+      ).toBe("## Summary\nexec work");
+      expect(mockCreatePR.mock.calls[1][7]).toBe("READY_FOR_MERGE");
+    });
+
+    it("a failed after-exec call warns and the run still succeeds when the post-qa call works", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+      mockCreatePR
+        .mockReturnValueOnce({
+          attempted: true,
+          success: false,
+          error: "gh pr create failed: network",
+        })
+        .mockReturnValueOnce({
+          attempted: true,
+          success: true,
+          prNumber: 1247,
+          prUrl: "https://example.test/pr/1247",
+        });
+
+      const result = await runIssueWithLogging(ctx1247());
+
+      expect(mockCreatePR).toHaveBeenCalledTimes(2);
+      expect(result.success).toBe(true);
+      expect(result.prCreationError).toBeUndefined();
+      expect(result.prNumber).toBe(1247);
+    });
+
+    it("an exec with no commits ahead of base opens no PR", async () => {
+      mockHasExecChanges.mockReturnValue(false);
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+
+      await runIssueWithLogging(ctx1247());
+
+      expect(mockCreatePR).not.toHaveBeenCalled();
+    });
+
+    it("an exec that declares SPEC_DIVERGENCE opens no PR, even on success", async () => {
+      mockExecutePhase.mockResolvedValue({
+        ...successResult("exec"),
+        specDivergence: { acs: "AC-1" },
+      } as PhaseResult);
+
+      await runIssueWithLogging(ctx1247());
+
+      expect(mockCreatePR).not.toHaveBeenCalled();
+    });
+
+    it("under --no-pr an exec + qa run calls createPR from neither site", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+
+      await runIssueWithLogging(ctx1247({ noPr: true }));
+
+      expect(mockCreatePR).not.toHaveBeenCalled();
+    });
   });
 });
 

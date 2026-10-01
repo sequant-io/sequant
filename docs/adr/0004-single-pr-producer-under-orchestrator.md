@@ -31,16 +31,28 @@ did, that run had no exec output, so the body was the placeholder.
    written by someone else and is left alone; the base is still set.
 4. The last successful exec pass's extracted summary is saved on the issue's
    state (`execSummary`). A run with no exec pass of its own uses it.
+5. `createPR` runs twice in a passing run: right after each successful exec
+   pass that left commits on the branch, and again after QA. The first call
+   creates the PR from exec's summary. The second goes through the update
+   path in point 2 and adds the QA note and the ready-gate report. QA reads
+   the mutation records, the AC table and the test-plan boxes from the PR
+   body, so the PR has to exist before QA runs. A failed after-exec call
+   only warns; the post-QA call stays fatal (#879). An exec that declares
+   `SPEC_DIVERGENCE` opens no PR. Whether that PR should be a draft until QA
+   passes is #1246's decision.
 
 ## Options
 
 ### Option A: orchestrator as the single producer (chosen)
 
 **Pros:** One place builds the body; `--no-pr` covers every producer with
-no new env var. **Cons:** QA now runs before the PR exists, so QA steps that
-read the PR body (the `SEQUANT_MUTATION` record, the AC literal-diff) see no
-body during an orchestrated run. Exec is told to put its markers in its
-final `## Summary` so they reach the body the orchestrator writes.
+no new env var. **Cons:** as first built, the PR opened only after QA, so QA
+steps that read the PR body (the `SEQUANT_MUTATION` record, the AC
+literal-diff, the settle evidence, the test-plan boxes) saw no body during
+an orchestrated run. QA flagged this, and the owner chose to open the PR
+right after exec (point 5) over teaching QA a second source (state's
+`execSummary`), which would have touched four sites in the QA skill. Exec
+puts its markers in its final `## Summary` so they reach the PR body.
 
 ### Option B: exec opens the PR, the orchestrator only edits it
 
