@@ -157,12 +157,20 @@ if (isMain) {
   if (process.argv.includes("--write")) {
     // `npm run mcp-launch:inline` — also the first step of prepare:marketplace,
     // so a release can never ship a launcher that drifted from mcp-launch.mjs.
-    // Rewrites the shipped .mcp.json (#1084), templates/mcp.json, and the
-    // generated TS module that getSequantMcpConfig() embeds (#1089).
+    // Rewrites the shipped .mcp.json (#1084), plugin/.mcp.json (#1265 — the
+    // file marketplace.json's `./plugin` source actually resolves to),
+    // templates/mcp.json, and the generated TS module that
+    // getSequantMcpConfig() embeds (#1089).
     const root = join(__dirname, "..");
     rewriteInlineEntry(
       join(root, ".mcp.json"),
       ".mcp.json",
+      (c) => c.mcpServers?.sequant,
+      source,
+    );
+    rewriteInlineEntry(
+      join(root, "plugin", ".mcp.json"),
+      "plugin/.mcp.json",
       (c) => c.mcpServers?.sequant,
       source,
     );
