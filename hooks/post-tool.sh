@@ -205,16 +205,25 @@ elif [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
     FILE_PATH=$(extract_file_path "$TOOL_INPUT")
 
     if [[ -n "$FILE_PATH" && -f "$FILE_PATH" ]]; then
-        # Auto-format TypeScript/JavaScript files (synchronous to avoid race conditions)
-        if [[ "$FILE_PATH" =~ \.(ts|tsx|js|jsx)$ ]]; then
-            if npx prettier --write "$FILE_PATH" 2>/dev/null; then
-                echo "$(date +%H:%M:%S) FORMATTED: $FILE_PATH" >> "$QUALITY_LOG"
+        # Auto-format TypeScript/JavaScript/JSON files (synchronous to avoid
+        # race conditions). Only the project's own local prettier is ever
+        # run — never one fetched from the registry via a package launcher
+        # (#1264). A project without prettier installed is simply not
+        # auto-formatted.
+        if [[ "$FILE_PATH" =~ \.(ts|tsx|js|jsx|json)$ ]]; then
+            FILE_ROOT=$(git -C "$(dirname "$FILE_PATH")" rev-parse --show-toplevel 2>/dev/null || true)
+            PRETTIER_BIN=""
+            if [[ -n "$FILE_ROOT" && -x "$FILE_ROOT/node_modules/.bin/prettier" ]]; then
+                PRETTIER_BIN="$FILE_ROOT/node_modules/.bin/prettier"
             fi
-        fi
 
-        # Auto-format JSON files (synchronous)
-        if [[ "$FILE_PATH" =~ \.json$ ]]; then
-            npx prettier --write "$FILE_PATH" 2>/dev/null
+            if [[ -n "$PRETTIER_BIN" ]]; then
+                if "$PRETTIER_BIN" --write "$FILE_PATH" 2>/dev/null; then
+                    echo "$(date +%H:%M:%S) FORMATTED: $FILE_PATH" >> "$QUALITY_LOG"
+                fi
+            else
+                echo "$(date +%H:%M:%S) SKIP_FORMAT (no local prettier): $FILE_PATH" >> "$QUALITY_LOG"
+            fi
         fi
     fi
 fi
