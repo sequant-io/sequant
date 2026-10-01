@@ -1,5 +1,8 @@
 /**
- * Behaviour gate for `templates/hooks/post-tool.sh` auto-format (#1264).
+ * Behaviour gate for the `post-tool.sh` auto-format (#1264), run against every
+ * shipped copy: `templates/hooks/` (npm installs, via sync), `.claude/hooks/`
+ * (this repo) and `hooks/` (the plugin, via `hooks/hooks.json`). The first fix
+ * changed only the first two, and plugin installs kept running `npx prettier`.
  *
  * Before this fix, the hook ran `npx prettier --write "$FILE_PATH"` on every
  * Edit/Write of a `.ts/.tsx/.js/.jsx/.json` file. With no local prettier
@@ -29,7 +32,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const HOOK = join(__dirname, "..", "templates", "hooks", "post-tool.sh");
+const REPO_ROOT = join(__dirname, "..");
+const HOOK_COPIES = [
+  "templates/hooks/post-tool.sh",
+  ".claude/hooks/post-tool.sh",
+  "hooks/post-tool.sh",
+] as const;
 
 let root: string;
 let repo: string;
@@ -40,8 +48,11 @@ function git(cwd: string, ...args: string[]): void {
   execFileSync("git", args, { cwd, stdio: "ignore" });
 }
 
-function runHook(filePath: string): { exit: number; quietLog: string } {
-  const result = spawnSync("bash", [HOOK], {
+function runHook(
+  hook: string,
+  filePath: string,
+): { exit: number; quietLog: string } {
+  const result = spawnSync("bash", [join(REPO_ROOT, hook)], {
     cwd: repo,
     input: JSON.stringify({
       tool_name: "Edit",
@@ -93,13 +104,13 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("post-tool.sh auto-format (#1264)", () => {
+describe.each(HOOK_COPIES)("%s auto-format (#1264)", (hook) => {
   it("skips formatting and logs the reason when no local prettier exists", () => {
     const filePath = join(repo, "src", "example.ts");
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, "const x=1\n");
 
-    const { exit, quietLog } = runHook(filePath);
+    const { exit, quietLog } = runHook(hook, filePath);
 
     expect(exit).toBe(0);
     expect(npmCacheIsEmpty()).toBe(true);
@@ -129,7 +140,7 @@ describe("post-tool.sh auto-format (#1264)", () => {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, "const y=2\n");
 
-    const { exit, quietLog } = runHook(filePath);
+    const { exit, quietLog } = runHook(hook, filePath);
 
     expect(exit).toBe(0);
     expect(npmCacheIsEmpty()).toBe(true);
