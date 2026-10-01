@@ -3052,6 +3052,9 @@ describe("#1087 Codex usage-limit turn failure under -Q", () => {
       phaseTimeout: 600,
       stderrTail: [],
       stdoutTail: [],
+      // Pinned well before the fixture's 2026-10-16T01:04 reset enters the
+      // 7-day horizon (#1248) — keeps this independent of the wall clock.
+      now: new Date(2026, 8, 1).getTime(),
     });
     expect(mapped.structuredError).toBeInstanceOf(BillingError);
 

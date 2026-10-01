@@ -206,6 +206,13 @@ function loadFixture(name: string): string {
   return readFileSync(join(FIXTURES, name), "utf-8");
 }
 
+/**
+ * Pinned well before the `codex-turn-failed-usage-limit.jsonl` fixture's
+ * 2026-10-16T01:04 reset enters the 7-day horizon (#1248) — keeps the
+ * BillingError assertion independent of the wall clock.
+ */
+const PINNED_NOW = new Date(2026, 8, 1).getTime();
+
 /** Drive a codex JSONL fixture through the real parser + outcome evaluator. */
 function codexOutcome(fixture: string, exitCode = 1): AgentPhaseResult {
   const parser = new CodexStreamParser();
@@ -216,6 +223,7 @@ function codexOutcome(fixture: string, exitCode = 1): AgentPhaseResult {
     phaseTimeout: 600,
     stderrTail: [],
     stdoutTail: [],
+    now: PINNED_NOW,
   });
 }
 
