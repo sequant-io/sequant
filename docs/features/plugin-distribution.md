@@ -16,7 +16,8 @@ Sequant is available as a Claude Code plugin — install it directly from Claude
 In Claude Code:
 
 ```
-/plugin install sequant@sequant-io/sequant
+/plugin marketplace add sequant-io/sequant
+/plugin install sequant@sequant
 ```
 
 This loads:
@@ -176,9 +177,13 @@ The log directory deliberately lives **outside the repo**: creating it inside on
 
 ### Plugin install says "not found"
 
-**Symptoms:** `claude plugin install sequant@sequant-io/sequant` fails.
+**Symptoms:** Installing with the GitHub `owner/repo` (`sequant-io/sequant`) directly after the `@` fails with `Plugin "sequant" not found in marketplace "sequant-io/sequant"`.
 
-**Solution:** Verify you're using Claude Code v2.1+. Try the full path: `claude plugin install sequant@sequant-io/sequant`.
+**Solution:** The part after `@` is a marketplace *name*, not a GitHub repo — ours is named `sequant`, not `sequant-io/sequant`. Add the marketplace first, then install from it by name:
+```
+/plugin marketplace add sequant-io/sequant
+/plugin install sequant@sequant
+```
 
 ---
 

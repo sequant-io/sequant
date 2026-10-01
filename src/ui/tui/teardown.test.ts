@@ -55,3 +55,12 @@ describe("composeTeardownSummary (#699 AC-5)", () => {
     );
   });
 });
+
+// #1257: a dry run executes nothing, so its teardown must not print a check.
+describe("composeTeardownSummary on a dry run (#1257)", () => {
+  it("marks each issue planned instead of passed", () => {
+    const snap = snapshot([issue(1, "passed")]);
+    snap.config.dryRun = true;
+    expect(composeTeardownSummary(snap)).toBe("○ #1 Issue 1 (planned)");
+  });
+});

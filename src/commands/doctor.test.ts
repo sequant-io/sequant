@@ -284,12 +284,114 @@ describe("doctor command", () => {
       output: [],
       signal: null,
     } as never);
-    mockExecSync.mockReturnValue("");
+    // Default git answers for a set-up repo (#1257): a GitHub remote, and any
+    // file asked about via `git ls-files` is tracked. Everything else: "".
+    mockExecSync.mockImplementation(((cmd: string) => {
+      if (cmd === "git remote -v") {
+        return "origin\thttps://github.com/acme/app.git (fetch)\n";
+      }
+      const tracked = cmd.match(/^git ls-files -- (.+)$/);
+      return tracked ? `${tracked[1]}\n` : "";
+    }) as never);
   });
 
   afterEach(() => {
     consoleLogSpy.mockRestore();
     processExitSpy.mockRestore();
+  });
+
+  // #1257: outside a git repo nothing in sequant works, but doctor used to
+  // warn and print "Sequant should work correctly".
+  describe("Git repository check (#1257)", () => {
+    it("fails and exits 1 outside a git repository", async () => {
+      mockFileExists.mockImplementation(async (p: string) => p !== ".git");
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd.startsWith("git rev-parse")) {
+          throw new Error("fatal: not a git repository");
+        }
+        return "";
+      }) as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Not inside a git repository");
+      expect(output).not.toContain("should work correctly");
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it("passes in a subdirectory of a repository, where .git is absent", async () => {
+      mockFileExists.mockImplementation(async (p: string) => p !== ".git");
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd.startsWith("git rev-parse") ? "true\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Git repository detected");
+      expect(output).not.toContain("Not inside a git repository");
+    });
+  });
+
+  describe("GitHub remote and committed skills (#1257)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+
+    it("passes with a GitHub remote and committed core skills", async () => {
+      await doctorCommand();
+      expect(output()).toContain("GitHub remote configured");
+      expect(output()).toContain("Core skills are committed");
+    });
+
+    it("warns when the repository has no remote", async () => {
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "git remote -v" ? "" : "tracked\n") as never);
+
+      await doctorCommand();
+
+      expect(output()).toContain("No git remote");
+      expect(output()).toContain("gh repo create");
+    });
+
+    it("warns when no remote points at GitHub", async () => {
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "git remote -v"
+          ? "origin\thttps://gitlab.com/acme/app.git (fetch)\n"
+          : "tracked\n") as never);
+
+      await doctorCommand();
+
+      expect(output()).toContain("No GitHub remote found");
+    });
+
+    it("warns when core skills exist on disk but are not committed", async () => {
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd === "git remote -v") {
+          return "origin\tgit@github.com:acme/app.git (fetch)\n";
+        }
+        return cmd.includes("skills/exec/") ? "" : "tracked\n";
+      }) as never);
+
+      await doctorCommand();
+
+      expect(output()).toContain("Not committed to git: .claude/skills/exec.");
+      expect(output()).not.toContain("Core skills are committed");
+    });
+
+    it("does not flag skills that are absent from disk", async () => {
+      mockFileExists.mockImplementation(
+        async (p: string) => !p.startsWith(".claude/skills/"),
+      );
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "git remote -v"
+          ? "origin\tgit@github.com:acme/app.git (fetch)\n"
+          : "") as never);
+
+      await doctorCommand();
+
+      expect(output()).not.toContain("Not committed to git");
+    });
   });
 
   describe("GitHub CLI checks", () => {

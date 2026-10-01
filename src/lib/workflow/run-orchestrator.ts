@@ -431,6 +431,7 @@ export class RunOrchestrator {
       concurrency: config.concurrency,
       baseBranch: this.cfg.baseBranch ?? "main",
       qualityLoop: config.qualityLoop,
+      ...(config.dryRun ? { dryRun: true } : {}),
     };
     const issues: IssueRuntimeState[] = [];
     for (const state of this.issueStates.values()) {
@@ -1107,8 +1108,37 @@ export class RunOrchestrator {
 
     // ── Issue info + worktree setup ────────────────────────────────────
     const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
+    const missingIssues: number[] = [];
     for (const issueNumber of issueNumbers) {
-      issueInfoMap.set(issueNumber, await getIssueInfo(issueNumber));
+      const info = await getIssueInfo(issueNumber);
+      if (info.notFound) missingIssues.push(issueNumber);
+      issueInfoMap.set(issueNumber, { title: info.title, labels: info.labels });
+    }
+
+    // #1257 AC-5: a dry run is the plan preview. Planning an issue gh says
+    // doesn't exist used to print "✔ passed"; report it and exit 1 instead.
+    if (config.dryRun && missingIssues.length > 0) {
+      for (const n of missingIssues) {
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.red(
+            `  ✖ Issue #${n} was not found in this repository, so a real run would fail. ` +
+              `Check the number, or run from the repo the issue belongs to.`,
+          ),
+        );
+      }
+      shutdown.dispose();
+      return {
+        results: [],
+        logPath: null,
+        exitCode: 1,
+        worktreeMap: new Map(),
+        issueInfoMap,
+        config,
+        mergedOptions,
+        logWriter: null,
+        wallClockDurationSeconds: wallClock(),
+      };
     }
 
     const useWorktreeIsolation =
