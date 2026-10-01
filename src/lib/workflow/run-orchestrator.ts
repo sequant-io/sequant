@@ -431,6 +431,7 @@ export class RunOrchestrator {
       concurrency: config.concurrency,
       baseBranch: this.cfg.baseBranch ?? "main",
       qualityLoop: config.qualityLoop,
+      ...(config.dryRun ? { dryRun: true } : {}),
     };
     const issues: IssueRuntimeState[] = [];
     for (const state of this.issueStates.values()) {
