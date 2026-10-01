@@ -364,7 +364,7 @@ program
   // of both worlds — scripts keep passing it and nothing explains why to stop.
   .option(
     "--qa-gate",
-    "DEPRECATED (#795): no-op, still accepted. --chain already halts on any failed issue, QA included",
+    "Deprecated: no-op, still accepted. --chain already halts on any failed issue, QA included",
   )
   .option(
     "--strict-preflight",
@@ -479,7 +479,7 @@ program
   .addOption(new Option("--experimental-tui").hideHelp())
   .option(
     "--no-relay",
-    "Disable interactive relay (#383); `sequant prompt` cannot reach this run",
+    "Disable interactive relay; `sequant prompt` cannot reach this run",
   )
   .action(runCommand);
 
@@ -500,7 +500,7 @@ program
 
 program
   .command("prompt")
-  .description("Send a message into a running headless sequant session (#383)")
+  .description("Send a message into a running headless sequant session")
   .argument("[args...]", '[<issue>] "<message>"')
   .option(
     "--type <type>",
@@ -509,7 +509,7 @@ program
   )
   .option(
     "--wait <seconds>",
-    "Block until a reply arrives or the timeout elapses (#645, Gap 4)",
+    "Block until a reply arrives or the timeout elapses",
     parseWholeNumber("--wait", {
       min: 0,
       unit: "seconds",
@@ -532,7 +532,7 @@ program
 program
   .command("watch")
   .description(
-    "Tail the relay outbox for replies from a running sequant session (#383)",
+    "Tail the relay outbox for replies from a running sequant session",
   )
   .argument("<issue>", "Issue number to watch")
   .option("--json", "Output as JSON lines")
@@ -545,9 +545,7 @@ program
 
 program
   .command("abort")
-  .description(
-    "Out-of-band abort: signal a running sequant session directly (#858)",
-  )
+  .description("Out-of-band abort: signal a running sequant session directly")
   .argument(
     "[issue]",
     "Issue number (auto-resolved when a single run is active)",

@@ -22,7 +22,7 @@ Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, 
 **Why Sequant**
 
 - **Stop babysitting the agent.** AI coding agents write code well and leave the workflow to you — planning, isolation, review, merge safety. One command runs the whole issue → PR path, not just the coding step.
-- **You stay in control.** The pipeline stops at the PR and never merges. That is an invariant, not a setting.
+- **You stay in control.** `sequant run` stops at the PR and never merges. That is an invariant, not a setting. (The `/fullsolve` skill merges only if you pass `--auto-merge`.)
 
 **Works with** [Claude Code](https://claude.ai/code) (default) or [Aider](https://aider.chat/), on any git repository with GitHub issues. Tuned for Node.js/TypeScript projects; the worktree workflow is language-agnostic.
 
@@ -43,7 +43,8 @@ Pick the path that matches **where you run Sequant**:
 
 **Inside Claude Code (plugin)** — skills, hooks, and MCP tools, no npm required:
 ```
-/plugin install sequant@sequant-io/sequant
+/plugin marketplace add sequant-io/sequant
+/plugin install sequant@sequant
 /sequant:setup
 ```
 
@@ -170,7 +171,7 @@ When checks fail, `/loop` automatically fixes and re-runs (up to 3x).
 You could assemble this workflow yourself on LangGraph, CrewAI, Mastra, or the Claude Agent SDK — they sell the primitives and leave the workflow as an exercise. Sequant is the finished, hardened version of what you'd end up building, in the frameworks' own vocabulary:
 
 - **Isolated execution** — one git worktree per issue, resolved by the branch git reports rather than directory globs
-- **Human-in-the-loop approval gate** — the pipeline stops at the PR and never merges; this is an invariant, not optional wiring
+- **Human-in-the-loop approval gate** — `sequant run` stops at the PR and never merges; this is an invariant, not optional wiring (`/fullsolve` merges only with an explicit `--auto-merge`)
 - **Guardrails** — QA verdicts with an enforced floor, mutation-verified gate tests, scope and security checks
 - **Durable execution** — a rate-limit halt writes a resumable record; `sequant resume` picks up where it left off, skipping completed phases
 - **State management** — per-issue and checkout-scoped locks, so concurrent sessions can't interleave git operations in the same tree
