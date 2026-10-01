@@ -94,9 +94,54 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
   });
 });
 
-describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no placeholders", () => {
+describe("#1265: shipped plugin .mcp.json runs the launcher file the plugin ships", () => {
+  // Root .mcp.json stays inline because it is also this repo's project
+  // config, where ${CLAUDE_PLUGIN_ROOT} is undefined (#1084). plugin/.mcp.json
+  // is only ever a plugin config, so the placeholder always resolves there.
+  // The directory refuses the inline form: a command over 1,024 parts isn't
+  // checked (developer portal, 2026-10-01).
+  const shipped = JSON.parse(readFileSync(shippedMcpJsonPath(), "utf8")) as {
+    mcpServers?: {
+      sequant?: { command?: string; args?: unknown[]; env?: Record<string, string> };
+    };
+  };
+  const sequant = shipped.mcpServers?.sequant;
+
+  it("is `node ${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs sequant@<version>`", async () => {
+    const { PLUGIN_LAUNCHER_ARG } = await import("./generate-mcp-launch-inline.mjs");
+    const pkg = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
+    expect(sequant?.command).toBe("node");
+    expect(sequant?.args).toEqual([PLUGIN_LAUNCHER_ARG, `sequant@${pkg.version}`]);
+    expect(PLUGIN_LAUNCHER_ARG).toBe("${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs");
+    expect(sequant?.env).toBeUndefined();
+  });
+
+  it("uses only the plain ${CLAUDE_PLUGIN_ROOT} placeholder, never a :- default (#1084 QA probe)", () => {
+    const text = JSON.stringify(sequant);
+    const placeholders = text.match(/\$\{[^}]*\}/g) ?? [];
+    expect(placeholders).toEqual(["${CLAUDE_PLUGIN_ROOT}"]);
+  });
+
+  it("stays far below the directory's 1,024-part command limit", () => {
+    const parts = [sequant?.command ?? "", ...((sequant?.args ?? []) as string[])]
+      .join(" ")
+      .split(/[\s,{}|&;]+/)
+      .filter(Boolean);
+    expect(parts.length).toBeLessThan(16);
+  });
+
+  it("plugin/mcp-launch.mjs is byte-identical to scripts/mcp-launch.mjs", () => {
+    expect(readFileSync(join(PROJECT_ROOT, "plugin", "mcp-launch.mjs"), "utf8")).toBe(
+      readFileSync(join(PROJECT_ROOT, "scripts", "mcp-launch.mjs"), "utf8"),
+    );
+  });
+});
+
+describe("#1084 AC-2: root .mcp.json (this repo's project config) launches an inline node -e launcher, no placeholders", () => {
   const shipped = JSON.parse(
-    readFileSync(shippedMcpJsonPath(), "utf8"),
+    readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
   ) as {
     mcpServers?: {
       sequant?: {
@@ -111,7 +156,7 @@ describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no 
   it("invokes node -e with the inline launcher source, not a file path", () => {
     expect(
       sequant,
-      "shipped .mcp.json must declare mcpServers.sequant",
+      "root .mcp.json must declare mcpServers.sequant",
     ).toBeDefined();
     expect(sequant!.command).toBe("node");
     expect(sequant!.args?.[0]).toBe("-e");

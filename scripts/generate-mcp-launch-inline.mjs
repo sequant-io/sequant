@@ -150,6 +150,50 @@ function rewriteInlineEntry(filePath, label, pick, source) {
   }
 }
 
+/**
+ * #1265: plugin/.mcp.json is used only as the plugin's MCP config. Unlike
+ * root .mcp.json, it is never loaded as a project config, so
+ * `${CLAUDE_PLUGIN_ROOT}` is always defined there and it can run a launcher
+ * file the plugin ships. The directory refuses the inline `node -e` form
+ * (a command over 1,024 parts isn't checked). Copy scripts/mcp-launch.mjs
+ * into plugin/ and check the entry points at it.
+ */
+export const PLUGIN_LAUNCHER_ARG = "${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs";
+
+function syncPluginLauncherFile(root) {
+  const from = join(root, "scripts", "mcp-launch.mjs");
+  const to = join(root, "plugin", "mcp-launch.mjs");
+  const want = readFileSync(from, "utf8");
+  let have;
+  try {
+    have = readFileSync(to, "utf8");
+  } catch {
+    have = undefined;
+  }
+  if (have === want) {
+    process.stderr.write("mcp-launch:inline: plugin/mcp-launch.mjs already up to date\n");
+  } else {
+    writeFileSync(to, want);
+    process.stderr.write("mcp-launch:inline: synced plugin/mcp-launch.mjs\n");
+  }
+  const config = JSON.parse(
+    readFileSync(join(root, "plugin", ".mcp.json"), "utf8"),
+  );
+  const entry = config.mcpServers?.sequant;
+  if (
+    !entry ||
+    entry.command !== "node" ||
+    entry.args?.[0] !== PLUGIN_LAUNCHER_ARG ||
+    entry.args.length !== 2
+  ) {
+    throw new Error(
+      "generate-mcp-launch-inline: plugin/.mcp.json sequant entry must be `node " +
+        PLUGIN_LAUNCHER_ARG +
+        " sequant@<version>`",
+    );
+  }
+}
+
 const isMain =
   process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
@@ -157,10 +201,10 @@ if (isMain) {
   if (process.argv.includes("--write")) {
     // `npm run mcp-launch:inline` — also the first step of prepare:marketplace,
     // so a release can never ship a launcher that drifted from mcp-launch.mjs.
-    // Rewrites the shipped .mcp.json (#1084), plugin/.mcp.json (#1265 — the
-    // file marketplace.json's `./plugin` source actually resolves to),
+    // Rewrites root .mcp.json (#1084; this repo's own project config),
     // templates/mcp.json, and the generated TS module that
-    // getSequantMcpConfig() embeds (#1089).
+    // getSequantMcpConfig() embeds (#1089). The shipped plugin/.mcp.json
+    // (#1265) runs a launcher *file* instead, so it's synced, not inlined.
     const root = join(__dirname, "..");
     rewriteInlineEntry(
       join(root, ".mcp.json"),
@@ -168,12 +212,7 @@ if (isMain) {
       (c) => c.mcpServers?.sequant,
       source,
     );
-    rewriteInlineEntry(
-      join(root, "plugin", ".mcp.json"),
-      "plugin/.mcp.json",
-      (c) => c.mcpServers?.sequant,
-      source,
-    );
+    syncPluginLauncherFile(root);
     rewriteInlineEntry(
       join(root, "templates", "mcp.json"),
       "templates/mcp.json",
