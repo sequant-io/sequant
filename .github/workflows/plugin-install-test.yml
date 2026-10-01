@@ -553,7 +553,15 @@ jobs:
           # reads this path at add-time, `marketplace update` re-reads it
           # later. Starting it at the v2.18.0 tag reproduces the layout
           # before #1265 (source: "./", the repo-root plugin).
+          #
+          # `git worktree add` refuses to reuse a path after a bare `rm -rf`:
+          # git keeps administrative state in .git/worktrees/<name> until the
+          # worktree is formally removed, so a second `add` at the same path
+          # fails with "is a missing but already registered worktree" (exit
+          # 128) — reproduced locally. `git worktree remove --force` clears
+          # that state, so reuse the same clone path instead of a second one.
           CLONE_DIR=$(mktemp -d)
+          rmdir "$CLONE_DIR"
           git worktree add --detach "$CLONE_DIR" v2.18.0
 
           export CLAUDE_CONFIG_DIR
@@ -566,7 +574,7 @@ jobs:
           claude plugin details sequant@sequant
 
           echo "Advancing the marketplace clone to this PR's checkout (simulates the remote moving forward)..."
-          rm -rf "$CLONE_DIR"
+          git worktree remove --force "$CLONE_DIR"
           git worktree add --detach "$CLONE_DIR" HEAD
 
           echo "Updating sequant@sequant..."
@@ -581,11 +589,22 @@ jobs:
             exit 1
           }
 
-          echo "Verifying skills, hooks, and the MCP server still load after the upgrade..."
+          echo "Verifying skills still load after the upgrade..."
           output=$(claude --print "list available skills" 2>&1 || true)
           if echo "$output" | grep -qi "sequant\|assess\|spec\|exec"; then
             echo "Plugin still loads skills after upgrade."
           else
-            echo "Warning: could not verify skill discovery post-upgrade (may need interactive session)"
+            echo "Error: could not verify skill discovery post-upgrade"
             echo "Output: $output"
+            exit 1
           fi
+
+          echo "Verifying the MCP server still connects after the upgrade..."
+          mcp_status=$(claude mcp list 2>&1)
+          echo "$mcp_status"
+          echo "$mcp_status" | grep -E "^plugin:sequant:sequant:.*✔ Connected" || {
+            echo "Error: plugin:sequant:sequant MCP server is not connected after the upgrade"
+            exit 1
+          }
+
+          git worktree remove --force "$CLONE_DIR"
