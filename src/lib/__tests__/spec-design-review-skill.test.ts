@@ -73,6 +73,10 @@ describe.each(COPIES)("%s Design Review", (rel) => {
     expect(note).toContain('"outcome":"SPEC_DIVERGENCE"');
     expect(note).toContain('"divergenceAcs"');
     expect(note).toContain("stops before exec");
+    // The run parses the phase's own output (`parseSpecDivergence`), not the
+    // issue comment, so the marker's channel must be the final response.
+    expect(note).toContain("final response message with a bare (unfenced)");
+    expect(note).toContain("never from the posted comment");
   });
 
   it("AC-5: tier gating keeps Q3 for Simple and Q5 for Standard/Complex only", () => {
