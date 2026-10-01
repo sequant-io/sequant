@@ -567,7 +567,6 @@ jobs:
           export CLAUDE_CONFIG_DIR CLAUDE_CODE_PLUGIN_CACHE_DIR
           CLAUDE_CONFIG_DIR=$(mktemp -d)
           CLAUDE_CODE_PLUGIN_CACHE_DIR="$CLAUDE_CONFIG_DIR/plugins"
-          CACHE="$CLAUDE_CODE_PLUGIN_CACHE_DIR/cache/sequant/sequant"
           MKT="$CLAUDE_CODE_PLUGIN_CACHE_DIR/marketplaces/sequant"
 
           echo "Installing sequant@sequant from the v2.18.0 tag (repo-root layout)..."
@@ -576,11 +575,23 @@ jobs:
 
           # Baseline: the old layout really does pull node_modules, so the
           # absence check below can tell the layouts apart.
-          if [[ ! -e "$CACHE/2.18.0/package.json" || ! -d "$CACHE/2.18.0/node_modules" ]]; then
-            echo "Error: baseline 2.18.0 install has no package.json/node_modules; the test can't distinguish layouts"
+          # Read the real install path rather than assuming the cache layout.
+          install_path() {
+            jq -r '.plugins["sequant@sequant"][0].installPath // empty' \
+              "$CLAUDE_CODE_PLUGIN_CACHE_DIR/installed_plugins.json" 2>/dev/null || true
+          }
+          diagnose() {
+            echo "--- installed_plugins.json:"; cat "$CLAUDE_CODE_PLUGIN_CACHE_DIR/installed_plugins.json" 2>/dev/null || echo "(missing)"
+            echo "--- plugin dirs:"; find "$CLAUDE_CONFIG_DIR" "$HOME/.claude/plugins" -maxdepth 6 -type d -path '*sequant*' 2>/dev/null | head -20
+          }
+          OLD=$(install_path)
+          if [[ -z "$OLD" || ! -e "$OLD/package.json" || ! -d "$OLD/node_modules" ]]; then
+            echo "Error: baseline 2.18.0 install at '${OLD}' has no package.json/node_modules; the test can't distinguish layouts"
+            ls -a "$OLD" 2>/dev/null | head -40 || true
+            diagnose
             exit 1
           fi
-          echo "Baseline OK: 2.18.0 cache holds $(du -sh "$CACHE/2.18.0" | cut -f1) including node_modules"
+          echo "Baseline OK: $OLD holds $(du -sh "$OLD" | cut -f1) including node_modules"
 
           echo "Repointing the marketplace at $UPGRADE_REF (simulates the remote moving forward)..."
           jq --arg r "$UPGRADE_REF" '.extraKnownMarketplaces.sequant.source.ref=$r' "$CLAUDE_CONFIG_DIR/settings.json" > "$RUNNER_TEMP/s.json"
@@ -605,8 +616,12 @@ jobs:
           echo "Updating sequant@sequant to $V..."
           claude plugin update sequant@sequant
 
-          NEW="$CACHE/$V"
-          [[ -d "$NEW" ]] || { echo "Error: no cache dir for $V; the update did not install the new layout"; ls "$CACHE"; exit 1; }
+          NEW=$(install_path)
+          if [[ -z "$NEW" || "$NEW" == "$OLD" || ! -d "$NEW" ]]; then
+            echo "Error: the update did not install a new copy (install path '${NEW}')"
+            diagnose
+            exit 1
+          fi
           for f in package.json package-lock.json node_modules; do
             if [[ -e "$NEW/$f" ]]; then
               echo "Error: upgraded install still has $f"
