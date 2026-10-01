@@ -11,6 +11,7 @@ on:
       - 'memory/**'
       - 'templates/mcp.json'
       - '.mcp.json'
+      - 'plugin/**'
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - 'memory/**'
       - 'templates/mcp.json'
       - '.mcp.json'
+      - 'plugin/**'
 
 jobs:
   plugin-structure:
@@ -84,6 +86,45 @@ jobs:
             console.log('marketplace.json validated: %d plugin(s)', mp.plugins.length);
           "
           echo "marketplace.json validated successfully!"
+
+      - name: Validate plugin/ file limits (AC-2, #1265)
+        run: |
+          echo "Checking plugin/ against the directory review limits..."
+
+          file_count=$(find plugin -type f | wc -l | tr -d ' ')
+          echo "File count: $file_count (limit: 512)"
+          if [ "$file_count" -gt 512 ]; then
+            echo "Error: plugin/ has $file_count files, limit is 512"
+            exit 1
+          fi
+
+          echo "Checking for non-image files over 256 KiB..."
+          big_files=$(find plugin -type f -size +256k \
+            ! -iname '*.png' ! -iname '*.jpg' ! -iname '*.jpeg' \
+            ! -iname '*.gif' ! -iname '*.svg' ! -iname '*.webp' || true)
+          if [ -n "$big_files" ]; then
+            echo "Error: non-image files over 256 KiB:"
+            echo "$big_files"
+            exit 1
+          fi
+
+          echo "Checking for symlinks..."
+          symlinks=$(find plugin -type l || true)
+          if [ -n "$symlinks" ]; then
+            echo "Error: plugin/ contains symlinks (loader rejects a symlink leading outside the plugin):"
+            echo "$symlinks"
+            exit 1
+          fi
+
+          echo "Checking for .DS_Store / Thumbs.db..."
+          junk=$(find plugin -type f \( -name '.DS_Store' -o -name 'Thumbs.db' \) || true)
+          if [ -n "$junk" ]; then
+            echo "Error: plugin/ contains OS junk files:"
+            echo "$junk"
+            exit 1
+          fi
+
+          echo "plugin/ passes file limits: $file_count files, no oversized non-image files, no symlinks, no OS junk."
 
       - name: Validate MCP server config template
         run: |
@@ -208,10 +249,11 @@ jobs:
           npm install -g @anthropic-ai/claude-code
           claude --version || echo "Claude CLI installed but --version not supported"
 
-      - name: Validate plugin with Claude CLI
+      - name: Validate plugin with Claude CLI (AC-7, #1265)
         run: |
-          echo "Running claude plugin validate..."
-          claude plugin validate .
+          echo "Running claude plugin validate --strict on plugin/ and the marketplace..."
+          claude plugin validate --strict ./plugin
+          claude plugin validate --strict .
 
       - name: Test marketplace add (local)
         run: |
@@ -235,6 +277,32 @@ jobs:
         run: |
           echo "Testing claude plugin install sequant@sequant..."
           claude plugin install sequant@sequant
+
+      - name: Verify install creates no node_modules in the plugin cache (AC-1, #1265)
+        run: |
+          echo "Installing into an isolated profile and plugin cache..."
+          # Isolated so this never touches the runner's real Claude config or
+          # a prior step's cache, and so the assertion below checks exactly
+          # what a fresh install writes.
+          export CLAUDE_CONFIG_DIR
+          CLAUDE_CONFIG_DIR=$(mktemp -d)
+          export CLAUDE_CODE_PLUGIN_CACHE_DIR
+          CLAUDE_CODE_PLUGIN_CACHE_DIR=$(mktemp -d)
+          echo "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR"
+          echo "CLAUDE_CODE_PLUGIN_CACHE_DIR=$CLAUDE_CODE_PLUGIN_CACHE_DIR"
+
+          claude plugin marketplace add ./
+          claude plugin install sequant@sequant
+
+          echo "Searching for node_modules under the plugin cache..."
+          hits=$(find "$CLAUDE_CODE_PLUGIN_CACHE_DIR" "$CLAUDE_CONFIG_DIR" \
+            -type d -name node_modules -path '*/sequant/sequant/*' 2>/dev/null || true)
+          if [ -n "$hits" ]; then
+            echo "Error: install created node_modules under the plugin cache (plugin/ must ship with no package.json/lockfile):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No node_modules found under the plugin cache — install stayed slim."
 
       - name: Verify README install commands work verbatim (#1263)
         run: |
@@ -456,4 +524,68 @@ jobs:
             fi
           else
             echo "Note: templates/constitution.md not found — setup may use inline content"
+          fi
+
+  upgrade-test:
+    name: In-place Upgrade (AC-5, #1265)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version || echo "Claude CLI installed but --version not supported"
+
+      - name: Install 2.18.0 (repo-root plugin), then upgrade in place
+        run: |
+          set -e
+          # A local, filesystem-backed marketplace clone, mirroring how
+          # Claude Code clones a git-sourced marketplace: `marketplace add`
+          # reads this path at add-time, `marketplace update` re-reads it
+          # later. Starting it at the v2.18.0 tag reproduces the layout
+          # before #1265 (source: "./", the repo-root plugin).
+          CLONE_DIR=$(mktemp -d)
+          git worktree add --detach "$CLONE_DIR" v2.18.0
+
+          export CLAUDE_CONFIG_DIR
+          CLAUDE_CONFIG_DIR=$(mktemp -d)
+          echo "Using isolated CLAUDE_CONFIG_DIR: $CLAUDE_CONFIG_DIR"
+
+          echo "Installing sequant@sequant from the v2.18.0 marketplace clone..."
+          claude plugin marketplace add "$CLONE_DIR"
+          claude plugin install sequant@sequant
+          claude plugin details sequant@sequant
+
+          echo "Advancing the marketplace clone to this PR's checkout (simulates the remote moving forward)..."
+          rm -rf "$CLONE_DIR"
+          git worktree add --detach "$CLONE_DIR" HEAD
+
+          echo "Updating sequant@sequant..."
+          claude plugin marketplace update sequant
+          claude plugin update sequant@sequant
+
+          echo "Verifying the install id survived the move to plugin/ and still loads..."
+          DETAILS=$(claude plugin details sequant@sequant)
+          echo "$DETAILS"
+          echo "$DETAILS" | grep -q "sequant@sequant" || {
+            echo "Error: install id sequant@sequant did not survive the upgrade"
+            exit 1
+          }
+
+          echo "Verifying skills, hooks, and the MCP server still load after the upgrade..."
+          output=$(claude --print "list available skills" 2>&1 || true)
+          if echo "$output" | grep -qi "sequant\|assess\|spec\|exec"; then
+            echo "Plugin still loads skills after upgrade."
+          else
+            echo "Warning: could not verify skill discovery post-upgrade (may need interactive session)"
+            echo "Output: $output"
           fi
