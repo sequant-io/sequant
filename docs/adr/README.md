@@ -63,3 +63,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0003](0003-cleanup-phase-ordering.md) | Cleanup ordering via a `phase` field, not an aggregate registration | Accepted |
 | [0004](0004-single-pr-producer-under-orchestrator.md) | The orchestrator is the only PR producer under `sequant run` | Accepted |
 | [0005](0005-spec-can-halt-before-exec.md) | Spec can halt the run before exec | Accepted |
+| [0006](0006-slim-plugin-folder.md) | Ship a slim `plugin/` folder as the marketplace source | Accepted |
