@@ -546,70 +546,90 @@ jobs:
           claude --version || echo "Claude CLI installed but --version not supported"
 
       - name: Install 2.18.0 (repo-root plugin), then upgrade in place
+        env:
+          # The ref Claude Code clones for the upgraded marketplace: this PR's
+          # head branch, or the pushed branch on a push event.
+          UPGRADE_REF: ${{ github.head_ref || github.ref_name }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
         run: |
           set -e
-          # A local, filesystem-backed marketplace clone, mirroring how
-          # Claude Code clones a git-sourced marketplace: `marketplace add`
-          # reads this path at add-time, `marketplace update` re-reads it
-          # later. Starting it at the v2.18.0 tag reproduces the layout
-          # before #1265 (source: "./", the repo-root plugin).
-          #
-          # `git worktree add` refuses to reuse a path after a bare `rm -rf`:
-          # git keeps administrative state in .git/worktrees/<name> until the
-          # worktree is formally removed, so a second `add` at the same path
-          # fails with "is a missing but already registered worktree" (exit
-          # 128) — reproduced locally. `git worktree remove --force` clears
-          # that state, so reuse the same clone path instead of a second one.
-          CLONE_DIR=$(mktemp -d)
-          rmdir "$CLONE_DIR"
-          git worktree add --detach "$CLONE_DIR" v2.18.0
+          # Real-user path: a GitHub-sourced marketplace. Claude Code clones it
+          # and COPIES the plugin into the cache, running `npm ci` when the
+          # plugin root has package.json + a lockfile. A local-directory
+          # marketplace would load the plugin in place with no cache copy and
+          # no install, so it can't show the #1265 fix. `owner/repo#ref` pins
+          # the clone to a tag or branch.
+          if [[ "$IS_FORK" == "true" ]]; then
+            echo "Fork PR: its branch isn't on sequant-io/sequant; skipping the upgrade test."
+            exit 0
+          fi
 
-          export CLAUDE_CONFIG_DIR
+          export CLAUDE_CONFIG_DIR CLAUDE_CODE_PLUGIN_CACHE_DIR
           CLAUDE_CONFIG_DIR=$(mktemp -d)
-          echo "Using isolated CLAUDE_CONFIG_DIR: $CLAUDE_CONFIG_DIR"
+          CLAUDE_CODE_PLUGIN_CACHE_DIR="$CLAUDE_CONFIG_DIR/plugins"
+          CACHE="$CLAUDE_CODE_PLUGIN_CACHE_DIR/cache/sequant/sequant"
+          MKT="$CLAUDE_CODE_PLUGIN_CACHE_DIR/marketplaces/sequant"
 
-          echo "Installing sequant@sequant from the v2.18.0 marketplace clone..."
-          claude plugin marketplace add "$CLONE_DIR"
+          echo "Installing sequant@sequant from the v2.18.0 tag (repo-root layout)..."
+          claude plugin marketplace add "sequant-io/sequant#v2.18.0"
           claude plugin install sequant@sequant
-          claude plugin details sequant@sequant
 
-          echo "Advancing the marketplace clone to this PR's checkout (simulates the remote moving forward)..."
-          git worktree remove --force "$CLONE_DIR"
-          git worktree add --detach "$CLONE_DIR" HEAD
+          # Baseline: the old layout really does pull node_modules, so the
+          # absence check below can tell the layouts apart.
+          if [[ ! -e "$CACHE/2.18.0/package.json" || ! -d "$CACHE/2.18.0/node_modules" ]]; then
+            echo "Error: baseline 2.18.0 install has no package.json/node_modules; the test can't distinguish layouts"
+            exit 1
+          fi
+          echo "Baseline OK: 2.18.0 cache holds $(du -sh "$CACHE/2.18.0" | cut -f1) including node_modules"
 
-          echo "Updating sequant@sequant..."
+          echo "Repointing the marketplace at $UPGRADE_REF (simulates the remote moving forward)..."
+          jq --arg r "$UPGRADE_REF" '.extraKnownMarketplaces.sequant.source.ref=$r' "$CLAUDE_CONFIG_DIR/settings.json" > "$RUNNER_TEMP/s.json"
+          mv "$RUNNER_TEMP/s.json" "$CLAUDE_CONFIG_DIR/settings.json"
+          jq --arg r "$UPGRADE_REF" '.sequant.source.ref=$r' "$CLAUDE_CODE_PLUGIN_CACHE_DIR/known_marketplaces.json" > "$RUNNER_TEMP/k.json"
+          mv "$RUNNER_TEMP/k.json" "$CLAUDE_CODE_PLUGIN_CACHE_DIR/known_marketplaces.json"
           claude plugin marketplace update sequant
+          [[ "$(jq -r '.plugins[0].source' "$MKT/.claude-plugin/marketplace.json")" == "./plugin" ]] || {
+            echo "Error: the updated marketplace clone doesn't list source ./plugin"
+            exit 1
+          }
+
+          # Users only receive a new copy when the version changes; this branch
+          # still says the released version, so stamp a test version into the
+          # cloned marketplace (as a release bump would) before updating.
+          V="$(jq -r .version "$MKT/plugin/.claude-plugin/plugin.json")-upgradetest.${GITHUB_RUN_ID:-0}"
+          jq --arg v "$V" '.version=$v' "$MKT/plugin/.claude-plugin/plugin.json" > "$RUNNER_TEMP/p.json"
+          mv "$RUNNER_TEMP/p.json" "$MKT/plugin/.claude-plugin/plugin.json"
+          jq --arg v "$V" '.plugins[0].version=$v' "$MKT/.claude-plugin/marketplace.json" > "$RUNNER_TEMP/m.json"
+          mv "$RUNNER_TEMP/m.json" "$MKT/.claude-plugin/marketplace.json"
+
+          echo "Updating sequant@sequant to $V..."
           claude plugin update sequant@sequant
+
+          NEW="$CACHE/$V"
+          [[ -d "$NEW" ]] || { echo "Error: no cache dir for $V; the update did not install the new layout"; ls "$CACHE"; exit 1; }
+          for f in package.json package-lock.json node_modules; do
+            if [[ -e "$NEW/$f" ]]; then
+              echo "Error: upgraded install still has $f"
+              exit 1
+            fi
+          done
+          echo "Upgraded install: $(du -sh "$NEW" | cut -f1), no package.json/node_modules"
 
           echo "Verifying the install id survived the move to plugin/ and still loads..."
           DETAILS=$(claude plugin details sequant@sequant)
           echo "$DETAILS"
-          echo "$DETAILS" | grep -q "sequant@sequant" || {
-            echo "Error: install id sequant@sequant did not survive the upgrade"
+          echo "$DETAILS" | grep -q "sequant $V" || {
+            echo "Error: sequant@sequant is not loaded at $V after the upgrade"
             exit 1
           }
-
-          echo "Verifying skills are present in the installed cache after the upgrade..."
-          # A model call (`claude --print "list available skills"`) needs API
-          # auth, which this CI job has no reason to carry — reproduced
-          # locally as "Not logged in · Please run /login", which the old
-          # grep silently missed and then hard-failed on (#1265 round 3).
-          # Check the installed files directly instead: no model call, no
-          # auth dependency, and it verifies the actual artifact the upgrade
-          # produced rather than the agent's self-report.
-          INSTALLED_DIR=$(find "$CLAUDE_CONFIG_DIR/plugins/cache/sequant/sequant" -mindepth 1 -maxdepth 1 -type d | head -1)
-          if [[ -z "$INSTALLED_DIR" ]]; then
-            echo "Error: no installed plugin directory found under the cache"
-            exit 1
-          fi
-          echo "Installed at: $INSTALLED_DIR"
           for skill in assess spec exec qa; do
-            if [[ ! -s "$INSTALLED_DIR/skills/$skill/SKILL.md" ]]; then
+            if [[ ! -s "$NEW/skills/$skill/SKILL.md" ]]; then
               echo "Error: $skill/SKILL.md missing or empty after the upgrade"
               exit 1
             fi
           done
-          echo "Skills present in the installed cache after upgrade."
+          [[ -s "$NEW/.mcp.json" && -s "$NEW/hooks/hooks.json" ]] || { echo "Error: .mcp.json or hooks.json missing after the upgrade"; exit 1; }
+          echo "Skills, hooks and MCP config present after upgrade."
 
           echo "Verifying the MCP server still connects after the upgrade..."
           mcp_status=$(claude mcp list 2>&1)
@@ -619,4 +639,3 @@ jobs:
             exit 1
           }
 
-          git worktree remove --force "$CLONE_DIR"
