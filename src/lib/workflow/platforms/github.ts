@@ -242,10 +242,10 @@ export class GitHubProvider implements PlatformProvider {
   viewPRByBranchSync(
     branch: string,
     cwd?: string,
-  ): { number: number; url: string } | null {
+  ): { number: number; url: string; body?: string } | null {
     const result = spawnSync(
       "gh",
-      ["pr", "view", branch, "--json", "number,url"],
+      ["pr", "view", branch, "--json", "number,url,body"],
       { stdio: "pipe", cwd, timeout: 15000 },
     );
 
@@ -253,7 +253,11 @@ export class GitHubProvider implements PlatformProvider {
       try {
         const info = JSON.parse(result.stdout.toString());
         if (info.number && info.url) {
-          return { number: info.number, url: info.url };
+          return {
+            number: info.number,
+            url: info.url,
+            ...(typeof info.body === "string" ? { body: info.body } : {}),
+          };
         }
       } catch {
         // JSON parse failed
@@ -324,6 +328,48 @@ export class GitHubProvider implements PlatformProvider {
       stdout: result.stdout?.toString() ?? "",
       stderr: result.stderr?.toString() ?? "",
       exitCode: result.status,
+    };
+  }
+
+  /**
+   * Update an existing PR's title, body and/or base (#1247).
+   *
+   * Goes through `gh api -X PATCH` with the fields as a JSON document on
+   * stdin, not `gh pr edit`, which fails on the projectCards GraphQL
+   * deprecation. `{owner}/{repo}` is resolved by gh from `cwd`'s remote.
+   * Used by worktree-manager.ts when a PR already exists for the branch.
+   */
+  updatePRSync(
+    prNumber: number,
+    fields: { title?: string; body?: string; base?: string },
+    cwd?: string,
+  ): { success: boolean; error?: string } {
+    const payload: Record<string, string> = {};
+    if (fields.title !== undefined) payload.title = fields.title;
+    if (fields.body !== undefined) payload.body = fields.body;
+    if (fields.base !== undefined) payload.base = fields.base;
+    if (Object.keys(payload).length === 0) return { success: true };
+    const result = spawnSync(
+      "gh",
+      [
+        "api",
+        "-X",
+        "PATCH",
+        `repos/{owner}/{repo}/pulls/${prNumber}`,
+        "--input",
+        "-",
+      ],
+      {
+        stdio: "pipe",
+        cwd,
+        timeout: 30000,
+        input: JSON.stringify(payload),
+      },
+    );
+    if (result.status === 0) return { success: true };
+    return {
+      success: false,
+      error: result.stderr?.toString().trim() || "Unknown error",
     };
   }
 

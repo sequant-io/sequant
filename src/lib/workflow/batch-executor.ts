@@ -71,6 +71,7 @@ import {
   createCheckpointCommit,
   rebaseBeforePR,
   createPR,
+  extractExecSummary,
   readCacheMetrics,
   filterResumedPhases,
 } from "./worktree-manager.js";
@@ -1923,6 +1924,20 @@ export async function runIssueWithLogging(
         }
       }
 
+      // #1247 AC-3: keep exec's summary on the issue's state, so a later
+      // qa-only run (exec → qa AC_NOT_MET → qa re-run) can still put it in
+      // the PR body instead of the placeholder.
+      if (stateManager && phase === "exec" && result.success) {
+        try {
+          await stateManager.updateExecSummary(
+            issueNumber,
+            extractExecSummary(result.output),
+          );
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
+      }
+
       // Durable halt-and-resume (#892 AC-1): a waitable-window halt writes
       // `resumeAt`; success or a non-window failure clears any stale record.
       await recordWindowHaltState(stateManager, issueNumber, phase, result);
@@ -2365,9 +2380,21 @@ export async function runIssueWithLogging(
     // the placeholder text.
     // The latest exec pass: a quality-loop iteration re-runs exec, and the
     // first pass's summary describes code the loop has since changed.
-    const execOutput = [...phaseResults]
+    const latestExec = [...phaseResults]
       .reverse()
-      .find((p) => p.phase === "exec")?.output;
+      .find((p) => p.phase === "exec");
+    const execOutput = latestExec?.output;
+    // #1247 AC-3: a run with no exec pass (qa-only re-run) falls back to the
+    // summary the last exec pass recorded on the issue's state.
+    let execSummary: string | undefined;
+    if (!latestExec && stateManager) {
+      try {
+        execSummary = (await stateManager.getIssueState(issueNumber))
+          ?.execSummary;
+      } catch {
+        // State read errors fall back to the placeholder text
+      }
+    }
     const prResult = createPR(
       worktreePath,
       issueNumber,
@@ -2384,7 +2411,7 @@ export async function runIssueWithLogging(
       // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
       config.prIssueLink,
       config.prNoCloseLabel,
-      { execOutput },
+      { execOutput, execSummary },
     );
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;

@@ -41,7 +41,12 @@ vi.mock("./phase-executor.js", async (importOriginal) => ({
   hasExecChanges: vi.fn().mockReturnValue(true),
 }));
 
-vi.mock("./worktree-manager.js", () => ({
+vi.mock("./worktree-manager.js", async (importOriginal) => ({
+  // #1247 AC-3: the exec-summary extraction batch-executor persists is pure;
+  // keep the real one so the stored value is what a PR body would use.
+  extractExecSummary: (
+    await importOriginal<typeof import("./worktree-manager.js")>()
+  ).extractExecSummary,
   createCheckpointCommit: vi.fn(),
   rebaseBeforePR: vi.fn(),
   createPR: vi.fn(),
@@ -2188,6 +2193,159 @@ describe("#879: a failed createPR fails the run (AC-5)", () => {
     expect(mockCreatePR).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.prCreationError).toBeUndefined();
+  });
+});
+
+describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-pr has no producer (AC-4)", () => {
+  /** In-memory StateManager double holding one issue's state. */
+  function makeMemoryStateManager() {
+    const issues = new Map<number, Record<string, unknown>>();
+    return {
+      issues,
+      getIssueState: vi.fn(async (n: number) => issues.get(n) ?? null),
+      initializeIssue: vi.fn(async (n: number, title: string) => {
+        issues.set(n, { number: n, title });
+      }),
+      updateWorktreeInfo: vi.fn(),
+      updatePhaseStatus: vi.fn(),
+      updateResumeHandle: vi.fn(),
+      updateWindowHalt: vi.fn(),
+      clearWindowHalt: vi.fn(),
+      updateAutoWait: vi.fn(),
+      updateIssueStatus: vi.fn(),
+      updatePRInfo: vi.fn(),
+      updateExecSummary: vi.fn(async (n: number, summary?: string) => {
+        issues.set(n, { ...(issues.get(n) ?? {}), execSummary: summary });
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 1247,
+      prUrl: "https://example.test/pr/1247",
+    });
+  });
+
+  it("run 1 exec → qa AC_NOT_MET stores the summary; run 2 qa-only hands it to createPR", async () => {
+    const stateManager = makeMemoryStateManager();
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "exec") {
+        return {
+          ...successResult("exec"),
+          output: "work\n## Summary\nThe exec summary from run 1.\n",
+        };
+      }
+      return {
+        phase: "qa",
+        success: false,
+        durationSeconds: 10,
+        verdict: "AC_NOT_MET",
+      } as PhaseResult;
+    });
+
+    // Run 1: exec succeeds, qa fails — no PR.
+    const run1 = makeCtx({
+      issueNumber: 1247,
+      config: { phases: ["exec", "qa"], qualityLoop: false },
+      options: { autoDetectPhases: false },
+    });
+    run1.services.stateManager = stateManager as never;
+    await runIssueWithLogging({
+      ...run1,
+      worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
+    });
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(stateManager.issues.get(1247)?.execSummary).toBe(
+      "The exec summary from run 1.",
+    );
+
+    // Run 2: qa only, passes — the PR is opened with run 1's summary.
+    mockExecutePhase.mockResolvedValue({
+      phase: "qa",
+      success: true,
+      durationSeconds: 10,
+      verdict: "READY_FOR_MERGE",
+    } as PhaseResult);
+    const run2 = makeCtx({
+      issueNumber: 1247,
+      config: { phases: ["qa"], qualityLoop: false },
+      options: { autoDetectPhases: false },
+    });
+    run2.services.stateManager = stateManager as never;
+    await runIssueWithLogging({
+      ...run2,
+      worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    const opts = mockCreatePR.mock.calls[0].at(-1) as {
+      execOutput?: string;
+      execSummary?: string;
+    };
+    expect(opts.execOutput).toBeUndefined();
+    expect(opts.execSummary).toBe("The exec summary from run 1.");
+  });
+
+  it("a run with its own exec pass does not read the stored summary", async () => {
+    const stateManager = makeMemoryStateManager();
+    stateManager.issues.set(1247, { execSummary: "stale summary" });
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      phase === "exec"
+        ? { ...successResult("exec"), output: "## Summary\nfresh" }
+        : ({
+            phase: "qa",
+            success: true,
+            durationSeconds: 10,
+            verdict: "READY_FOR_MERGE",
+          } as PhaseResult),
+    );
+    const ctx = makeCtx({
+      issueNumber: 1247,
+      config: { phases: ["exec", "qa"], qualityLoop: false },
+      options: { autoDetectPhases: false },
+    });
+    ctx.services.stateManager = stateManager as never;
+    await runIssueWithLogging({
+      ...ctx,
+      worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
+    });
+
+    const opts = mockCreatePR.mock.calls[0].at(-1) as {
+      execOutput?: string;
+      execSummary?: string;
+    };
+    expect(opts.execOutput).toBe("## Summary\nfresh");
+    expect(opts.execSummary).toBeUndefined();
+    expect(stateManager.issues.get(1247)?.execSummary).toBe("fresh");
+  });
+
+  it("AC-4: under --no-pr a qa-only run with a stored summary still opens no PR", async () => {
+    const stateManager = makeMemoryStateManager();
+    stateManager.issues.set(1247, { execSummary: "stored" });
+    mockExecutePhase.mockResolvedValue({
+      phase: "qa",
+      success: true,
+      durationSeconds: 10,
+      verdict: "READY_FOR_MERGE",
+    } as PhaseResult);
+    const ctx = makeCtx({
+      issueNumber: 1247,
+      config: { phases: ["qa"], qualityLoop: false },
+      options: { autoDetectPhases: false, noPr: true },
+    });
+    ctx.services.stateManager = stateManager as never;
+    const result = await runIssueWithLogging({
+      ...ctx,
+      worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
+    });
+
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.prNumber).toBeUndefined();
   });
 });
 
