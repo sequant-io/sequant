@@ -285,6 +285,8 @@ export interface CodexRunOutcome {
   phaseTimeout: number;
   stderrTail: string[];
   stdoutTail: string[];
+  /** Clock to classify usage-limit resets against; defaults to `Date.now()` when omitted. */
+  now?: number;
 }
 
 /**
@@ -416,7 +418,7 @@ export function evaluateCodexRun(
   if (parsed.turnFailure !== undefined) {
     return fail(
       `codex turn failed: ${parsed.turnFailure}`,
-      classifyCodexTurnFailure(parsed.turnFailure),
+      classifyCodexTurnFailure(parsed.turnFailure, outcome.now),
     );
   }
 
