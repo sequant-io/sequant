@@ -28,7 +28,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { RunOrchestrator } from "./run-orchestrator.js";
 import type { OrchestratorConfig, RunInit } from "./run-orchestrator.js";
-import { runIssueWithLogging } from "./batch-executor.js";
+import { getIssueInfo, runIssueWithLogging } from "./batch-executor.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
 import type { ExecutionConfig, IssueResult, RunOptions } from "./types.js";
 import { MetricsWriter } from "./metrics-writer.js";
@@ -52,10 +52,10 @@ vi.mock("./batch-executor.js", async (importOriginal) => {
     ...actual,
     runIssueWithLogging: vi.fn(),
     // Hermetic: no `gh` call for issue titles/labels (#1193 tests below).
-    getIssueInfo: async (issueNumber: number) => ({
+    getIssueInfo: vi.fn(async (issueNumber: number) => ({
       title: `Issue ${issueNumber}`,
       labels: [],
-    }),
+    })),
   };
 });
 
@@ -537,5 +537,65 @@ describe("RunOrchestrator.run — the non-chain skip guard after a run without q
 
     expect(vi.mocked(runIssueWithLogging)).not.toHaveBeenCalled();
     expect(output).toMatch(/#1233: already ready_for_merge — skipping/);
+  });
+});
+
+// #1257 AC-5: a dry run used to plan an issue gh says doesn't exist and print
+// "✔ passed". It now names the missing issue and exits 1 before planning.
+describe("RunOrchestrator.run — dry run on an issue that doesn't exist (#1257)", () => {
+  let originalCwd: string;
+  let repo: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    repo = realpathSync(mkdtempSync(join(tmpdir(), "run-orch-missing-")));
+    execSync("git init -q -b main", { cwd: repo, stdio: "pipe" });
+    process.chdir(repo);
+    vi.mocked(runIssueWithLogging).mockResolvedValue({
+      issueNumber: 7,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 0,
+      loopTriggered: false,
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(repo, { recursive: true, force: true });
+    vi.mocked(runIssueWithLogging).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  async function dryRun(issue: string) {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await RunOrchestrator.run(
+      runInit({ dryRun: true, phases: "spec", worktreeIsolation: false }),
+      [issue],
+    );
+    return { result, out: log.mock.calls.map((c) => String(c[0])).join("\n") };
+  }
+
+  it("reports the missing issue and exits 1 without planning it", async () => {
+    vi.mocked(getIssueInfo).mockImplementationOnce(async (n: number) => ({
+      title: `Issue #${n}`,
+      labels: [],
+      notFound: true,
+    }));
+
+    const { result, out } = await dryRun("404");
+
+    expect(out).toContain("Issue #404 was not found in this repository");
+    expect(result.exitCode).toBe(1);
+    expect(result.results).toEqual([]);
+    expect(runIssueWithLogging).not.toHaveBeenCalled();
+  });
+
+  it("plans an issue that exists", async () => {
+    const { result, out } = await dryRun("7");
+
+    expect(out).not.toContain("was not found");
+    expect(result.exitCode).toBe(0);
+    expect(runIssueWithLogging).toHaveBeenCalled();
   });
 });
