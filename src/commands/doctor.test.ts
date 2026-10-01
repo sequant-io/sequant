@@ -292,6 +292,39 @@ describe("doctor command", () => {
     processExitSpy.mockRestore();
   });
 
+  // #1257: outside a git repo nothing in sequant works, but doctor used to
+  // warn and print "Sequant should work correctly".
+  describe("Git repository check (#1257)", () => {
+    it("fails and exits 1 outside a git repository", async () => {
+      mockFileExists.mockImplementation(async (p: string) => p !== ".git");
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd.startsWith("git rev-parse")) {
+          throw new Error("fatal: not a git repository");
+        }
+        return "";
+      }) as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Not inside a git repository");
+      expect(output).not.toContain("should work correctly");
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it("passes in a subdirectory of a repository, where .git is absent", async () => {
+      mockFileExists.mockImplementation(async (p: string) => p !== ".git");
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd.startsWith("git rev-parse") ? "true\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Git repository detected");
+      expect(output).not.toContain("Not inside a git repository");
+    });
+  });
+
   describe("GitHub CLI checks", () => {
     it("passes when gh CLI is installed", async () => {
       mockCommandExists.mockReturnValue(true);
