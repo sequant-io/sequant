@@ -808,7 +808,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       if (selectedStacks.length > 1) {
         const { primaryStack } = await inquirer.prompt([
           {
-            type: "list",
+            type: "select",
             name: "primaryStack",
             message:
               "Which stack should be the primary? (determines dev URL and commands)",
@@ -832,7 +832,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       } else if (detected && !skipPrompts) {
         const { confirmedStack } = await inquirer.prompt([
           {
-            type: "list",
+            type: "select",
             name: "confirmedStack",
             message: `Detected ${detected} project. Is this correct?`,
             choices: [
@@ -851,7 +851,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       } else if (!stack) {
         const { selectedStack } = await inquirer.prompt([
           {
-            type: "list",
+            type: "select",
             name: "selectedStack",
             message: "Select your project stack:",
             choices: [

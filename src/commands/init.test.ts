@@ -1347,4 +1347,74 @@ describe("init command", () => {
       ).toBe(1);
     });
   });
+  // === PROMPT TYPES MUST EXIST IN THE INSTALLED INQUIRER (#1256) ===
+  // Every suite mocks inquirer wholesale, so a prompt type the installed
+  // inquirer no longer registers (14 removed `list`) passes here and crashes
+  // every real terminal. Check each question against the real module.
+  describe("prompt types are registered by the installed inquirer (#1256)", () => {
+    async function registeredPromptTypes(): Promise<string[]> {
+      const actual =
+        await vi.importActual<typeof import("inquirer")>("inquirer");
+      return Object.keys(
+        (actual.default.prompt as unknown as { prompts: object }).prompts,
+      );
+    }
+
+    function askedPromptTypes(): string[] {
+      return mockInquirerPrompt.mock.calls.flatMap((call) =>
+        (call[0] as unknown as Array<{ type?: string }>).map(
+          (q) => q.type ?? "input",
+        ),
+      );
+    }
+
+    it("confirm-detected-stack prompt uses a registered type", async () => {
+      mockDetectStack.mockResolvedValue("nextjs");
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ confirmedStack: "nextjs" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:3000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      const registered = await registeredPromptTypes();
+      const asked = askedPromptTypes();
+      expect(asked.length).toBeGreaterThan(0);
+      for (const type of asked) expect(registered).toContain(type);
+    });
+
+    it("select-stack prompt uses a registered type", async () => {
+      mockDetectStack.mockResolvedValue(null);
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStack: "python" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:8000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      const registered = await registeredPromptTypes();
+      const asked = askedPromptTypes();
+      expect(asked.length).toBeGreaterThan(0);
+      for (const type of asked) expect(registered).toContain(type);
+    });
+
+    it("primary-stack prompt uses a registered type", async () => {
+      mockDetectAllStacks.mockResolvedValue([
+        { stack: "nextjs", path: "" },
+        { stack: "python", path: "backend" },
+      ]);
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStacks: ["nextjs", "python"] })
+        .mockResolvedValueOnce({ primaryStack: "nextjs" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:3000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      const registered = await registeredPromptTypes();
+      const asked = askedPromptTypes();
+      expect(asked.length).toBeGreaterThan(1);
+      for (const type of asked) expect(registered).toContain(type);
+    });
+  });
 });
