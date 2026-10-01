@@ -184,7 +184,6 @@ The log directory deliberately lives **outside the repo**: creating it inside on
 /plugin marketplace add sequant-io/sequant
 /plugin install sequant@sequant
 ```
-If the marketplace was already added under a different local name, run `/plugin marketplace list` to find it and substitute that name after the `@`.
 
 ---
 
