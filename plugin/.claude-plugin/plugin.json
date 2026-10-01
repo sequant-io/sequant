@@ -1,0 +1,21 @@
+{
+  "name": "sequant",
+  "description": "AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-end with isolated git worktrees and quality gates, through spec → exec → qa phases.",
+  "version": "2.18.0",
+  "author": {
+    "name": "sequant-io",
+    "email": "hello@sequant.io"
+  },
+  "homepage": "https://github.com/sequant-io/sequant",
+  "repository": "https://github.com/sequant-io/sequant",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "github",
+    "issues",
+    "quality",
+    "testing",
+    "code-review",
+    "automation"
+  ]
+}

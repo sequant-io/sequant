@@ -38,8 +38,14 @@ const SOURCE_DIR = join(PROJECT_ROOT, ".claude/skills");
 const MIRROR_DIRS = [
   join(PROJECT_ROOT, "templates/skills"),
   join(PROJECT_ROOT, "skills"),
+  join(PROJECT_ROOT, "plugin/skills"),
 ];
-const DIR_LABELS = [".claude/skills", "templates/skills", "skills"];
+const DIR_LABELS = [
+  ".claude/skills",
+  "templates/skills",
+  "skills",
+  "plugin/skills",
+];
 
 /**
  * Files intentionally excluded from the three-directory sync check.

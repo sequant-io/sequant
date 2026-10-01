@@ -14,7 +14,7 @@
         "name": "sequant-io",
         "email": "hello@sequant.io"
       },
-      "source": "./",
+      "source": "./plugin",
       "category": "workflow"
     }
   ]
