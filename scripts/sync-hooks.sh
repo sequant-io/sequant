@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Sync .claude/hooks/ and plugin/hooks/ from templates/hooks/ (#645, #1265).
+# Sync .claude/hooks/, plugin/hooks/, and plugin/memory/constitution.md from
+# their templates/ sources (#645, #1265).
 #
-# The drift test in src/lib/relay/__tests__/hook-sync.test.ts fails when any
-# of these directories diverge for a file that exists in templates/. Run this
-# script after editing a template hook to regenerate the installed copies.
+# The drift tests in src/lib/relay/__tests__/hook-sync.test.ts (hooks) and
+# scripts/check-constitution-plugin-sync.test.ts (constitution) fail when
+# these diverge from their templates/ source. Run this script after editing a
+# template hook or templates/memory/constitution.md to regenerate the
+# installed copies.
 #
 # Every hook now lives in templates/hooks/ and is regenerated here; there are
 # no local-only hooks left. capture-tokens.sh was the last one — #986 promoted
@@ -15,6 +18,11 @@
 # registration manifest, not a hook script) — it is copied from the
 # hand-maintained root hooks/hooks.json, which #1265 keeps around until root
 # hooks/ is retired in a follow-up PR.
+#
+# plugin/memory/constitution.md is a straight copy of
+# templates/memory/constitution.md (#1265) — this repo's own
+# memory/constitution.md is a separate, hand-maintained file (its own
+# producer), not a sync target of this script.
 
 set -euo pipefail
 
@@ -51,6 +59,17 @@ if [[ -f "$HOOKS_JSON_SRC" ]]; then
   if [[ ! -f "$HOOKS_JSON_DEST" ]] || ! cmp -s "$HOOKS_JSON_SRC" "$HOOKS_JSON_DEST"; then
     cp -p "$HOOKS_JSON_SRC" "$HOOKS_JSON_DEST"
     echo "synced: hooks.json -> plugin/hooks/hooks.json"
+    changed=$((changed + 1))
+  fi
+fi
+
+CONSTITUTION_SRC="${REPO_ROOT}/templates/memory/constitution.md"
+CONSTITUTION_DEST="${REPO_ROOT}/plugin/memory/constitution.md"
+if [[ -f "$CONSTITUTION_SRC" ]]; then
+  mkdir -p "$(dirname "$CONSTITUTION_DEST")"
+  if [[ ! -f "$CONSTITUTION_DEST" ]] || ! cmp -s "$CONSTITUTION_SRC" "$CONSTITUTION_DEST"; then
+    cp -p "$CONSTITUTION_SRC" "$CONSTITUTION_DEST"
+    echo "synced: constitution.md -> plugin/memory/constitution.md"
     changed=$((changed + 1))
   fi
 fi

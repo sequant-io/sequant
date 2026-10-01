@@ -27,6 +27,17 @@ suites that live at the repo root.
   calls reach your configured `origin` remote and the GitHub API via `gh`'s
   own authentication; the plugin does not store or transmit credentials
   itself.
+- **Local prettier (on by default, writes to your files).** After an `Edit`
+  or `Write` to a `.ts`/`.tsx`/`.js`/`.jsx`/`.json` file, `hooks/post-tool.sh`
+  runs that file's own project's `node_modules/.bin/prettier --write` on it,
+  if and only if that local binary exists — it never fetches or runs prettier
+  via `npx`. A project with no local prettier installed is simply left
+  unformatted.
+- **Opt-in smart test runs.** When `CLAUDE_HOOKS_SMART_TESTS=true` is set
+  (unset by default), `hooks/post-tool.sh` runs `npm test` asynchronously,
+  scoped to the test file it matches to the edited source file, after an
+  `Edit`/`Write` to a `.ts`/`.tsx` file with a corresponding file under
+  `__tests__/`.
 - **Opt-in webhook.** `hooks/post-tool.sh` sends a `curl -s -X POST` to
   `$CLAUDE_HOOKS_WEBHOOK_URL` only when that environment variable is set.
   Unset (the default), no webhook call is made.
@@ -45,8 +56,11 @@ suites that live at the repo root.
 - `skills/` — the `spec`, `exec`, `qa`, and other workflow skills.
 - `hooks/` (`hooks.json` + scripts) — pre/post-tool guardrails and logging.
 - `.mcp.json` — the MCP server launch config described above.
-- `memory/constitution.md` — this repository's own project constitution,
-  used by the skills that read repo-level policy.
+- `memory/constitution.md` — **this `sequant-io/sequant` repository's own**
+  project constitution (its development policy, e.g. "no force-push on
+  pushed branches"), not a generic template for a target project. It is a
+  copy of `templates/memory/constitution.md`, used by the skills that read
+  repo-level policy when operating on this repository.
 
 See the main repository README at
 <https://github.com/sequant-io/sequant> for full documentation, including
