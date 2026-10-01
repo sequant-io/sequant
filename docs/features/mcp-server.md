@@ -275,6 +275,11 @@ Each item in `issues`:
 | `phases`          | `Array<{ phase, status, durationSeconds }>` | Phase-level detail                    |
 | `verdict`         | `string`                                    | QA verdict (only present when QA ran) |
 | `durationSeconds` | `number`                                    | Total time for this issue             |
+| `acMet`           | `number`                                    | ACs QA marked met (only when QA ran, #1200) |
+| `acTotal`         | `number`                                    | ACs QA evaluated (only when QA ran, #1200) |
+| `gaps`            | `string[]`                                  | QA's gap descriptions, at most 10, each capped at 300 characters (#1200) |
+| `findings`        | `Array<{ category, description, evidence, recommendedAction, affectedAcs? }>` | QA's structured findings, at most 10, with `description`/`evidence` capped at 300 characters (#1200) |
+| `truncated`       | `boolean`                                   | `true` when any cap applied, or when findings and then gaps were dropped to fit the 64 KB limit (#1200) |
 
 When the structured run log is unavailable (e.g., process crashed before writing it), a fallback response is returned with an empty `issues` array and the raw output preserved.
 

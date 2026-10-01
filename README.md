@@ -90,11 +90,11 @@ SEQUANT WORKFLOW · #683
 
 QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
 
-### What's new in 2.18
+### What's new in 2.19
 
-- **Per-phase agents** — `run.phases.<phase>.agent` runs one phase on a different driver, e.g. codex for `exec` and Claude Code for `qa`.
-- **In-place checkout mode** — `SEQUANT_CHECKOUT=in-place` lets the phase skills work on a branch in the current clone when a worktree is not an option (a fresh cloud clone, for one). Opt-in only.
-- **Safer writes** — `init`, `sync` and `update` never overwrite what a symlink points at, and `sync`/`update` settle on the first run even with an older sequant in `node_modules`.
+- **One PR producer** — under `sequant run`, the run itself opens the PR right after exec (so QA reads its body) and updates it after QA with the QA note, ready-gate report and exec's summary. An existing PR for the branch is updated, not skipped.
+- **Spec stops on recurrence** — `/spec`'s Design Review treats a pattern fixed twice before as a stop, lists every producer of the artifact it changes, and can halt the run before exec when the issue prescribes the wrong lever.
+- **Easier adoption** — `sequant init --manifest-only` and `sequant sync --only skills`; `run.worktreeRoot` sets where worktrees go; `run.prIssueLink: "refs"` keeps a PR from auto-closing its issue.
 
 Since 2.17, every release soaks on the `next` tag against a downstream canary — a real install of the previous minor, driven through `sync`, `init`, `update` and `doctor` by the new build — before it is promoted to `latest`.
 
