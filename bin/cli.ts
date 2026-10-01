@@ -401,7 +401,7 @@ program
   )
   .option(
     "--no-pr",
-    "Skip PR creation after successful QA (manual PR workflow)",
+    "Skip PR creation (by default the run opens the PR after exec and updates it after QA)",
   )
   // #817: opt-in post-QA ready gate. Reuses the `sequant ready` engine and its
   // bounds (policy from settings.ready.policy, iteration cap, stagnation guard,
