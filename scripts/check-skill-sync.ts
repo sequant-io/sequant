@@ -149,7 +149,7 @@ function checkSync(): FileResult[] {
       results.push({
         relativePath: relPath,
         status: "synced",
-        details: `${lineCounts.filter((c) => c !== null).length}/3 match`,
+        details: `${lineCounts.filter((c) => c !== null).length}/${MIRROR_DIRS.length + 1} match`,
         lineCountSource: sourceLines,
         lineCounts,
       });
