@@ -815,6 +815,10 @@ Settings hierarchy (highest priority wins):
 
 `run.fullQa` (default `false`, #982) mirrors `--full-qa`: force full-weight (standalone) QA on every `qa` dispatch; the CLI flag beats the setting. Independently of this setting, `sequant run` never resumes the implementer's session into `qa` — qa always starts fresh, while exec and loop keep resuming (#982).
 
+`run.worktreeRoot` (default `../worktrees`, #1199) sets where issue worktrees are created, for `sequant run` and `scripts/new-feature.sh`. A relative value resolves against the main repo root, and the `SEQUANT_WORKTREE_ROOT` environment variable wins over the setting. See [git workflows](../guides/git-workflows.md).
+
+`run.prIssueLink` (default `"closes"`, #1197) controls how the PR `sequant run` opens references its issue: `"closes"` writes `Fixes #N`, so merging closes the issue; `"refs"` writes `Refs #N` and leaves it open. An issue labelled with `run.prNoCloseLabel` (default `no-autoclose`) always gets `Refs #N`, whatever `prIssueLink` says. In `refs` mode the body is also scrubbed of any other closing keyword aimed at the same issue, because GitHub reads one anywhere in the body.
+
 `run.autoMerge` (default `false`, #958) governs whether `/fullsolve` merges the PR it creates. With the default, `/fullsolve` stops at PR creation and leaves the merge to you — the same human merge gate `sequant run` and `sequant ready` always enforce. Set it to `true` (or pass `/fullsolve <issue> --auto-merge`) to opt back into end-to-end merging.
 
 ## Output

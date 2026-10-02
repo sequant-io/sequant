@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.18.0
+# What We've Built: Sequant v2.19.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -15,13 +15,13 @@ journey through planning, implementation, testing, and review
 |--------|-------|
 | Slash Commands | 20 |
 | CLI Commands | 20 |
-| Core Library Modules | 144 |
-| Test Files | 343 |
-| Documentation Files | 110 |
+| Core Library Modules | 145 |
+| Test Files | 360 |
+| Documentation Files | 119 |
 | Stack Configurations | 9 |
-| Lines of TypeScript | ~68,500 |
+| Lines of TypeScript | ~70,600 |
 
-*Counted 2026-09-27 (v2.18.0) with the commands in `/release` Step 4.6.*
+*Counted 2026-10-01 (v2.19.0) with the commands in `/release` Step 4.6.*
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)
@@ -742,6 +742,16 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.19.0)
+
+- **One PR Producer** - under `sequant run`, exec pushes and opens no PR; the run opens the PR right after exec so QA can read its body, then updates it after QA with the QA note, ready-gate report, exec summary and typed title; an existing PR is updated, not skipped, and `--no-pr` stops both producers (#1247, #1223)
+- **Spec Stops on Recurrence** - Design Review counts prior fixes (≥2 = stop, not precedent) and lists every producer and consumer; a contradicted lever emits `SPEC_DIVERGENCE` and the run halts before exec; the constitution adds "one producer per artifact" (#1250)
+- **Configurable Worktree Root** - `run.worktreeRoot` / `SEQUANT_WORKTREE_ROOT` for `sequant run` and `new-feature.sh` (#1199)
+- **Cheap Adoption** - `init --manifest-only` and `sync --only skills` (#1209); `run.prIssueLink` / `run.prNoCloseLabel` make a PR reference an issue (`Refs #N`) instead of closing it (#1197)
+- **Verdicts Carry Their Evidence** - the run log records each phase's model and the sequant version (#1198); the MCP `sequant_run` result carries each issue's QA summary and findings (#1200)
+- **First-Run Fixes** - interactive `init` works on inquirer 14 (#1256); `doctor` fails outside a git repo and warns on a missing GitHub remote or uncommitted core skills, and `run --dry-run` says "planned", not "passed", and rejects a nonexistent issue (#1257); a guide to writing issues Sequant can execute; CLI and docs agree on plugin install and merge behaviour; the Action's comment-trigger example is gated on `author_association`
+- **Run Correctness** - exact base ref per worktree (#1234); no `ready_for_merge` without QA (#1233); a watchdog kill writes the run log first and keeps mid-flight worktrees (#1222); non-Node repos install with uv/poetry/pip (#1196, #1217, #1231)
+
 ### Recent Additions (v2.18.0)
 
 - **Per-Phase Agent Selection** - `run.phases.<phase>.agent` runs one phase on a different driver (codex for `exec`, Claude Code for `qa`); model roles and ladder rungs resolve per phase, the skills pre-flight and `doctor` cover every driver the run uses, and an unknown per-phase driver fails before any phase starts (#1150)
@@ -1232,7 +1242,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.15.1
+**Current Version:** 2.19.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1242,7 +1252,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.17.0                               │
+│                              SEQUANT v2.19.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
