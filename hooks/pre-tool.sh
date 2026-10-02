@@ -1107,7 +1107,7 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
                     echo "  Branch-mutating git here would race with that session."
                     echo ""
                     echo "  To proceed:"
-                    echo "    • Work in your own worktree: ../worktrees/feature/<your-issue>-*/"
+                    echo "    • Work in your own worktree: the worktrees/feature/<your-issue>-* folder beside this repo"
                     echo "      (create it with: ./scripts/new-feature.sh <your-issue>)"
                     echo "    • Or target it explicitly: git -C <worktree> <command>"
                     echo "    • If that session is gone: sequant locks checkout clear --force"

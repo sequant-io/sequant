@@ -379,7 +379,7 @@ fi
 3. **Recount the "At a Glance" table** on every minor release — incrementing by hand let it drift to a third of the real numbers (it listed 57 test files when there were 343). Run after `npm run build`, write the results into the table, and update its "Counted …" line:
    ```bash
    echo "Slash Commands:        $(ls -d templates/skills/*/ | grep -vc _shared)"
-   echo "CLI Commands:          $(node dist/bin/cli.js --help | awk '/^Commands:/{f=1;next} f && /^  [a-z]/ && $1!="help"{n++} END{print n}')"
+   echo "CLI Commands:          $(node dist/bin/cli.js --help | awk '/^Commands:/{f=1;next} f && /^  [a-z]/ && $1 == "help" {next} f && /^  [a-z]/ {n++} END{print n}')"
    echo "Core Library Modules:  $(git ls-files 'src/lib/*.ts' 'src/lib/**/*.ts' | grep -vE '\.test\.ts$|__tests__|__fixtures__|\.d\.ts$' | wc -l | tr -d ' ')"
    echo "Test Files:            $(git ls-files '*.test.ts' '*.test.tsx' | wc -l | tr -d ' ')"
    echo "Documentation Files:   $(git ls-files 'docs/*.md' 'docs/**/*.md' | grep -v '^docs/internal/' | wc -l | tr -d ' ')"
