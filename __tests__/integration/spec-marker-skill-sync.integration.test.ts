@@ -10,6 +10,12 @@
 // Template itself actually emitting it.
 //
 // Run with: npx vitest run __tests__/integration/spec-marker-skill-sync.integration.test.ts
+//
+// #1265 added plugin/skills as a 4th mirror, so scripts/check-skill-sync.ts's
+// own "N/N match" denominator grew from 3 to 4 (its MIRROR_DIRS). The
+// "3-dir"/"all 3 mirrors" framing below describes this test's original #921
+// scope and is left as historical context; only the "synced N/N" assertion
+// follows the script's real output.
 
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
@@ -76,12 +82,12 @@ describe("AC-1: SEQUANT_SPEC marker present in Output Template, mirrored 3-dir",
     })();
 
     for (const rel of TOUCHED_FILES) {
-      it(`reports synced 3/3 for ${rel}`, () => {
+      it(`reports synced 4/4 for ${rel}`, () => {
         const escaped = rel.replace(/[/.]/g, (m) => "\\" + m);
-        const syncedRe = new RegExp(`synced\\s+${escaped}\\s+—\\s+3\\/3 match`);
+        const syncedRe = new RegExp(`synced\\s+${escaped}\\s+—\\s+4\\/4 match`);
         expect(
           syncedRe.test(output),
-          `Expected '${rel}' synced 3/3, got:\n${output}`,
+          `Expected '${rel}' synced 4/4, got:\n${output}`,
         ).toBe(true);
         const divergedRe = new RegExp(`DIVERGED\\s+${escaped}`);
         const missingRe = new RegExp(`missing\\s+${escaped}`);

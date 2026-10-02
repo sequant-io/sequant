@@ -1,11 +1,11 @@
 // #988 AC-4: the .mcp.json that plugin users actually install is pinned.
-// `marketplace.json` declares the plugin `source` ("./" today), so the shipped
-// MCP config is whatever `.mcp.json` sits at that path — the repo root — not
+// `marketplace.json` declares the plugin `source` (`./plugin` since #1265),
+// so the shipped MCP config is whatever `.mcp.json` sits at that path — not
 // the copy prepare-marketplace stamps under dist/. #793 pinned only the dist
 // copy, which the GitHub marketplace never installs, and users kept getting
 // `sequant@latest` (the trigger for the #988 incident).
 //
-// Mutation-verified: setting the root .mcp.json arg back to `sequant@latest`
+// Mutation-verified: setting the shipped .mcp.json arg back to `sequant@latest`
 // fails the pin assertion.
 
 import { describe, it, expect } from "vitest";
@@ -13,6 +13,24 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const PROJECT_ROOT = resolve(__dirname, "..");
+
+// Resolves the .mcp.json that plugin users actually install, by reading
+// marketplace.json's `source` field — never hardcode the path (#1265: the
+// #1084 block below used to hardcode the repo root, which stopped being the
+// shipped file once `source` moved to `./plugin`).
+function shippedMcpJsonPath(): string {
+  const marketplace = JSON.parse(
+    readFileSync(
+      join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"),
+      "utf8",
+    ),
+  ) as { plugins: Array<{ name: string; source: string }> };
+  const entry = marketplace.plugins.find((p) => p.name === "sequant");
+  if (!entry) {
+    throw new Error("marketplace.json must list the sequant plugin");
+  }
+  return join(PROJECT_ROOT, entry.source, ".mcp.json");
+}
 
 function readSequantPin(mcpJson: unknown): string | undefined {
   const config = mcpJson as Record<string, unknown>;
@@ -30,23 +48,26 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
   const pkg = JSON.parse(
     readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
   ) as { version: string };
-  const marketplace = JSON.parse(
-    readFileSync(
-      join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"),
-      "utf8",
-    ),
-  ) as { plugins: Array<{ name: string; source: string }> };
 
   it("resolves the shipped .mcp.json from marketplace.json `source` and finds the exact pin", () => {
-    const entry = marketplace.plugins.find((p) => p.name === "sequant");
-    expect(
-      entry,
-      "marketplace.json must list the sequant plugin",
-    ).toBeDefined();
-
-    const shipped = join(PROJECT_ROOT, entry!.source, ".mcp.json");
+    const shipped = shippedMcpJsonPath();
     const pin = readSequantPin(JSON.parse(readFileSync(shipped, "utf8")));
 
+    expect(pin).toBe(`sequant@${pkg.version}`);
+    expect(pin).not.toBe("sequant@latest");
+  });
+
+  it("root .mcp.json is also pinned to the package version (#1265 — it's dual-use, not just a relic of the pre-#1265 shipped path)", () => {
+    // Before #1265, shippedMcpJsonPath() WAS the root .mcp.json (source:
+    // "./"), so the shipped-file stamp above pinned it as a side effect.
+    // Now that source resolves to plugin/.mcp.json, root .mcp.json needs its
+    // own stamp — prepare-marketplace.ts's "4b" step — or its pin falls
+    // behind every release for contributors developing this repo through
+    // its own project .mcp.json.
+    const root = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
+    );
+    const pin = readSequantPin(root);
     expect(pin).toBe(`sequant@${pkg.version}`);
     expect(pin).not.toBe("sequant@latest");
   });
@@ -62,9 +83,63 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
       script.match(/shippedMcpJsonPath\(\)/g)?.length ?? 0,
     ).toBeGreaterThanOrEqual(3);
   });
+
+  it("prepare-marketplace also stamps root .mcp.json independently of the shipped-file resolution", () => {
+    const script = readFileSync(
+      join(PROJECT_ROOT, "scripts", "prepare-marketplace.ts"),
+      "utf8",
+    );
+    expect(script).toContain('join(PROJECT_ROOT, ".mcp.json")');
+    expect(script).toContain("Pinned root .mcp.json");
+  });
 });
 
-describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no placeholders", () => {
+describe("#1265: shipped plugin .mcp.json runs the launcher file the plugin ships", () => {
+  // Root .mcp.json stays inline because it is also this repo's project
+  // config, where ${CLAUDE_PLUGIN_ROOT} is undefined (#1084). plugin/.mcp.json
+  // is only ever a plugin config, so the placeholder always resolves there.
+  // The directory refuses the inline form: a command over 1,024 parts isn't
+  // checked (developer portal, 2026-10-01).
+  const shipped = JSON.parse(readFileSync(shippedMcpJsonPath(), "utf8")) as {
+    mcpServers?: {
+      sequant?: { command?: string; args?: unknown[]; env?: Record<string, string> };
+    };
+  };
+  const sequant = shipped.mcpServers?.sequant;
+
+  it("is `node ${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs sequant@<version>`", async () => {
+    const { PLUGIN_LAUNCHER_ARG } = await import("./generate-mcp-launch-inline.mjs");
+    const pkg = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
+    expect(sequant?.command).toBe("node");
+    expect(sequant?.args).toEqual([PLUGIN_LAUNCHER_ARG, `sequant@${pkg.version}`]);
+    expect(PLUGIN_LAUNCHER_ARG).toBe("${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs");
+    expect(sequant?.env).toBeUndefined();
+  });
+
+  it("uses only the plain ${CLAUDE_PLUGIN_ROOT} placeholder, never a :- default (#1084 QA probe)", () => {
+    const text = JSON.stringify(sequant);
+    const placeholders = text.match(/\$\{[^}]*\}/g) ?? [];
+    expect(placeholders).toEqual(["${CLAUDE_PLUGIN_ROOT}"]);
+  });
+
+  it("stays far below the directory's 1,024-part command limit", () => {
+    const parts = [sequant?.command ?? "", ...((sequant?.args ?? []) as string[])]
+      .join(" ")
+      .split(/[\s,{}|&;]+/)
+      .filter(Boolean);
+    expect(parts.length).toBeLessThan(16);
+  });
+
+  it("plugin/mcp-launch.mjs is byte-identical to scripts/mcp-launch.mjs", () => {
+    expect(readFileSync(join(PROJECT_ROOT, "plugin", "mcp-launch.mjs"), "utf8")).toBe(
+      readFileSync(join(PROJECT_ROOT, "scripts", "mcp-launch.mjs"), "utf8"),
+    );
+  });
+});
+
+describe("#1084 AC-2: root .mcp.json (this repo's project config) launches an inline node -e launcher, no placeholders", () => {
   const shipped = JSON.parse(
     readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
   ) as {
@@ -81,7 +156,7 @@ describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no 
   it("invokes node -e with the inline launcher source, not a file path", () => {
     expect(
       sequant,
-      "shipped .mcp.json must declare mcpServers.sequant",
+      "root .mcp.json must declare mcpServers.sequant",
     ).toBeDefined();
     expect(sequant!.command).toBe("node");
     expect(sequant!.args?.[0]).toBe("-e");
