@@ -714,6 +714,25 @@ rotate_log "$TIMING_LOG"
 # script's own path so repo-local dev copies (hooks/, templates/hooks/,
 # .claude/hooks/) never warn — only real cache installs resolve under
 # */plugins/cache/*.
+# Dotted numeric "a < b" in plain bash (no awk, no `sort -V`): each component
+# compares by its leading integer, so "2.8.0-beta" sorts as 2.8.0. Kept free of
+# inline programs: the plugin directory's validator refuses a hook script whose
+# commands it can't follow (COMMAND_PATH_COMPUTED), and a multi-line awk here
+# was the one that blocked the listing.
+_stale_ver_lt() {
+    local -a _a _b
+    IFS=. read -ra _a <<< "$1"
+    IFS=. read -ra _b <<< "$2"
+    local _n=${#_a[@]} _i _x _y
+    (( ${#_b[@]} > _n )) && _n=${#_b[@]}
+    for (( _i = 0; _i < _n; _i++ )); do
+        _x="${_a[_i]:-0}"; _x="${_x%%[^0-9]*}"; _x=$(( 10#${_x:-0} ))
+        _y="${_b[_i]:-0}"; _y="${_y%%[^0-9]*}"; _y=$(( 10#${_y:-0} ))
+        (( _x < _y )) && return 0
+        (( _x > _y )) && return 1
+    done
+    return 1
+}
 _STALE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
 if [[ "$_STALE_SCRIPT_DIR" == */plugins/cache/* ]]; then
     _STALE_STAMP="${_LOG_DIR}/plugin-stale-warned.stamp"
@@ -743,24 +762,12 @@ if [[ "$_STALE_SCRIPT_DIR" == */plugins/cache/* ]]; then
             _STALE_MARKET_VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_STALE_MARKET_JSON" 2>/dev/null | head -1)
             # Warn only when the install is strictly BEHIND the marketplace —
             # a dev cache ahead of the marketplace is not stale. Dotted
-            # numeric compare in awk (no `sort -V` dependency, which is a
-            # GNU-ism unreliable on BSD/macOS); a non-numeric prerelease
-            # component is compared by its leading integer, e.g.
-            # "2.8.0-beta" sorts as 2.8.0 — precise enough for a nudge.
+            # numeric compare via _stale_ver_lt (plain bash, no `sort -V`);
+            # a non-numeric prerelease component is compared by its leading
+            # integer, e.g. "2.8.0-beta" sorts as 2.8.0 — precise enough for
+            # a nudge.
             if [[ -n "$_STALE_RUNNING_VER" && -n "$_STALE_MARKET_VER" ]] && \
-               awk -v a="$_STALE_RUNNING_VER" -v b="$_STALE_MARKET_VER" '
-                   function cmp(x, y,   ax, ay, i, av, bv, n) {
-                       n = split(x, ax, "."); split(y, ay, ".")
-                       for (i = 1; i <= n || (i in ay); i++) {
-                           av = (i in ax) ? ax[i] + 0 : 0
-                           bv = (i in ay) ? ay[i] + 0 : 0
-                           if (av < bv) return -1
-                           if (av > bv) return 1
-                       }
-                       return 0
-                   }
-                   BEGIN { exit !(cmp(a, b) < 0) }
-               '; then
+               _stale_ver_lt "$_STALE_RUNNING_VER" "$_STALE_MARKET_VER"; then
                 echo "sequant plugin v${_STALE_RUNNING_VER} is stale (marketplace has v${_STALE_MARKET_VER}) — run: claude plugin update sequant@sequant, then restart Claude Code" >&2
                 printf '%s' "$_STALE_TODAY" > "$_STALE_STAMP" 2>/dev/null || true
             fi
