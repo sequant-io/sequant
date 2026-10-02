@@ -329,3 +329,41 @@ describe("#1084 AC-1: mcp-launch.mjs forwards the child's exit code and signals"
     ).toBe(false);
   });
 });
+
+describe("mcp-launch.mjs starts when invoked through a symlinked path", () => {
+  // The plugin runs `node ${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs` (#1265). If
+  // that path goes through a symlink (a symlinked ~/.claude, macOS /var ->
+  // /private/var), argv[1] differs from the resolved import.meta.url. A
+  // plain string compare then skipped main(): the launcher exited 0 without
+  // starting anything and Claude Code reported CONNECTION_CLOSED.
+  let realDir: string;
+  let linkDir: string;
+
+  beforeEach(() => {
+    realDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-launch-real-"));
+    fs.copyFileSync(LAUNCHER, path.join(realDir, "mcp-launch.mjs"));
+    linkDir = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "sequant-launch-link-")),
+      "plugin",
+    );
+    fs.symlinkSync(realDir, linkDir, "dir");
+  });
+
+  afterEach(() => {
+    fs.rmSync(path.dirname(linkDir), { recursive: true, force: true });
+    fs.rmSync(realDir, { recursive: true, force: true });
+  });
+
+  it("runs main() (rejects the missing spec) instead of exiting silently", async () => {
+    const child = spawn(process.execPath, [path.join(linkDir, "mcp-launch.mjs")], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+    const code = await new Promise<number | null>((resolve) =>
+      child.on("exit", (c) => resolve(c)),
+    );
+    expect(stderr).toContain("mcp-launch: missing package spec argument");
+    expect(code).toBe(1);
+  });
+});

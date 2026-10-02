@@ -613,6 +613,19 @@ jobs:
           jq --arg v "$V" '.plugins[0].version=$v' "$MKT/.claude-plugin/marketplace.json" > "$RUNNER_TEMP/m.json"
           mv "$RUNNER_TEMP/m.json" "$MKT/.claude-plugin/marketplace.json"
 
+          # The MCP pin names the package version this branch will publish. On a
+          # release PR that version isn't on npm yet, so `npx -y sequant@<pin>`
+          # can't start. Point the cloned config at the latest published version
+          # instead: the check below is about the launcher file and the
+          # connection, not the unpublished package.
+          PIN=$(jq -r '.mcpServers.sequant.args[-1]' "$MKT/plugin/.mcp.json")
+          if ! npm view "$PIN" version >/dev/null 2>&1; then
+            LATEST="sequant@$(npm view sequant version)"
+            echo "$PIN isn't published yet (release PR); using $LATEST for the MCP connection check"
+            jq --arg p "$LATEST" '.mcpServers.sequant.args[-1]=$p' "$MKT/plugin/.mcp.json" > "$RUNNER_TEMP/mcp.json"
+            mv "$RUNNER_TEMP/mcp.json" "$MKT/plugin/.mcp.json"
+          fi
+
           echo "Updating sequant@sequant to $V..."
           claude plugin update sequant@sequant
 
