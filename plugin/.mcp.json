@@ -4,7 +4,7 @@
       "command": "node",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs",
-        "sequant@2.18.0"
+        "sequant@2.19.0"
       ]
     }
   }
