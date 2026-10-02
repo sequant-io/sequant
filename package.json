@@ -18,7 +18,8 @@
     "dist",
     "templates",
     "stacks",
-    ".claude-plugin"
+    ".claude-plugin",
+    "plugin"
   ],
   "scripts": {
     "build": "rm -rf dist/src dist/bin dist/dashboard && tsc && chmod +x dist/bin/cli.js",

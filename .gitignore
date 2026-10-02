@@ -37,7 +37,9 @@ pnpm-lock.yaml
 # Dev-only MCP config overrides (prevents accidental commits of local paths)
 # The distribution .mcp.json IS tracked via git add -f for self-hosted plugin installs.
 # If you need a local dev version: git update-index --assume-unchanged .mcp.json
-.mcp.json
+# Anchored to the repo root only — plugin/.mcp.json is the shipped plugin
+# config (#1265) and must stay tracked normally, not via git add -f.
+/.mcp.json
 
 # Entire CLI runtime data
 .entire/*

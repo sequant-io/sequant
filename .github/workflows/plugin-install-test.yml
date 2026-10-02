@@ -11,6 +11,7 @@ on:
       - 'memory/**'
       - 'templates/mcp.json'
       - '.mcp.json'
+      - 'plugin/**'
   pull_request:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - 'memory/**'
       - 'templates/mcp.json'
       - '.mcp.json'
+      - 'plugin/**'
 
 jobs:
   plugin-structure:
@@ -84,6 +86,45 @@ jobs:
             console.log('marketplace.json validated: %d plugin(s)', mp.plugins.length);
           "
           echo "marketplace.json validated successfully!"
+
+      - name: Validate plugin/ file limits (AC-2, #1265)
+        run: |
+          echo "Checking plugin/ against the directory review limits..."
+
+          file_count=$(find plugin -type f | wc -l | tr -d ' ')
+          echo "File count: $file_count (limit: 512)"
+          if [ "$file_count" -gt 512 ]; then
+            echo "Error: plugin/ has $file_count files, limit is 512"
+            exit 1
+          fi
+
+          echo "Checking for non-image files over 256 KiB..."
+          big_files=$(find plugin -type f -size +256k \
+            ! -iname '*.png' ! -iname '*.jpg' ! -iname '*.jpeg' \
+            ! -iname '*.gif' ! -iname '*.svg' ! -iname '*.webp' || true)
+          if [ -n "$big_files" ]; then
+            echo "Error: non-image files over 256 KiB:"
+            echo "$big_files"
+            exit 1
+          fi
+
+          echo "Checking for symlinks..."
+          symlinks=$(find plugin -type l || true)
+          if [ -n "$symlinks" ]; then
+            echo "Error: plugin/ contains symlinks (loader rejects a symlink leading outside the plugin):"
+            echo "$symlinks"
+            exit 1
+          fi
+
+          echo "Checking for .DS_Store / Thumbs.db..."
+          junk=$(find plugin -type f \( -name '.DS_Store' -o -name 'Thumbs.db' \) || true)
+          if [ -n "$junk" ]; then
+            echo "Error: plugin/ contains OS junk files:"
+            echo "$junk"
+            exit 1
+          fi
+
+          echo "plugin/ passes file limits: $file_count files, no oversized non-image files, no symlinks, no OS junk."
 
       - name: Validate MCP server config template
         run: |
@@ -208,10 +249,11 @@ jobs:
           npm install -g @anthropic-ai/claude-code
           claude --version || echo "Claude CLI installed but --version not supported"
 
-      - name: Validate plugin with Claude CLI
+      - name: Validate plugin with Claude CLI (AC-7, #1265)
         run: |
-          echo "Running claude plugin validate..."
-          claude plugin validate .
+          echo "Running claude plugin validate --strict on plugin/ and the marketplace..."
+          claude plugin validate --strict ./plugin
+          claude plugin validate --strict .
 
       - name: Test marketplace add (local)
         run: |
@@ -235,6 +277,32 @@ jobs:
         run: |
           echo "Testing claude plugin install sequant@sequant..."
           claude plugin install sequant@sequant
+
+      - name: Verify install creates no node_modules in the plugin cache (AC-1, #1265)
+        run: |
+          echo "Installing into an isolated profile and plugin cache..."
+          # Isolated so this never touches the runner's real Claude config or
+          # a prior step's cache, and so the assertion below checks exactly
+          # what a fresh install writes.
+          export CLAUDE_CONFIG_DIR
+          CLAUDE_CONFIG_DIR=$(mktemp -d)
+          export CLAUDE_CODE_PLUGIN_CACHE_DIR
+          CLAUDE_CODE_PLUGIN_CACHE_DIR=$(mktemp -d)
+          echo "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR"
+          echo "CLAUDE_CODE_PLUGIN_CACHE_DIR=$CLAUDE_CODE_PLUGIN_CACHE_DIR"
+
+          claude plugin marketplace add ./
+          claude plugin install sequant@sequant
+
+          echo "Searching for node_modules under the plugin cache..."
+          hits=$(find "$CLAUDE_CODE_PLUGIN_CACHE_DIR" "$CLAUDE_CONFIG_DIR" \
+            -type d -name node_modules -path '*/sequant/sequant/*' 2>/dev/null || true)
+          if [ -n "$hits" ]; then
+            echo "Error: install created node_modules under the plugin cache (plugin/ must ship with no package.json/lockfile):"
+            echo "$hits"
+            exit 1
+          fi
+          echo "No node_modules found under the plugin cache — install stayed slim."
 
       - name: Verify README install commands work verbatim (#1263)
         run: |
@@ -457,3 +525,132 @@ jobs:
           else
             echo "Note: templates/constitution.md not found — setup may use inline content"
           fi
+
+  upgrade-test:
+    name: In-place Upgrade (AC-5, #1265)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version || echo "Claude CLI installed but --version not supported"
+
+      - name: Install 2.18.0 (repo-root plugin), then upgrade in place
+        env:
+          # The ref Claude Code clones for the upgraded marketplace: this PR's
+          # head branch, or the pushed branch on a push event.
+          UPGRADE_REF: ${{ github.head_ref || github.ref_name }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+        run: |
+          set -e
+          # Real-user path: a GitHub-sourced marketplace. Claude Code clones it
+          # and COPIES the plugin into the cache, running `npm ci` when the
+          # plugin root has package.json + a lockfile. A local-directory
+          # marketplace would load the plugin in place with no cache copy and
+          # no install, so it can't show the #1265 fix. `owner/repo#ref` pins
+          # the clone to a tag or branch.
+          if [[ "$IS_FORK" == "true" ]]; then
+            echo "Fork PR: its branch isn't on sequant-io/sequant; skipping the upgrade test."
+            exit 0
+          fi
+
+          export CLAUDE_CONFIG_DIR CLAUDE_CODE_PLUGIN_CACHE_DIR
+          CLAUDE_CONFIG_DIR=$(mktemp -d)
+          CLAUDE_CODE_PLUGIN_CACHE_DIR="$CLAUDE_CONFIG_DIR/plugins"
+          MKT="$CLAUDE_CODE_PLUGIN_CACHE_DIR/marketplaces/sequant"
+
+          echo "Installing sequant@sequant from the v2.18.0 tag (repo-root layout)..."
+          claude plugin marketplace add "sequant-io/sequant#v2.18.0"
+          claude plugin install sequant@sequant
+
+          # Baseline: the old layout really does pull node_modules, so the
+          # absence check below can tell the layouts apart.
+          # Read the real install path rather than assuming the cache layout.
+          install_path() {
+            jq -r '.plugins["sequant@sequant"][0].installPath // empty' \
+              "$CLAUDE_CODE_PLUGIN_CACHE_DIR/installed_plugins.json" 2>/dev/null || true
+          }
+          diagnose() {
+            echo "--- installed_plugins.json:"; cat "$CLAUDE_CODE_PLUGIN_CACHE_DIR/installed_plugins.json" 2>/dev/null || echo "(missing)"
+            echo "--- plugin dirs:"; find "$CLAUDE_CONFIG_DIR" "$HOME/.claude/plugins" -maxdepth 6 -type d -path '*sequant*' 2>/dev/null | head -20
+          }
+          OLD=$(install_path)
+          if [[ -z "$OLD" || ! -e "$OLD/package.json" || ! -d "$OLD/node_modules" ]]; then
+            echo "Error: baseline 2.18.0 install at '${OLD}' has no package.json/node_modules; the test can't distinguish layouts"
+            ls -a "$OLD" 2>/dev/null | head -40 || true
+            diagnose
+            exit 1
+          fi
+          echo "Baseline OK: $OLD holds $(du -sh "$OLD" | cut -f1) including node_modules"
+
+          echo "Repointing the marketplace at $UPGRADE_REF (simulates the remote moving forward)..."
+          jq --arg r "$UPGRADE_REF" '.extraKnownMarketplaces.sequant.source.ref=$r' "$CLAUDE_CONFIG_DIR/settings.json" > "$RUNNER_TEMP/s.json"
+          mv "$RUNNER_TEMP/s.json" "$CLAUDE_CONFIG_DIR/settings.json"
+          jq --arg r "$UPGRADE_REF" '.sequant.source.ref=$r' "$CLAUDE_CODE_PLUGIN_CACHE_DIR/known_marketplaces.json" > "$RUNNER_TEMP/k.json"
+          mv "$RUNNER_TEMP/k.json" "$CLAUDE_CODE_PLUGIN_CACHE_DIR/known_marketplaces.json"
+          claude plugin marketplace update sequant
+          [[ "$(jq -r '.plugins[0].source' "$MKT/.claude-plugin/marketplace.json")" == "./plugin" ]] || {
+            echo "Error: the updated marketplace clone doesn't list source ./plugin"
+            exit 1
+          }
+
+          # Users only receive a new copy when the version changes; this branch
+          # still says the released version, so stamp a test version into the
+          # cloned marketplace (as a release bump would) before updating.
+          V="$(jq -r .version "$MKT/plugin/.claude-plugin/plugin.json")-upgradetest.${GITHUB_RUN_ID:-0}"
+          jq --arg v "$V" '.version=$v' "$MKT/plugin/.claude-plugin/plugin.json" > "$RUNNER_TEMP/p.json"
+          mv "$RUNNER_TEMP/p.json" "$MKT/plugin/.claude-plugin/plugin.json"
+          jq --arg v "$V" '.plugins[0].version=$v' "$MKT/.claude-plugin/marketplace.json" > "$RUNNER_TEMP/m.json"
+          mv "$RUNNER_TEMP/m.json" "$MKT/.claude-plugin/marketplace.json"
+
+          echo "Updating sequant@sequant to $V..."
+          claude plugin update sequant@sequant
+
+          NEW=$(install_path)
+          if [[ -z "$NEW" || "$NEW" == "$OLD" || ! -d "$NEW" ]]; then
+            echo "Error: the update did not install a new copy (install path '${NEW}')"
+            diagnose
+            exit 1
+          fi
+          for f in package.json package-lock.json node_modules; do
+            if [[ -e "$NEW/$f" ]]; then
+              echo "Error: upgraded install still has $f"
+              exit 1
+            fi
+          done
+          echo "Upgraded install: $(du -sh "$NEW" | cut -f1), no package.json/node_modules"
+
+          echo "Verifying the install id survived the move to plugin/ and still loads..."
+          DETAILS=$(claude plugin details sequant@sequant)
+          echo "$DETAILS"
+          echo "$DETAILS" | grep -q "sequant $V" || {
+            echo "Error: sequant@sequant is not loaded at $V after the upgrade"
+            exit 1
+          }
+          for skill in assess spec exec qa; do
+            if [[ ! -s "$NEW/skills/$skill/SKILL.md" ]]; then
+              echo "Error: $skill/SKILL.md missing or empty after the upgrade"
+              exit 1
+            fi
+          done
+          [[ -s "$NEW/.mcp.json" && -s "$NEW/hooks/hooks.json" ]] || { echo "Error: .mcp.json or hooks.json missing after the upgrade"; exit 1; }
+          echo "Skills, hooks and MCP config present after upgrade."
+
+          echo "Verifying the MCP server still connects after the upgrade..."
+          mcp_status=$(claude mcp list 2>&1)
+          echo "$mcp_status"
+          echo "$mcp_status" | grep -E "^plugin:sequant:sequant:.*✔ Connected" || {
+            echo "Error: plugin:sequant:sequant MCP server is not connected after the upgrade"
+            exit 1
+          }
+

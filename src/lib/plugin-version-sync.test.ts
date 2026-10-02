@@ -34,6 +34,7 @@ describe("plugin-version-sync", () => {
       mockExistsSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("marketplace.json")) return false;
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
         return true;
       });
       mockReadFileSync.mockImplementation((filePath) => {
@@ -63,6 +64,7 @@ describe("plugin-version-sync", () => {
       mockExistsSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("marketplace.json")) return false;
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
         return true;
       });
       mockReadFileSync.mockImplementation((filePath) => {
@@ -111,7 +113,11 @@ describe("plugin-version-sync", () => {
     });
 
     it("returns error when package.json missing version", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -130,7 +136,11 @@ describe("plugin-version-sync", () => {
     });
 
     it("returns error when plugin.json missing version", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -149,7 +159,11 @@ describe("plugin-version-sync", () => {
     });
 
     it("returns inSync: true when all three files match", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -173,7 +187,11 @@ describe("plugin-version-sync", () => {
     });
 
     it("returns inSync: false when marketplace.json version differs", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -211,6 +229,7 @@ describe("plugin-version-sync", () => {
       mockExistsSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("marketplace.json")) return false;
+        if (path.includes("plugin/.claude-plugin/plugin.json")) return false;
         return true;
       });
       mockReadFileSync.mockImplementation((filePath) => {
@@ -228,6 +247,57 @@ describe("plugin-version-sync", () => {
 
       expect(result.inSync).toBe(true);
       expect(result.packageVersion).toBe("2.0.0-beta.1");
+    });
+
+    it("returns inSync: true when plugin/.claude-plugin/plugin.json version matches", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("package.json")) {
+          return JSON.stringify({ version: "1.11.0" });
+        }
+        if (path.includes("marketplace.json")) {
+          return JSON.stringify({ plugins: [{ version: "1.11.0" }] });
+        }
+        // Both the root and plugin/.claude-plugin/plugin.json paths match
+        // this branch — same content, which is the in-sync case.
+        if (path.includes("plugin.json")) {
+          return JSON.stringify({ version: "1.11.0" });
+        }
+        return "";
+      });
+
+      const result = checkVersionSync("/test/project");
+
+      expect(result.inSync).toBe(true);
+      expect(result.pluginFolderVersion).toBe("1.11.0");
+      expect(result.error).toBeUndefined();
+    });
+
+    it("returns inSync: false when plugin/.claude-plugin/plugin.json version differs", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("package.json")) {
+          return JSON.stringify({ version: "1.12.0" });
+        }
+        if (path.includes("marketplace.json")) {
+          return JSON.stringify({ plugins: [{ version: "1.12.0" }] });
+        }
+        if (path.includes("plugin/.claude-plugin/plugin.json")) {
+          return JSON.stringify({ version: "1.11.0" });
+        }
+        if (path.includes("plugin.json")) {
+          return JSON.stringify({ version: "1.12.0" });
+        }
+        return "";
+      });
+
+      const result = checkVersionSync("/test/project");
+
+      expect(result.inSync).toBe(false);
+      expect(result.error).toContain("plugin/.claude-plugin/plugin.json");
+      expect(result.pluginFolderVersion).toBe("1.11.0");
     });
   });
 

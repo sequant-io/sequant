@@ -5,6 +5,12 @@
 // for spec/SKILL.md, qa/SKILL.md, and the new reference doc. We assert on the
 // touched files directly (not the whole repo) since unrelated pre-existing
 // divergence is out of scope for this issue.
+//
+// #1265 added plugin/skills as a 4th mirror, so the script's own "N/N match"
+// denominator grew from 3 to 4 (scripts/check-skill-sync.ts's MIRROR_DIRS).
+// The "3-dir" framing in this file's name and prose describes the original
+// #552 scope and is left as historical context; only the numeric assertion
+// below follows the script's real output.
 
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
@@ -51,12 +57,12 @@ describe("AC-4: skill-sync 3-dir mirror for behavior-rule files", () => {
     })();
 
     for (const rel of TOUCHED_FILES) {
-      it(`reports synced 3/3 for ${rel}`, () => {
+      it(`reports synced 4/4 for ${rel}`, () => {
         const escaped = rel.replace(/[/.]/g, (m) => "\\" + m);
-        const syncedRe = new RegExp(`synced\\s+${escaped}\\s+—\\s+3\\/3 match`);
+        const syncedRe = new RegExp(`synced\\s+${escaped}\\s+—\\s+4\\/4 match`);
         expect(
           syncedRe.test(output),
-          `Expected '${rel}' synced 3/3, got:\n${output}`,
+          `Expected '${rel}' synced 4/4, got:\n${output}`,
         ).toBe(true);
         // And explicitly NOT diverged or missing for our files.
         const divergedRe = new RegExp(`DIVERGED\\s+${escaped}`);
