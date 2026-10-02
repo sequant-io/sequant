@@ -21,6 +21,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmdirSync,
   rmSync,
   statSync,
@@ -229,9 +230,21 @@ function main() {
 
 // Only run when invoked directly (`node mcp-launch.mjs ...`), not when
 // imported — lets tests exercise resolveNpxCommand() without triggering the
-// spawn side effects above.
-const isMain =
-  process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+// spawn side effects above. Compare real paths: import.meta.url is always
+// resolved, but Claude Code can start the plugin's copy through a symlinked
+// path (a symlinked ~/.claude, macOS /var -> /private/var), and a plain
+// string compare then skips main() and the server never starts.
+const isMain = (() => {
+  try {
+    return (
+      Boolean(process.argv[1]) &&
+      realpathSync(process.argv[1]) ===
+        realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
+  }
+})();
 if (isMain) {
   main();
 }
