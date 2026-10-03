@@ -21,6 +21,8 @@ allowed-tools:
   - Bash(gh pr checks:*)
   - Bash(gh api:*)
   - Bash(semgrep:*)
+  - Bash(npx tsx scripts/semgrep-scan.ts)
+  - Bash(npx tsx scripts/semgrep-scan.ts --changed-only)
   - Agent(sequant-qa-checker)
   - AgentOutputTool
 ---

@@ -12,7 +12,6 @@ allowed-tools:
   - Bash(gh issue edit:*)
   - Bash(gh label:*)
   - Bash(git worktree:*)
-  - Bash(git -C:*)
   - Agent(Explore)
   - AgentOutputTool
 ---

@@ -129,6 +129,11 @@ function violation(entry: string): string | null {
   if (BROAD_TOOLS.some((t) => cmd === `${t} *`)) {
     return "wildcard directly after the tool (AC-1)";
   }
+  // A global option before the subcommand (`git -C <path>`, `gh -R <repo>`)
+  // leaves the subcommand to the wildcard: `git -C *` is `git *`.
+  if (/^(git -[Cc]|gh (-R|--repo)) /.test(cmd) && cmd.endsWith("*")) {
+    return "wildcard after a global option, before the subcommand (AC-1)";
+  }
   if (
     RUNNER_PREFIXES.some((p) => cmd.startsWith(p)) &&
     cmd.endsWith("*") &&
