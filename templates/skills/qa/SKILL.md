@@ -1884,7 +1884,7 @@ Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:
 2. **"What assumptions am I making?"** - List and validate key assumptions
 3. **"What's the unhappy path?"** - Test invalid inputs, failed dependencies
 4. **"Did I test the feature's PRIMARY PURPOSE?"** - If it handles errors, trigger an error
-5. **"Does the same root-cause pattern exist at sibling sites in this file?"** - The literal repro from the issue body is necessary but not sufficient. After the cited bug is fixed, audit other call sites in the same file (and same function/loop) that share the root-cause pattern. Example: if a destructive operation invalidates a resource that subsequent code depends on, scan for other destructive operations on that resource type in the same function/loop; if a wrong null-check is the bug, scan for the same access pattern elsewhere. **Complementary to Section 5's cross-file sibling-site scan: §4's question is intra-file (other lines/functions in the same file with the same root cause); §5 is cross-file (other files in the codebase with the same vulnerability).**
+5. **"Does the same root-cause pattern exist at sibling sites in this file?"** - The literal repro from the issue body is necessary but not sufficient. After the cited bug is fixed, audit other call sites in the same file (and same function/loop) that share the defect class. Example: if a destructive operation invalidates a resource that subsequent code depends on, scan for other destructive operations on that resource type in the same function/loop; if a wrong null-check is the bug, scan for the same access pattern elsewhere. This is the intra-file half; §5's Sibling-site Scan is the cross-file half.
 
 See [testing-requirements.md](references/testing-requirements.md) for edge case checklists.
 
@@ -1898,22 +1898,22 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 ### Risk Assessment
 
 - **Likely failure mode:** [How would this break in production? Be specific.]
-- **Not tested:** [What gaps exist in test coverage for these changes?]
-- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Not tested:** [What gaps exist in test coverage for these changes? Never an AC's promised end-to-end delivery — see §5]
+- **Sibling sites considered:** [Class searched: <defect class>; then the sibling code in other files with that root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
 - **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 ```
 
 **If either field reveals significant concerns**, factor them into your verdict. A serious failure mode with no test coverage should downgrade to `AC_MET_BUT_NOT_A_PLUS` or `AC_NOT_MET`.
 
+**End-to-end delivery is never "Not tested".** When an AC promises that something reaches its destination (e.g. "surfaces in the PR body", "is posted to the issue", "reaches exec-opened PRs"), run that path and cite the output. If you cannot run it, mark the AC `PENDING`, which reaches `NEEDS_VERIFICATION` via `pending_count`; do not mark it `MET` with the path listed under `Not tested:`. Motivating miss: #749's QA wrote the run path to the PR body under "Not tested", and the note never reached exec-opened PRs (#1247).
+
 #### Sibling-site Scan (Conditional)
 
 **When to apply:** Focused AC + a localized fix where the same root-cause pattern likely exists in other files in the codebase (≥3 occurrences of the affected pattern across files — e.g. regex blocks repeated across multiple hook scripts). Intra-file sibling sites are covered by §4 Q5; this scan is the cross-file complement.
 
-**Before declaring AC met**, scan other files in the codebase for sibling code with the same pattern as the bug being fixed. If sibling sites would exhibit the same root cause but weren't part of the literal AC, surface them in the verdict's `Sibling sites considered:` slot — as expanded scope (only when trivial) or follow-up issue suggestion. **Don't widen scope mid-PR; file a follow-up issue instead.** Sibling sites alone do not produce `NEEDS_VERIFICATION`; that verdict is reserved for external/temporal gates (CI pending, manual-test ACs unexecuted).
+**Before declaring AC met**, name the **defect class** and search the codebase for it — not for the symbol being changed. The class is the property that made the code wrong, stated so it matches code the diff never touched: "every git call in the file without `-C <target>`", "every writer to a project path", "every reader that takes the first QA verdict". Searching for the changed code misses siblings written differently: #963 searched for the `cd`-extraction pattern and missed the reset guard's bare `git status` (#1228); #814's scan missed the AGENTS.md writer #990 fixed. The `Sibling sites considered:` slot starts with `Class searched: <class>`, then lists the hits. The precheck's `siblingGrep` (`scripts/qa/precheck.ts`) greps the changed identifiers; treat it as a symbol-level hint, never as the class search. Surface each hit as expanded scope (only when trivial) or as a deferred item in the §7 Follow-up Ledger. Sibling sites alone do not produce `NEEDS_VERIFICATION`; that verdict is reserved for external/temporal gates (CI pending, manual-test ACs unexecuted) and unrun end-to-end delivery (above).
 
 **Scope:** orchestrator/inline-review only — `sequant-qa-checker` sub-agents are not asked to do this scan; the orchestrator owns it during verdict synthesis.
-
-This operationalizes the principle in `feedback_qa_second_look.md` (structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps). Don't automate via grep — false-positive risk; this is a "look at adjacent files" prompt.
 
 #### Skill Change Review (Conditional)
 
@@ -2368,7 +2368,7 @@ fi
 
 ### 6d. Adversarial Re-Read (REQUIRED for Standard QA before READY_FOR_MERGE)
 
-**Purpose:** Catch what the structured pipeline doesn't gate on. Operationalizes `feedback_qa_second_look.md` — structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps.
+**Purpose:** Catch what the structured pipeline doesn't gate on: structured QA biases positive on clean code, and an adversarial re-read of core logic surfaces real gaps.
 
 **When to apply:** Required for non-Simple-Fix verdicts before issuing `READY_FOR_MERGE`. Omitted entirely for Simple Fix mode (`SMALL_DIFF=true`).
 
@@ -2393,8 +2393,6 @@ fi
 
 **Status:** Clean / Gaps Found / Severe Gap
 ```
-
-**Origin:** This section was promoted to a structured 5-sub-prompt table in #582. #608's signal-to-noise study found 9/14 emits surfaced findings but 0 were actioned — the structure produced visibility without action. #609 trims back to a single-paragraph prompt while preserving the safety net and verdict gating.
 
 ### 6e. Behavior-Rule Survival Check (REQUIRED for behavior-rule ACs)
 
@@ -2653,7 +2651,7 @@ npx tsx -e '
 | `category` | Yes | One of the six above |
 | `evidence` | Yes | A concrete observation — file:line, failing check name, or table row — never speculation |
 | `description` | Yes | One-sentence statement of the gap (same text you'd put in a prose bullet) |
-| `recommendedAction` | Yes | `fix_now` (blocks `READY_FOR_MERGE`, actionable by a code change), `document` (real but non-blocking — quality/polish, or explicitly deferred), or `pause_for_human` (needs a decision `/loop` cannot make, e.g. `SCOPE_SPLIT_RECOMMENDED`-class ambiguity) |
+| `recommendedAction` | Yes | `fix_now` (blocks `READY_FOR_MERGE`, actionable by a code change), `document` (real but non-blocking — quality/polish, or explicitly deferred; its `description` ends in a §7 Follow-up Ledger resolution suffix), or `pause_for_human` (needs a decision `/loop` cannot make, e.g. `SCOPE_SPLIT_RECOMMENDED`-class ambiguity) |
 | `affectedAcs` | If applicable | e.g. `["AC-3"]` |
 | `nonGoal` | If applicable | `true` when the finding overlaps one of the issue's Non-Goals — report-only under `ac` policy, same semantics as `ReadyGapItem.nonGoal` |
 
@@ -2707,6 +2705,7 @@ Provide an overall verdict:
    - declared_evidence_status = status from Section 6h (Complete/Incomplete/N/A) — REQUIRED when any AC declares evidence naming a runnable command, `N/A` otherwise
    - mutation_verification_status = status from Section 6i (Verified/Missing/Failed/Not-Applicable) — REQUIRED when any AC is a gate-test AC per `isGateTestEvidence`, `Not-Applicable` otherwise
    - cli_registration_status = status from Section 2h (Passed/Failed/N/A) — REQUIRED when option interfaces are modified, `N/A` otherwise; omitted in Simple Fix mode along with the rest of §2h
+   - followup_ledger_status = status from Section 7's Follow-up Ledger (Resolved/Unresolved/N/A) — REQUIRED in **both** Standard QA and Simple Fix mode
    - settle_evidence_status = status from Section 2a (Backed/Unbacked/N/A) — REQUIRED whenever the PR body describes any test failure as pre-existing or unrelated to the diff, `N/A` otherwise
    - script_verification_status = status from Section 11 (Verified/Overridden/Not Verified/Not Required) — REQUIRED when `scripts/` or `templates/scripts/` files are modified, `Not Required` otherwise
    - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
@@ -2753,6 +2752,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (a declared `Evidence:` command was not executed/verified for one or more ACs - see Section 6h; the #853 "marked MET by construction" path)
    - ELSE IF mutation_verification_status == "Missing":
        → AC_MET_BUT_NOT_A_PLUS (a gate-test AC has no recorded `SEQUANT_MUTATION` marker - see Section 6i; the honor-system-prose gap #939 closes)
+   - ELSE IF followup_ledger_status == "Unresolved":
+       → AC_MET_BUT_NOT_A_PLUS (a deferred item has no terminal state — see the Follow-up Ledger below; name each one. Not AC_NOT_MET: exec cannot make the file/drop decision, so the run breaks to a PR for a human)
    - ELSE IF settle_evidence_status == "Unbacked":
        → AC_MET_BUT_NOT_A_PLUS (a test failure is called "pre-existing"/"unrelated" with no `### Settled against base` block backing it, or with a block that contradicts it — see Section 2a and #1093. Name each unsettled test; `scripts/settle-against-base.sh <test-file>` produces the block.)
    - ELSE IF script_verification_status == "Not Verified":
@@ -2782,6 +2783,10 @@ Provide an overall verdict:
    - ELSE:
        → READY_FOR_MERGE (A+ implementation)
 ```
+
+#### Follow-up Ledger
+
+Every item an earlier phase deferred ends in exactly one terminal state: `filed #N`, `fixed in this PR` or `dropped: <reason>`. Sources: spec's Open Questions and out-of-scope or follow-up notes, exec's PR-body follow-ups, the runner's context comments, and this review's own `recommendedAction: "document"` findings (§6j), including §5 sibling-scan hits. "Follow-up suggested", "consider filing" and "out of scope" are not terminal. QA records the decision and never files an issue itself; an item the runner or owner has not filed or dropped stays unresolved. Write each `document` finding's state as a suffix on its §6j `description` (` — filed #N`, ` — fixed in this PR`, ` — dropped: <reason>`): the orchestrator renders those as the PR's `## Follow-ups` checklist, where a finding with no suffix reads unresolved. `followup_ledger_status` is **Resolved** when every item is terminal, **Unresolved** when any is not, and **N/A** when nothing was deferred. Simple Fix mode applies it too: spec deferrals exist regardless of diff size.
 
 **Browser Testing Enforcement:**
 
@@ -2821,44 +2826,20 @@ Before finalizing the verdict, check if any ACs require manual (runtime) verific
 spec_comment=$(gh issue view <issue-number> --json comments --jq \
   '[.comments[].body | select(contains("\"phase\":\"spec\""))] | last' || true)
 
-# 2. Detect ACs that name a verification method QA cannot satisfy from code review.
-# Two classes, one pattern:
-#   (a) manual-test ACs — "**Verification:** Manual Test", "**Verify:** ...",
-#       "try X, confirm Y", "verify by", "test that"
-#   (b) evidence-naming ACs — the AC names the *evidence* its own claim requires:
-#       "corpus check", "against several real ...", "N samples", "sampled".
-#       Motivating miss: #819's AC-4 read "…a corpus check against several real
-#       recent issue bodies shows no behavior change" and was marked MET on the
-#       reasoning "unchanged by construction". No corpus check was run; when one
-#       finally was, it surfaced a real false-positive surface in the shipped rule.
+# 2. Detect ACs naming a verification QA cannot satisfy from code review:
+#   (a) manual-test ACs ("**Verification:** Manual Test", "try X, confirm Y", ...)
+#   (b) evidence-naming ACs ("corpus check", "N samples", ...). Motivating miss:
+#       #819 AC-4 was marked MET "by construction"; no corpus check was run.
 manual_test_acs=$(echo "$spec_comment" | \
   grep -iE '(\*\*Verification:\*\*\s*Manual Test|\*\*Verify:\*\*\s*|try .*, confirm|verify by|test that|verify:?\s*manual|corpus check|against several real|[0-9]+ samples?|sampled)' || true)
 
-# 3. Extract AC IDs associated with those lines.
-#
-# Three properties this program has to get right, each verified against a
-# corpus of 18 real issues (#533–#822):
-#
-#   (a) Declaration forms. The anchor covers every form real spec comments use.
-#       Measured: `- [ ] **AC-N**` (102) and `- [ ] AC-N` (32) — the checkbox
-#       forms — outnumber `#+ AC-N` (70) and `**AC-N` (24) combined. Anchoring
-#       on headings alone left attribution silent for ~59% of declarations:
-#       detection matched the line, then reported no AC for it. Same class as
-#       the #547 awk-anchor bugs documented in §6c.
-#
-#   (b) Scope. A non-AC heading CLEARS the current AC. Without this, every
-#       matching line downstream — plan steps, QA prose, a coverage-table row
-#       about a *different* AC — is attributed to whichever AC was declared
-#       last. Measured on the same corpus: 5 of 9 attributions were wrong,
-#       including a `| AC-7 | … |` row credited to AC-8 and a `| AC-4 | … |`
-#       row credited to AC-6. An AC-declaration line is not treated as a
-#       clearing heading, and a marker on a later line (`**Verification:**
-#       Manual Test` under `### AC-3:`) still attributes to its AC.
-#
-#   (c) Portability. `tolower($0) ~ /…/` rather than `BEGIN{IGNORECASE=1}`,
-#       which is a gawk extension and a silent no-op on macOS's awk. Measured:
-#       `Manual test` and `Corpus check` appear in the corpus and would be
-#       missed there. All pattern literals below are therefore lowercase.
+# 3. Extract AC IDs associated with those lines (measured on 18 issues, #533–#822):
+#   (a) The anchor covers checkbox (`- [ ] AC-N`), heading and bold declarations;
+#       headings alone left ~59% of ACs unattributed (the #547 class, §6c).
+#   (b) A non-AC heading CLEARS the current AC, so later prose and table rows
+#       are not credited to the last AC declared (5 of 9 were, before).
+#   (c) `tolower($0)` instead of gawk-only `BEGIN{IGNORECASE=1}` (a no-op on
+#       macOS awk), so every pattern literal below stays lowercase.
 manual_ac_ids=$(echo "$spec_comment" | awk '
   { isdecl = (tolower($0) ~ /^(#+ ac-[0-9]+|\*\*ac-[0-9]+|- \[[ x]\] (\*\*)?ac-[0-9]+)/) }
   isdecl { ac = $0 }
@@ -3233,6 +3214,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Mutation Verification** - Required in simple fix mode too (see Section 6i): a gate-test AC merged without a recorded mutation result is exactly the #830 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC is a gate-test AC
 - [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs an `[Unreleased]` entry (or marked N/A)
 - [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated
+- [ ] **Follow-up Ledger** - Required in simple fix mode too (see Section 7): every deferred item filed, fixed or dropped, or the status is Unresolved
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
@@ -3268,6 +3250,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Trust-Boundary Check** - Required section: "Finding:" and "Status:" lines populated (see Section 6f); `Injection Acted On` floors the verdict at `AC_NOT_MET` via §7
+- [ ] **Follow-up Ledger** - Every deferred item filed, fixed or dropped (see Section 7); `Unresolved` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7
 - [ ] **Adversarial Re-Read** - Required structured section: all 5 sub-prompts answered with concrete content; "Findings:" and "Status:" lines populated; bare "No gaps" without specific reasoning fails verification (see Section 6d)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
@@ -3403,9 +3386,15 @@ When the size gate triggers simple fix mode, use this shorter template:
 ### Risk Assessment
 
 - **Likely failure mode:** [How would this break in production?]
-- **Not tested:** [What gaps exist in test coverage?]
-- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Not tested:** [What gaps exist in test coverage? Never an AC's promised end-to-end delivery — see §5]
+- **Sibling sites considered:** [Class searched: <defect class>; then the sibling code in other files with that root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
 - **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
+
+---
+
+### Follow-up Ledger
+
+- [deferred item] ([spec / exec PR body / runner / §6j]) — [filed #N / fixed in this PR / dropped: <reason> / ⚠️ unresolved] — **Status:** Resolved / Unresolved / N/A
 
 ---
 
@@ -3743,8 +3732,8 @@ You MUST include these sections:
 ### Risk Assessment
 
 - **Likely failure mode:** [How would this break in production? Be specific.]
-- **Not tested:** [What gaps exist in test coverage for these changes?]
-- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Not tested:** [What gaps exist in test coverage for these changes? Never an AC's promised end-to-end delivery — see §5]
+- **Sibling sites considered:** [Class searched: <defect class>; then the sibling code in other files with that root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
 - **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 
 ---
@@ -3812,6 +3801,12 @@ You MUST include these sections:
 **Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced — fixtures consulted, evidence claims audited, process state inspected, sibling sites cited, Non-Goals checked>"]
 
 **Status:** Clean / Gaps Found / Severe Gap
+
+---
+
+### Follow-up Ledger
+
+- [deferred item] ([spec / exec PR body / runner / §6j]) — [filed #N / fixed in this PR / dropped: <reason> / ⚠️ unresolved] — **Status:** Resolved / Unresolved / N/A
 
 ---
 
