@@ -15,11 +15,16 @@ or test suites that live at the repo root.
 
 ## What it runs, sends, or fetches
 
-- **MCP server.** `.mcp.json` launches `node -e <inline launcher>
+- **MCP server.** `.mcp.json` runs `node ${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs
   sequant@<version>`, which runs `npx -y sequant@<version> serve` to start
   the workflow MCP server locally. This is the one network fetch the plugin
   makes on its own: pulling the pinned `sequant` package from the npm
-  registry. No other host is contacted by the launcher.
+  registry. No other host is contacted by the launcher. The launcher passes
+  your shell environment through to that local `sequant serve` process
+  (plus `SEQUANT_PROJECT_DIR`), so the `gh` and git credentials you already
+  have keep working there; it does not send them anywhere itself. It starts
+  `npx` from a fresh `sequant-mcp-launch-*` directory under the OS temp
+  directory and removes it when the server exits.
 - **git and gh.** The hooks (`hooks/pre-tool.sh`, `hooks/post-tool.sh`) and
   the skills under `skills/` run `git` and `gh` (GitHub CLI) commands —
   branch/worktree management, commits, pushes, PR and issue reads/writes —
@@ -73,11 +78,9 @@ or test suites that live at the repo root.
   (which for a plugin install resolves here) and copies it into a target
   project's `.claude/memory/constitution.md`, substituting the
   `{{PROJECT_NAME}}` placeholder for the detected project name
-  (`skills/setup/SKILL.md`, "Copy Constitution Template"). It is a copy of
-  `templates/memory/constitution.md`, and — because this repository has never
-  filled in its own `{{PROJECT_NAME}}` placeholder either — is currently
-  identical to this repository's own `memory/constitution.md`, though the two
-  are not the same artifact and can diverge.
+  (`skills/setup/SKILL.md`, "Copy Constitution Template"). It is generated
+  from `templates/memory/constitution.md` by `scripts/sync-hooks.sh`, not
+  copied from this repository's own `memory/constitution.md`.
 
 See the main repository README at
 <https://github.com/sequant-io/sequant> for full documentation, including
