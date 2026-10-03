@@ -367,6 +367,18 @@ describe("buildAutomatedPRBody — follow-ups (#1249)", () => {
     );
   });
 
+  it("does not double an unresolved suffix QA already wrote", () => {
+    const body = buildAutomatedPRBody(1249, {
+      followups: [
+        finding("Adjacent unguarded writeFile sites — ⚠️ unresolved"),
+      ],
+    });
+    expect(body).toContain(
+      "- [ ] Adjacent unguarded writeFile sites — unresolved",
+    );
+    expect(body).not.toMatch(/unresolved — unresolved/);
+  });
+
   it("renders no section when there are no findings", () => {
     expect(buildAutomatedPRBody(1249)).not.toContain("## Follow-ups");
     expect(buildAutomatedPRBody(1249, { followups: [] })).not.toContain(

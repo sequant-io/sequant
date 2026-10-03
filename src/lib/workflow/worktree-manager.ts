@@ -1984,6 +1984,9 @@ export function resolvePrLinkMode(
 const FOLLOWUP_RESOLUTION_RE =
   /\s+[—–-]+\s+(filed #\d+|fixed in this PR|dropped: \S.*)$/i;
 
+/** The ledger template's own unresolved suffix, dropped before the renderer adds one. */
+const FOLLOWUP_UNRESOLVED_RE = /\s+[—–-]+\s+(?:⚠️\s*)?unresolved$/iu;
+
 /**
  * Render the `## Follow-ups` checklist from QA's `document` findings (#1249
  * AC-2). One line per finding: checked with its resolution when the
@@ -2005,7 +2008,7 @@ export function renderFollowups(
     const match = FOLLOWUP_RESOLUTION_RE.exec(text);
     const line = match
       ? `- [x] ${text.slice(0, match.index)} — ${match[1]}`
-      : `- [ ] ${text} — unresolved`;
+      : `- [ ] ${text.replace(FOLLOWUP_UNRESOLVED_RE, "")} — unresolved`;
     // Finding text is imported: "fixes #812" in it must not close #812.
     return sanitizeImportedClosingKeywords(line);
   });
