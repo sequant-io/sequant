@@ -2576,6 +2576,7 @@ npx tsx -e '
 })();
 '
 
+# (The file list below includes changed CI workflow files — a workflow step can be the gate test, #1276.)
 # 2. Parse SEQUANT_MUTATION markers from the PR body — this single call
 #    both parses AND rejects: given the diff's test-file paths, each
 #    returned marker carries a "classification" ("valid" or
@@ -2592,7 +2593,7 @@ npx tsx -e '
     console.log(ac, marker.classification, marker.failedTest);
   }
 })();
-' -- "$PR_BODY" $(git diff origin/main...HEAD --diff-filter=AM --name-only | grep -E '\.(test|spec)\.')
+' -- "$PR_BODY" $(git diff origin/main...HEAD --diff-filter=AM --name-only | grep -E '\.(test|spec)\.|^\.github/workflows/.*\.ya?ml$')
 ```
 
 **Safety rules (carry into any manual mutation performed during this check, per #883 and the commit-before-mutating discipline):**
@@ -2603,7 +2604,7 @@ npx tsx -e '
 
 | Status | Criteria |
 |--------|----------|
-| **Verified** | The in-scope AC has a `SEQUANT_MUTATION` marker whose `failedTest` names a test file present in the diff |
+| **Verified** | The in-scope AC has a `SEQUANT_MUTATION` marker whose `failedTest` names a test or CI workflow file present in the diff |
 | **Missing** | The in-scope AC has no `SEQUANT_MUTATION` marker |
 | **Failed** | The in-scope AC has a marker naming a test file NOT present in the diff — a fabricated marker is worse than a missing one |
 
