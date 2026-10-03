@@ -61,7 +61,7 @@ import {
   errorTypeToCategory,
   type ErrorCategory,
 } from "./error-classifier.js";
-import type { ErrorContext } from "./run-log-schema.js";
+import type { ErrorContext, GapFinding } from "./run-log-schema.js";
 import {
   getGitDiffStats,
   getCommitHash,
@@ -649,6 +649,22 @@ export function deriveFailureCategory(
 }
 
 /**
+ * The LAST result recorded for `phase`, or undefined when it never ran.
+ *
+ * A quality-loop iteration re-runs exec and qa, so the first match
+ * (`phaseResults.find`) describes work the loop has since changed. (#1249;
+ * the first-match verdict readers are #1245's.)
+ *
+ * @internal Exported for testing
+ */
+export function latestPhaseResult(
+  phaseResults: PhaseResult[],
+  phase: Phase,
+): PhaseResult | undefined {
+  return [...phaseResults].reverse().find((p) => p.phase === phase);
+}
+
+/**
  * "Halt, don't loop" predicate for the outer `-Q` quality loop (#799).
  *
  * A billing / out-of-credits failure (`BillingError`) or a window-exhausted
@@ -1122,6 +1138,7 @@ export async function runIssueWithLogging(
     after: {
       qaVerdict?: string;
       readyGateReport?: string;
+      followups?: GapFinding[];
     } = {},
   ): Promise<ReturnType<typeof createPR>> => {
     // #605: under --stacked, target predecessor branch (only for non-first,
@@ -1137,9 +1154,7 @@ export async function runIssueWithLogging(
     // the placeholder text.
     // The latest exec pass: a quality-loop iteration re-runs exec, and the
     // first pass's summary describes code the loop has since changed.
-    const latestExec = [...phaseResults]
-      .reverse()
-      .find((p) => p.phase === "exec");
+    const latestExec = latestPhaseResult(phaseResults, "exec");
     const execOutput = latestExec?.output;
     // #1247 AC-3: a run with no exec pass (qa-only re-run) falls back to the
     // summary the last exec pass recorded on the issue's state.
@@ -1166,7 +1181,7 @@ export async function runIssueWithLogging(
       // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
       config.prIssueLink,
       config.prNoCloseLabel,
-      { execOutput, execSummary },
+      { execOutput, execSummary, followups: after.followups },
     );
     if (
       prResult.success &&
@@ -2501,6 +2516,9 @@ export async function runIssueWithLogging(
       // #817 AC-6: surface the ready-gate outcome in the PR body the same way
       // `sequant ready` reports it (threshold reached vs guard halt).
       readyGateReport: readyGateResult?.report,
+      // #1249 AC-2: the latest QA pass's findings become the PR's
+      // `## Follow-ups` checklist.
+      followups: latestPhaseResult(phaseResults, "qa")?.summary?.findings,
     });
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;
