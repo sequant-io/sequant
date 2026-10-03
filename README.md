@@ -22,7 +22,7 @@ Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, 
 **Why Sequant**
 
 - **Stop babysitting the agent.** AI coding agents write code well and leave the workflow to you — planning, isolation, review, merge safety. One command runs the whole issue → PR path, not just the coding step.
-- **You stay in control.** `sequant run` stops at the PR and never merges. That is an invariant, not a setting. (The `/fullsolve` skill merges only if you pass `--auto-merge`.)
+- **You stay in control.** `sequant run` stops at the PR and never merges. That is an invariant, not a setting. (The `/fullsolve` skill merges only when you opt in: `--auto-merge`, `run.autoMerge: true` in settings, or asking it to merge.)
 
 **Works with** [Claude Code](https://claude.ai/code) (default) or [Aider](https://aider.chat/), on any git repository with GitHub issues. Tuned for Node.js/TypeScript projects; the worktree workflow is language-agnostic.
 
@@ -171,11 +171,11 @@ When checks fail, `/loop` automatically fixes and re-runs (up to 3x).
 You could assemble this workflow yourself on LangGraph, CrewAI, Mastra, or the Claude Agent SDK — they sell the primitives and leave the workflow as an exercise. Sequant is the finished, hardened version of what you'd end up building, in the frameworks' own vocabulary:
 
 - **Isolated execution** — one git worktree per issue, resolved by the branch git reports rather than directory globs
-- **Human-in-the-loop approval gate** — `sequant run` stops at the PR and never merges; this is an invariant, not optional wiring (`/fullsolve` merges only with an explicit `--auto-merge`)
+- **Human-in-the-loop approval gate** — `sequant run` stops at the PR and never merges; this is an invariant, not optional wiring (`/fullsolve` merges only on an explicit opt-in: `--auto-merge`, `run.autoMerge: true`, or a direct request)
 - **Guardrails** — QA verdicts with an enforced floor, mutation-verified gate tests, scope and security checks
 - **Durable execution** — a rate-limit halt writes a resumable record; `sequant resume` picks up where it left off, skipping completed phases
 - **State management** — per-issue and checkout-scoped locks, so concurrent sessions can't interleave git operations in the same tree
-- **Deterministic control flow** — dependency-ordered batch scheduling over `blocked by #N` relationships
+- **Deterministic control flow** — a line starting `Depends on: #N` queues an issue behind the one it needs, and `--sequential` runs a batch one issue at a time (see [Write Issues Sequant Can Execute](docs/guides/writing-issues.md))
 
 On a general framework, every one of these is something you wire up — and can wire wrong or skip. Here they hold for every run. The boring 80% (retries, resume, locking, exit codes your scripts can trust) has already been run in anger; the [CHANGELOG](CHANGELOG.md) is the receipts.
 
