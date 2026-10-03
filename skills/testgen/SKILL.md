@@ -6,7 +6,7 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
-  - Bash(npx sequant worktree:*)
+  - Bash(npx sequant worktree resolve:*)
   - Read
   - Write
   - Edit

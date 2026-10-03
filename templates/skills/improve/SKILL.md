@@ -9,10 +9,8 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-  - Bash(gh *)
-  - Bash(git *)
-  - Bash(npm run *)
-  - Bash(npx *)
+  - Bash(gh issue create:*)
+  - Bash(npm audit:*)
   - AskUserQuestion
 ---
 

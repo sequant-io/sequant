@@ -16,8 +16,6 @@ allowed-tools:
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(npm run lint:*)
-  - Bash(npm install:*)
-  - Bash(npx tsc:*)
   # Git operations
   - Bash(git status:*)
   - Bash(git diff:*)
@@ -29,7 +27,8 @@ allowed-tools:
   # Worktree management
   - Bash(./scripts/new-feature.sh:*)
   - Bash(./scripts/cleanup-worktree.sh:*)
-  - Bash(npx sequant worktree:*)
+  - Bash(npx sequant worktree resolve:*)
+  - Bash(npx sequant worktree verify:*)
   # GitHub CLI
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
