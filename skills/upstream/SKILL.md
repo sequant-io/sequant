@@ -10,11 +10,10 @@ allowed-tools:
   - Write
   - Glob
   - Grep
-  - Bash(gh *)
-  - Bash(git *)
-  - Bash(jq *)
-  - Bash(base64 *)
-  - Bash(npx tsx *)
+  - Bash(gh release view:*)
+  - Bash(gh release list:*)
+  - Bash(gh issue list:*)
+  - Bash(gh issue create:*)
 ---
 
 <!-- sequant:local-override -->

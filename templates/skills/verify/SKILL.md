@@ -6,7 +6,6 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
-  - Bash(*)
   - Read
   - Glob
   - Grep

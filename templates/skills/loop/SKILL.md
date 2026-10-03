@@ -11,18 +11,19 @@ allowed-tools:
   - Write
   - Glob
   - Grep
-  - Bash
   # Optional MCP tools (enhanced functionality if available)
   - mcp__chrome-devtools__*  # Browser testing - falls back to manual verification if unavailable
   - mcp__sequential-thinking__*  # Complex debugging - falls back to standard analysis if unavailable
   - mcp__context7__*  # Library documentation - falls back to web search if unavailable
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
-  - Bash(npx sequant worktree:*)
+  - Bash(npx sequant worktree resolve:*)
+  - Bash(npx sequant worktree verify:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
   - Bash(git status:*)
+  - Bash(git branch:*)
 ---
 
 <!-- sequant:local-override -->

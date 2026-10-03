@@ -6,7 +6,8 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
-  - Bash(npx sequant worktree:*)
+  - Bash(npx sequant worktree resolve:*)
+  - Bash(npx sequant worktree verify:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
@@ -20,8 +21,6 @@ allowed-tools:
   - Bash(gh pr checks:*)
   - Bash(gh api:*)
   - Bash(semgrep:*)
-  - Bash(npx semgrep:*)
-  - Bash(npx tsx scripts/semgrep-scan.ts:*)
   - Agent(sequant-qa-checker)
   - AgentOutputTool
 ---

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Skills no longer pre-approve broad shell access in `allowed-tools` (#1287). Bare `Bash` (`/fullsolve`, `/loop`, `/test`), `Bash(*)` (`/verify`), tool wildcards such as `Bash(git *)` and `Bash(gh *)` (`/assess`, `/solve`, `/improve`, `/upstream`, `/merger`), and runner wildcards such as `Bash(npx tsc:*)` and `Bash(node -e:*)` are replaced by the subcommands each skill runs, or removed. `/test`'s unrendered `Bash({{PM_RUN}} dev:*)` becomes literal `npm`/`pnpm`/`yarn`/`bun` dev entries. When you run these skills by hand, commands outside their list now ask for permission; `sequant run` phases are unaffected. A new gate test rejects these forms in all four skill copies.
 - `/qa` §6i counts changed `.github/workflows/*.yml` and `*.yaml` files in its diff-file list, so a `SEQUANT_MUTATION` marker naming a CI workflow step classifies `valid` instead of `test_not_in_diff` (#1276)
 
 ## [2.19.0] - 2026-10-01
