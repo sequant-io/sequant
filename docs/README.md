@@ -36,6 +36,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 ### Guides
 
 - [Write Issues Sequant Can Execute](guides/writing-issues.md) — The issue format Sequant plans and checks against, with a copy-paste template
+- [When QA Says AC_NOT_MET](guides/qa-not-met.md) — Read the gaps, then fix the code, let Sequant retry, or change the criterion
 - [Complete Workflow](guides/workflow.md) — Full workflow including post-QA patterns
 - [Customization](guides/customization.md) — Override templates safely
 - [MCP Integrations](guides/mcp-integrations.md) — Optional MCP server setup
