@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `/qa` §6i counts changed `.github/workflows/*.yml` and `*.yaml` files in its diff-file list, so a `SEQUANT_MUTATION` marker naming a CI workflow step classifies `valid` instead of `test_not_in_diff` (#1276)
+
 ## [2.19.0] - 2026-10-01
 
 ### Added
