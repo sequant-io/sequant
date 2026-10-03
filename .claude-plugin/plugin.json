@@ -6,7 +6,7 @@
     "name": "sequant-io",
     "email": "hello@sequant.io"
   },
-  "homepage": "https://github.com/sequant-io/sequant",
+  "homepage": "https://sequant.io",
   "repository": "https://github.com/sequant-io/sequant",
   "license": "MIT",
   "keywords": [
@@ -17,5 +17,7 @@
     "testing",
     "code-review",
     "automation"
-  ]
+  ],
+  "privacyPolicyUrl": "https://github.com/sequant-io/sequant/blob/main/PRIVACY.md",
+  "supportUrl": "https://github.com/sequant-io/sequant/issues"
 }
