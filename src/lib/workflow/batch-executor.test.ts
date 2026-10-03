@@ -10,6 +10,7 @@ import {
   buildLoopContext,
   buildQaVerdictComment,
   deriveFailureCategory,
+  latestPhaseResult,
   emitProgressLine,
   isBillingOrWindowHalt,
   windowHaltResumeAtMs,
@@ -1669,6 +1670,67 @@ describe("#1223: the PR body gets the latest exec pass's output", () => {
       execOutput?: string;
     };
     expect(opts.execOutput).toBe(`## Summary\nexec pass ${execPass}`);
+  });
+
+  it("hands createPR the latest QA pass's findings as follow-ups (#1249 AC-2)", async () => {
+    const finding = (description: string) => ({
+      category: "risk_gap" as const,
+      evidence: "src/x.ts:1",
+      description,
+      recommendedAction: "document" as const,
+    });
+    let qaPass = 0;
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        qaPass++;
+        return {
+          phase: "qa",
+          success: qaPass > 1,
+          durationSeconds: 10,
+          verdict: qaPass > 1 ? "AC_MET_BUT_NOT_A_PLUS" : "AC_NOT_MET",
+          summary: {
+            acMet: 1,
+            acTotal: 1,
+            gaps: [],
+            suggestions: [],
+            findings: [finding(`qa pass ${qaPass} follow-up`)],
+          },
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1249,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1249", branch: "feature/1249" },
+    });
+
+    expect(qaPass).toBe(2);
+    const opts = mockCreatePR.mock.calls.at(-1)!.at(-1) as {
+      followups?: Array<{ description: string }>;
+    };
+    expect(opts.followups?.map((f) => f.description)).toEqual([
+      "qa pass 2 follow-up",
+    ]);
+    // The after-exec calls run before any QA verdict exists for them.
+    const first = mockCreatePR.mock.calls[0].at(-1) as { followups?: unknown };
+    expect(first.followups).toBeUndefined();
+  });
+});
+
+describe("latestPhaseResult (#1249)", () => {
+  it("returns the last result for the phase, not the first", () => {
+    const results = [
+      { phase: "qa", success: false, verdict: "AC_NOT_MET" },
+      { phase: "exec", success: true },
+      { phase: "qa", success: true, verdict: "READY_FOR_MERGE" },
+    ] as PhaseResult[];
+    expect(latestPhaseResult(results, "qa")?.verdict).toBe("READY_FOR_MERGE");
+    expect(latestPhaseResult(results, "spec")).toBeUndefined();
   });
 });
 
