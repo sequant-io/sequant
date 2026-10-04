@@ -8,8 +8,8 @@
  * SOURCE OF TRUTH: .claude/skills/ is canonical. It is the working copy that
  * receives edits first; `templates/skills/` (consumed by `sequant init`/`sync`)
  * and `plugin/skills/` (the published Claude Code plugin) are MIRRORS generated
- * from it. The root `skills/` copy was retired in #1271. Reconcile drift in the direction .claude/skills -> mirrors (run --fix),
- * never the reverse. `.claude/skills` is canonical even when a mirror happens to
+ * from it (the root `skills/` copy was retired in #1271). Reconcile drift in
+ * the direction .claude/skills -> mirrors (run --fix), never the reverse. `.claude/skills` is canonical even when a mirror happens to
  * be longer — extra mirror lines are almost always stale, pre-refactor content.
  * See CONTRIBUTING.md ("Skill mirror sync") and issue #738.
  *

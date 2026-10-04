@@ -1,5 +1,5 @@
 /**
- * Anti-drift guard for the worked examples in `skills/assess/SKILL.md` (AC-36).
+ * Anti-drift guard for the worked examples in `.claude/skills/assess/SKILL.md` and its mirrors (AC-36).
  *
  * Regenerating the examples once is not enough — #823's root defect was that
  * hand-maintained examples drifted from each other over time and nothing

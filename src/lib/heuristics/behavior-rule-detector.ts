@@ -142,7 +142,7 @@ export interface BehaviorRuleDetection {
  * `.option()` chains in `bin/cli.ts`, `RunOptions` interface in
  * `src/commands/run.ts`) is a recurring rule-drift site — see the "CLI wiring
  * gap" pitfall called out in this project's CLAUDE.md memory. `templates/skills/`
- * and `skills/` are intentionally omitted — they mirror `.claude/skills/` 1:1
+ * and `plugin/skills/` are intentionally omitted — they mirror `.claude/skills/` 1:1
  * and including them would triple-count every hit.
  */
 const TOUCHPOINT_ROOTS = ["src/lib", "src/commands", "bin", ".claude/skills"];

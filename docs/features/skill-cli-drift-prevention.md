@@ -19,7 +19,7 @@ The assess skill smoke test (`src/lib/__tests__/assess-skill.test.ts`) verifies 
 
 2. **CLI flag accuracy:** Example commands and the "Other flags" section in the assess SKILL.md only reference flags registered via `.option()` in `bin/cli.ts`.
 
-3. **3-directory sync:** The assess SKILL.md content is identical across `.claude/skills/`, `skills/`, and `templates/skills/`.
+3. **Mirror sync:** The assess SKILL.md content is identical across `.claude/skills/`, `templates/skills/`, and `plugin/skills/`.
 
 ## What to Expect
 
@@ -55,11 +55,11 @@ This list appears in the assess skill's Step 4 section after the label-to-phase 
 
 **Solution:** Either fix the SKILL.md example to use the correct flag, or register the missing flag in `bin/cli.ts` if it should exist.
 
-### Test fails: 3-directory sync
+### Test fails: skill mirror sync
 
 **Symptoms:** One of the three SKILL.md copies differs from the others.
 
-**Solution:** Copy the authoritative version (`.claude/skills/assess/SKILL.md`) to `skills/assess/SKILL.md` and `templates/skills/assess/SKILL.md`.
+**Solution:** Copy the authoritative version (`.claude/skills/assess/SKILL.md`) to `templates/skills/assess/SKILL.md` and `plugin/skills/assess/SKILL.md` — `npm run sync:skills` does this.
 
 ---
 

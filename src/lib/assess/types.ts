@@ -14,7 +14,7 @@
 import { z } from "zod";
 
 /**
- * The fixed action vocabulary from `skills/assess/SKILL.md`. Every assessed
+ * The fixed action vocabulary from `.claude/skills/assess/SKILL.md`. Every assessed
  * issue gets exactly one.
  */
 export const AssessActionSchema = z.enum([
