@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `/qa` §6i counts changed `.github/workflows/*.yml` and `*.yaml` files in its diff-file list, so a `SEQUANT_MUTATION` marker naming a CI workflow step classifies `valid` instead of `test_not_in_diff` (#1276)
+- A quality loop that ends `qa AC_NOT_MET → loop → qa NEEDS_VERIFICATION` records `awaiting_verification` instead of `ready_for_merge`, and the PR-body QA note and the MCP `sequant_run` result (`verdict`, `acMet`/`acTotal`, `gaps`, `findings`) report the latest qa pass, not the first (#1245). The latest-attempt accessor moved to `src/lib/workflow/latest-phase.ts`; the failed-phase scans in `deriveFailureCategory` and `run-display.ts` use it too
 
 ## [2.19.0] - 2026-10-01
 

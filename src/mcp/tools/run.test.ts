@@ -453,6 +453,58 @@ describe("buildStructuredResponse — qa summary (#1200 AC-1)", () => {
     },
   );
 
+  it("reports the latest qa entry when a quality loop recorded two (#1245 AC-3)", () => {
+    const qa = (
+      verdict: "AC_NOT_MET" | "NEEDS_VERIFICATION",
+      gap: string,
+      finding: string,
+    ) => ({
+      phase: "qa" as const,
+      issueNumber: 100,
+      startTime: "2026-03-23T10:03:00.000Z",
+      endTime: "2026-03-23T10:04:00.000Z",
+      durationSeconds: 60,
+      status: "success" as const,
+      verdict,
+      summary: {
+        acMet: verdict === "AC_NOT_MET" ? 1 : 3,
+        acTotal: 3,
+        gaps: [gap],
+        suggestions: [],
+        findings: [
+          {
+            category: "test_gap" as const,
+            evidence: "e",
+            description: finding,
+            recommendedAction: "fix_now" as const,
+          },
+        ],
+      },
+    });
+    const runLog = makeRunLog({
+      issues: [
+        {
+          issueNumber: 100,
+          title: "Test issue",
+          labels: [],
+          status: "success",
+          phases: [
+            qa("AC_NOT_MET", "first-pass gap", "first-pass finding"),
+            qa("NEEDS_VERIFICATION", "second-pass gap", "second-pass finding"),
+          ],
+          totalDurationSeconds: 120,
+        },
+      ],
+    });
+    const issue = buildStructuredResponse(runLog, "", "success").issues[0];
+    expect(issue.verdict).toBe("NEEDS_VERIFICATION");
+    expect(issue.acMet).toBe(3);
+    expect(issue.gaps).toEqual(["second-pass gap"]);
+    expect(issue.findings?.map((f) => f.description)).toEqual([
+      "second-pass finding",
+    ]);
+  });
+
   it("omits qa-summary fields when qa phase has no summary", () => {
     const runLog = makeRunLog(); // default fixture's qa phase has no `summary`
     const response = buildStructuredResponse(runLog, "", "success");
