@@ -13,14 +13,10 @@ import {
   classifyMutationMarker,
   type MutationMarker,
 } from "./mutation-marker.js";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = join(__dirname, "..", "..", "..");
-const SKILL_COPIES = [
-  "skills",
-  ".claude/skills",
-  "templates/skills",
-  "plugin/skills",
-];
+const SKILL_COPIES = SKILL_ROOTS;
 
 /** The text of §6i, from its heading to the next `###` heading. */
 function section6i(copy: string): string {

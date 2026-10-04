@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 // Extended-regex, assembled from parts: `packageManager` followed by a
 // coalescing operator (`??` or `||`) OR a direct `:` assignment, and then the
@@ -25,11 +26,7 @@ const BANNED_PATTERN = [
   "(\"npm\"|'npm'|DEFAULT_PM[A-Za-z_]*)",
 ].join("");
 
-const SETUP_SKILL_MIRRORS = [
-  "templates/skills/setup/SKILL.md",
-  ".claude/skills/setup/SKILL.md",
-  "skills/setup/SKILL.md",
-];
+const SETUP_SKILL_MIRRORS = SKILL_ROOTS.map((root) => `${root}/setup/SKILL.md`);
 
 describe("#932: packageManager literal npm fallback gate", () => {
   it('932: no source file falls back to a literal "npm" for an undeclared packageManager', () => {

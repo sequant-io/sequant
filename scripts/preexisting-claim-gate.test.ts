@@ -21,13 +21,10 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { collectFiles } from "./check-skill-sync.js";
+import { collectFiles, SKILL_ROOTS } from "./check-skill-sync.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
-
-/** Every mirrored skill root, canonical first. */
-const SKILL_ROOTS = [".claude/skills", "templates/skills", "skills"];
 
 /**
  * Absolute paths to one skill's `SKILL.md` in each root, located structurally.
@@ -62,10 +59,7 @@ function sectionLines(content: string, heading: string): string[] {
   for (const line of lines.slice(start + 1)) {
     if (line.startsWith("```")) {
       fenced = !fenced;
-    } else if (
-      !fenced &&
-      (line.startsWith("## ") || line.startsWith("### "))
-    ) {
+    } else if (!fenced && (line.startsWith("## ") || line.startsWith("### "))) {
       break;
     }
     out.push(line);

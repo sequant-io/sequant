@@ -27,7 +27,7 @@ git rev-parse --show-toplevel  # Gets project root
 Plugin hooks use `${CLAUDE_PLUGIN_ROOT}` for self-reference:
 
 ```json
-// hooks/hooks.json
+// plugin/hooks/hooks.json
 {
   "hooks": {
     "PreToolUse": [{
@@ -63,9 +63,9 @@ Skills reference scripts via project-relative paths or rely on tools being in PA
 | `scripts/new-feature.sh` | Uses `git rev-parse` for project root |
 | `scripts/cleanup-worktree.sh` | Uses `git rev-parse` for project root |
 | `scripts/list-worktrees.sh` | Uses `git worktree list` (git-relative) |
-| `hooks/hooks.json` | Uses `${CLAUDE_PLUGIN_ROOT}` |
-| `hooks/pre-tool.sh` | Uses `$CLAUDE_PROJECT_DIR` or falls back to `git rev-parse` |
-| `hooks/post-tool.sh` | Uses `$CLAUDE_PROJECT_DIR` or falls back to `git rev-parse` |
+| `plugin/hooks/hooks.json` | Uses `${CLAUDE_PLUGIN_ROOT}` |
+| `plugin/hooks/pre-tool.sh` | Uses `$CLAUDE_PROJECT_DIR` or falls back to `git rev-parse` |
+| `plugin/hooks/post-tool.sh` | Uses `$CLAUDE_PROJECT_DIR` or falls back to `git rev-parse` |
 
 ### ⚠️ Template Tokens
 
@@ -87,7 +87,7 @@ Some skills use template tokens that need substitution:
 |------|---------------|--------|
 | `scripts/release.sh` | `npm run build`, `npm publish` | Release-only, not user-facing |
 | `scripts/new-feature.sh` | `npm install` | Worktree dependency install |
-| `skills/exec/SKILL.md` | `npm test`, `npm run build` | With `{{PM_RUN}}` token |
+| `plugin/skills/exec/SKILL.md` | `npm test`, `npm run build` | With `{{PM_RUN}}` token |
 
 **Mitigation:**
 - Hooks detect package manager (npm, yarn, pnpm, bun) automatically

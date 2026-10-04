@@ -16,8 +16,11 @@ import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
+/** check-skill-sync.ts reports "N/N match" over the source plus every mirror. */
+const ROOT_COUNT = SKILL_ROOTS.length;
 
 const TOUCHED_FILES = [
   "spec/SKILL.md",
@@ -29,7 +32,7 @@ describe("AC-4: skill-sync 3-dir mirror for behavior-rule files", () => {
   describe("happy path: all 3 mirrors of touched files exist", () => {
     for (const rel of TOUCHED_FILES) {
       it(`exists in all 3 mirror dirs: ${rel}`, () => {
-        for (const root of [".claude/skills", "templates/skills", "skills"]) {
+        for (const root of SKILL_ROOTS) {
           const full = path.join(REPO_ROOT, root, rel);
           expect(fs.existsSync(full), `Missing: ${full}`).toBe(true);
         }
@@ -57,12 +60,14 @@ describe("AC-4: skill-sync 3-dir mirror for behavior-rule files", () => {
     })();
 
     for (const rel of TOUCHED_FILES) {
-      it(`reports synced 4/4 for ${rel}`, () => {
+      it(`reports synced ${ROOT_COUNT}/${ROOT_COUNT} for ${rel}`, () => {
         const escaped = rel.replace(/[/.]/g, (m) => "\\" + m);
-        const syncedRe = new RegExp(`synced\\s+${escaped}\\s+—\\s+4\\/4 match`);
+        const syncedRe = new RegExp(
+          `synced\\s+${escaped}\\s+—\\s+${ROOT_COUNT}\\/${ROOT_COUNT} match`,
+        );
         expect(
           syncedRe.test(output),
-          `Expected '${rel}' synced 4/4, got:\n${output}`,
+          `Expected '${rel}' synced ${ROOT_COUNT}/${ROOT_COUNT}, got:\n${output}`,
         ).toBe(true);
         // And explicitly NOT diverged or missing for our files.
         const divergedRe = new RegExp(`DIVERGED\\s+${escaped}`);

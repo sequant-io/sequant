@@ -36,8 +36,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
 import { PROMPT_CONTEXT_SENTINEL } from "../workflow/phase-executor.js";
-
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 /**
  * Sentinel markers as the runtime actually emits them (`getPhasePrompt`).

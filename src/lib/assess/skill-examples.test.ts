@@ -1,5 +1,5 @@
 /**
- * Anti-drift guard for the worked examples in `skills/assess/SKILL.md` (AC-36).
+ * Anti-drift guard for the worked examples in `.claude/skills/assess/SKILL.md` and its mirrors (AC-36).
  *
  * Regenerating the examples once is not enough — #823's root defect was that
  * hand-maintained examples drifted from each other over time and nothing
@@ -21,12 +21,9 @@ import stringWidth from "string-width";
 
 import { GEOMETRY, render } from "./renderer.js";
 import { parseAssessResult } from "./types.js";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
-const SKILL_DIRS = [
-  "skills/assess/SKILL.md",
-  ".claude/skills/assess/SKILL.md",
-  "templates/skills/assess/SKILL.md",
-];
+const SKILL_DIRS = SKILL_ROOTS.map((root) => `${root}/assess/SKILL.md`);
 
 const repoRoot = new URL("../../../", import.meta.url);
 

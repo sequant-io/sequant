@@ -14,17 +14,16 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { collectFiles } from "../../../scripts/check-skill-sync.js";
+import {
+  collectFiles,
+  SKILL_ROOTS,
+} from "../../../scripts/check-skill-sync.js";
 import { buildAutomatedPRBody } from "../workflow/worktree-manager.js";
 import { parseMutationMarkers } from "../workflow/mutation-marker.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(here, "../../..");
-const SKILL_DIRS = [
-  ".claude/skills/exec",
-  "skills/exec",
-  "templates/skills/exec",
-];
+const SKILL_DIRS = SKILL_ROOTS.map((root) => `${root}/exec`);
 
 const SKIP_LINE =
   "**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - except step 1";

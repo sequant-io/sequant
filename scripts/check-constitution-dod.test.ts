@@ -20,6 +20,7 @@ import {
   resolveQaSkillPath,
 } from "./generate-constitution-dod.js";
 import { DEFAULT_SETTINGS } from "../src/lib/settings.js";
+import { SKILL_ROOTS } from "./check-skill-sync.js";
 import {
   extractDodSection,
   BEGIN_MARKER,
@@ -35,11 +36,9 @@ const CONSTITUTION_PATH = join(
   "memory",
   "constitution.md",
 );
-const SPEC_SKILL_PATHS = [
-  join(PROJECT_ROOT, ".claude", "skills", "spec", "SKILL.md"),
-  join(PROJECT_ROOT, "templates", "skills", "spec", "SKILL.md"),
-  join(PROJECT_ROOT, "skills", "spec", "SKILL.md"),
-];
+const SPEC_SKILL_PATHS = SKILL_ROOTS.map((root) =>
+  join(PROJECT_ROOT, root, "spec", "SKILL.md"),
+);
 const README_PATH = join(PROJECT_ROOT, "README.md");
 const MARKETPLACE_SCRIPT_PATH = join(
   PROJECT_ROOT,

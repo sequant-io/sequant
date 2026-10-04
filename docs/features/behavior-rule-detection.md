@@ -77,7 +77,7 @@ Issue #533 (*"default `/assess` spec phase ON, remove bug/docs auto-skip"*) ship
 - **Cheap when not applicable.** When no AC triggers, both phases skip the grep — no perceptible cost.
 - **Heuristic, not perfect.** Some rules are inline conditionals with no named symbol. The `/qa` survival check falls back to inverse English phrasing search when no symbol candidates match.
 - **Detection only — no auto-fix.** The user / `/exec` applies fixes. `/spec` surfaces; `/qa` verifies.
-- **Internal CI behavior.** Edits to skill prompts must stay in sync across `.claude/skills/`, `templates/skills/`, and `skills/`. The 3-dir sync check verifies this; users typically don't see it.
+- **Internal CI behavior.** Edits to skill prompts must stay in sync across `.claude/skills/`, `templates/skills/`, and `plugin/skills/`. The skill mirror sync check verifies this; users typically don't see it.
 
 ## Reference
 

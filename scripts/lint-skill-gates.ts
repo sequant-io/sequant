@@ -51,15 +51,19 @@ const PROJECT_ROOT = join(__dirname, "..");
 /**
  * Skill roots, in priority order. Only the FIRST one that exists is scanned.
  *
- * Unlike `lint-skill-calls.ts` (which scans all three because a
+ * Unlike `lint-skill-calls.ts` (which scans every root because a
  * runtime-dangerous call in any copy is a live hazard), scanning the mirrors
  * here would report every violation three times. `.claude/skills` is canonical
  * and `lint:skill-sync` already fails the build on mirror drift, so linting
  * the canonical copy is sufficient. Consumer projects installed via
  * `sequant init` have `.claude/skills` too; the later entries are fallbacks
  * for a repo layout that ships only a mirror.
+ *
+ * Deliberately local rather than `SKILL_ROOTS` from `check-skill-sync.ts`:
+ * this is a first-match precedence list that also runs in consumer layouts,
+ * not the set of mirrors (#1271).
  */
-const SCAN_ROOTS = [".claude/skills", "templates/skills", "skills"];
+const SCAN_ROOTS = [".claude/skills", "templates/skills", "plugin/skills"];
 
 /** Marker that identifies a skill as having a verdict algorithm at all. */
 const ALGORITHM_MARKER = "Verdict Determination Algorithm";

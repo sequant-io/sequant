@@ -117,7 +117,7 @@ describe("lintSkillCalls (filesystem)", () => {
       'Skill(skill: "sequant:loop", args: "1")\n',
     );
     writeSkill(
-      "skills/example/SKILL.md",
+      "plugin/skills/example/SKILL.md",
       'Skill(skill: "sequant:loop", args: "1")\n',
     );
     const result = lintSkillCalls(tmp);
@@ -132,7 +132,7 @@ describe("lintSkillCalls (filesystem)", () => {
     );
     writeSkill("templates/skills/bar/SKILL.md", "no calls here\n");
     writeSkill(
-      "skills/baz/SKILL.md",
+      "plugin/skills/baz/SKILL.md",
       'Skill(skill: "security-review", args: "1")\n',
     );
     const result = lintSkillCalls(tmp);
@@ -144,7 +144,7 @@ describe("lintSkillCalls (filesystem)", () => {
     );
     expect(byName["loop"].file).toBe(".claude/skills/foo/SKILL.md");
     expect(byName["loop"].line).toBe(2);
-    expect(byName["security-review"].file).toBe("skills/baz/SKILL.md");
+    expect(byName["security-review"].file).toBe("plugin/skills/baz/SKILL.md");
   });
 
   it("scans every .md file under skill mirror dirs, not just SKILL.md", () => {

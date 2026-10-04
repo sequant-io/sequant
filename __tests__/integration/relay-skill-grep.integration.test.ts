@@ -5,8 +5,7 @@ import { describe, it, expect } from "vitest";
 import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-
-const SKILL_ROOTS = [".claude/skills", "templates/skills", "skills"] as const;
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 function listSkillMdFiles(root: string): string[] {
   if (!fs.existsSync(root)) return [];
