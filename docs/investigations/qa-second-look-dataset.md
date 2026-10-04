@@ -13,7 +13,7 @@ The README says a study of 27 fresh second-look `/qa` reviews found that 12 (44%
 
 - **27 independent reviews were recovered** (30 rows; 3 sessions repeat a review already in the table). The count matches the study's n=27. The recovered list may still differ from the lost one (see "Reconciliation").
 - **10 of 27 (37%) caught a would-ship bug, not 12 of 27 (44%).** 13 found only quality gaps and 4 were clean. The original split was 12/11/2.
-- **7 of the 10 catches landed only after the human's follow-up turn** ("any gaps?"). 3 were in the first verdict. None needed a step that orchestrated QA skips. **The second look's value is mostly the human-driven second pass, not the fresh session.** The README's attribution should change to match (follow-up, not filed here: publication is out of scope).
+- **7 of the 10 catches landed only after the human's follow-up turn** ("any gaps?"). 3 were in the first verdict. None needed a step that orchestrated QA skips. **The second look's value is mostly the human-driven second pass, not the fresh session.** The docs that still cite 44% and attribute it to the fresh session are corrected in #1309. They are `docs/reference/ready-command.md`, `docs/features/run-ready-gate.md`, `docs/investigations/ready-gate-backtest.md` and `docs/internal/what-weve-built.md`; the README has no such claim.
 - Every session but one asked about gaps, usually on turn 1, the human's first reply. A reviewer that never gets that prompt is a different treatment, and that comparison is #1068's to make.
 - The fixture plants 5 defects, one per class the dataset caught. The graders reproduce the hand-written example exactly (recall 0.60, precision 0.60). Calibration runs (AC-6/7/8) are **pending the runner**.
 
@@ -162,9 +162,9 @@ Ground truth: [`ground-truth.json`](qa-seeded-fixture/ground-truth.json). Each i
 
 `scripts/analytics/qa-seeded-grade.ts`:
 
-- **recall** = planted identifiers named anywhere in the verdict ÷ planted identifiers.
+- **recall** = planted identifiers named in at least one finding ÷ planted identifiers. A mention outside a finding does not count. For example, an AC row marked `MET` that names `formatNotes`, or a Risk Assessment note naming `readNotesFile`, is not a catch.
 - **precision** = findings naming ≥1 planted identifier ÷ findings. With 0 findings it is undefined (`n/a`), not 0.
-- **finding:** every top-level list item in a section whose heading names issues (blocker, issue, gap, finding, concern, problem, defect, bug, risk, recommendation), plus every table row marking an AC not met (`AC_NOT_MET`, `NOT_MET`, `❌`, "not met").
+- **finding:** every top-level list item in a section whose heading names issues (blocker, issue, gap, finding, concern, problem, defect, bug, recommendation), plus every table row marking an AC not met or partially met (`AC_NOT_MET`, `NOT_MET`, `PARTIALLY_MET`, `❌`, "not met", "partially met"). **Risk Assessment is excluded.** The `/qa` template fills it in on every review (likely failure mode, not tested, sibling sites), so its bullets are analysis, not findings. Counting them scored a template-shaped verdict at precision 0.00. A test in `qa-seeded-grade.test.ts` pins this behaviour against a verdict shaped like a real posted review.
 - **match:** a literal identifier with no word character or `.` before it and no word character after it. `readNotesFileSync` does not match `readNotesFile`, and `10.0.0.0` does not match `0.0.0.0`.
 
 Worked example: [`sample-verdict.md`](qa-seeded-fixture/sample-verdict.md) names 3 of the 5 identifiers and lists 2 unrelated issues.
@@ -175,7 +175,7 @@ recall 0.60 (3/5)
 precision 0.60 (3/5)
 ```
 
-**Known bias:** a verdict that describes a defect without writing its identifier is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched.
+**Known bias:** a verdict that describes a defect without writing its identifier is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched. The opposite bias, a neutral mention counted as a catch, is closed by reading recall from findings only. A finding that names an identifier while calling it correct would still count. AC-7's human pass is where that shows up.
 
 ## Calibration: ⏳ pending-runner (AC-6, AC-7, AC-8)
 
