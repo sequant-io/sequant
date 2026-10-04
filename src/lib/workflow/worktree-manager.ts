@@ -1801,6 +1801,16 @@ function qaVerdictNote(verdict?: string): string | null {
 }
 
 /**
+ * Render the "QA has not run" PR-body line (#1246), naming the phases the run
+ * did execute. Shown on a PR whose run has not (yet) reached qa — between exec
+ * and qa, or for good when the run skipped or never reached qa.
+ */
+function qaNotRunNote(issueNumber: number, phasesRun: string[]): string {
+  const ran = phasesRun.length > 0 ? phasesRun.join(", ") : "none";
+  return `> **QA has not run** — phases run: ${ran}. This PR has not been reviewed by sequant's QA phase; run \`sequant run ${issueNumber} --phases qa\` before merging.`;
+}
+
+/**
  * GitHub's closing keywords (case-insensitive), the verbs that auto-close a
  * linked issue on merge when immediately followed by `#N`. See
  * https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue
@@ -2060,6 +2070,11 @@ export function isAutomatedPRBody(body: string | undefined): boolean {
  * @param opts.followups The latest QA pass's findings (#1249 AC-2); its
  *   `document` findings render as a `## Follow-ups` checklist via
  *   {@link renderFollowups}.
+ * @param opts.qaNotRun Set when QA has not run for this PR (#1246): neither
+ *   this run nor an earlier one recorded a qa phase. Renders the "QA has not
+ *   run" line naming `phasesRun`, in the verdict-note slot — a ready-gate
+ *   report or a QA verdict always takes precedence, so the body never carries
+ *   both.
  * @internal Exported for testing
  */
 export function buildAutomatedPRBody(
@@ -2072,6 +2087,7 @@ export function buildAutomatedPRBody(
     execOutput?: string;
     execSummary?: string;
     followups?: GapFinding[];
+    qaNotRun?: { phasesRun: string[] };
   },
 ): string {
   const linkMode = opts?.linkMode ?? "closes";
@@ -2095,6 +2111,10 @@ export function buildAutomatedPRBody(
     const note = qaVerdictNote(opts?.qaVerdict);
     if (note) {
       bodyLines.push(note, ``);
+    } else if (opts?.qaNotRun && !opts.qaVerdict) {
+      // #1246 AC-2: a QA verdict of any kind (READY_FOR_MERGE included, which
+      // renders no note) means QA ran, so the not-run line never appears.
+      bodyLines.push(qaNotRunNote(issueNumber, opts.qaNotRun.phasesRun), ``);
     }
   }
   // #1249 AC-2: every deferred QA finding reaches the PR with its resolution.
@@ -2154,6 +2174,7 @@ export function buildAutomatedPRBody(
  * @param opts.execSummary Exec summary recorded on the issue's state by an
  *   earlier run (#1247 AC-3), the fallback when `execOutput` has none.
  * @param opts.followups The latest QA pass's findings (#1249 AC-2).
+ * @param opts.qaNotRun Set when QA has not run for this PR (#1246 AC-1).
  * @returns PRCreationResult with PR info or error
  * @internal Exported for testing
  */
@@ -2173,6 +2194,7 @@ export function createPR(
     execOutput?: string;
     execSummary?: string;
     followups?: GapFinding[];
+    qaNotRun?: { phasesRun: string[] };
   },
 ): PRCreationResult {
   const github = new GitHubProvider();
@@ -2189,6 +2211,7 @@ export function createPR(
     execOutput: opts?.execOutput,
     execSummary: opts?.execSummary,
     followups: opts?.followups,
+    qaNotRun: opts?.qaNotRun,
   });
 
   const pushBranch = (): PRCreationResult | null => {
