@@ -610,7 +610,7 @@ export const runToolInputSchema = {
     .describe(
       "Comma-separated workflow phases to execute. " +
         "Valid values: 'spec' (plan and review AC), 'exec' (implement in worktree), 'qa' (code review and verification). " +
-        "Default: 'spec,exec,qa'. Example: 'spec,exec' to skip QA.",
+        "Default: 'spec,exec,qa'. A run without 'qa' (e.g. 'spec,exec') still opens a PR, marked as not reviewed by QA.",
     ),
   qualityLoop: z
     .boolean()

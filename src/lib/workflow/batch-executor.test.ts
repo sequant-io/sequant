@@ -52,6 +52,11 @@ vi.mock("./worktree-manager.js", async (importOriginal) => ({
   extractExecSummary: (
     await importOriginal<typeof import("./worktree-manager.js")>()
   ).extractExecSummary,
+  // #1246: real body builder, so tests can render the body createPR would
+  // publish from the arguments it was handed.
+  buildAutomatedPRBody: (
+    await importOriginal<typeof import("./worktree-manager.js")>()
+  ).buildAutomatedPRBody,
   createCheckpointCommit: vi.fn(),
   rebaseBeforePR: vi.fn(),
   createPR: vi.fn(),
@@ -108,6 +113,7 @@ import {
   recordIssueCompletion,
 } from "./batch-executor.js";
 import {
+  buildAutomatedPRBody,
   createCheckpointCommit,
   createPR,
   filterResumedPhases,
@@ -3636,5 +3642,236 @@ describe("#1250: a spec-phase SPEC_DIVERGENCE halts the run before exec", () => 
     );
 
     expect(parsed).toEqual({ acs: "AC-2", message: "lever is wrong" });
+  });
+});
+
+describe("#1246: a PR from a run QA has not reviewed says so", () => {
+  /**
+   * The body `createPR` would publish for one recorded call: the same
+   * `buildAutomatedPRBody` inputs createPR forwards (verdict = 8th positional,
+   * ready-gate report = 9th, options object last).
+   */
+  function bodyOf(call: unknown[]): string {
+    const opts = (call.at(-1) ?? {}) as {
+      qaNotRun?: { phasesRun: string[] };
+    };
+    return buildAutomatedPRBody(call[1] as number, {
+      qaVerdict: call[7] as string | undefined,
+      readyGateReport: call[8] as string | undefined,
+      qaNotRun: opts.qaNotRun,
+    });
+  }
+  const NOT_RUN = "QA has not run";
+
+  function stateWithQa(status: string) {
+    return {
+      getIssueState: vi.fn(async () => ({
+        phases: { qa: { status } },
+      })),
+      initializeIssue: vi.fn(),
+      updateWorktreeInfo: vi.fn(),
+      updatePhaseStatus: vi.fn(),
+      updateResumeHandle: vi.fn(),
+      updateWindowHalt: vi.fn(),
+      clearWindowHalt: vi.fn(),
+      updateAutoWait: vi.fn(),
+      updateIssueStatus: vi.fn(),
+      updatePRInfo: vi.fn(),
+      updateExecSummary: vi.fn(),
+    };
+  }
+
+  const qaResult = (verdict: string, success = true) =>
+    ({ phase: "qa", success, durationSeconds: 10, verdict }) as PhaseResult;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 1246,
+      prUrl: "https://example.test/pr/1246",
+    });
+    // Earlier blocks (#920) leave `hasExecChanges` returning false.
+    mockHasExecChanges.mockReturnValue(true);
+  });
+
+  it("AC-1: a spec,exec run's PR names the phases that ran", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["spec", "exec"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalled();
+    for (const call of mockCreatePR.mock.calls) {
+      expect(bodyOf(call)).toContain(
+        "> **QA has not run** — phases run: spec, exec.",
+      );
+    }
+  });
+
+  it("AC-1: an exec re-run shows the line even when an earlier run completed qa", async () => {
+    // The earlier qa reviewed code this run's exec has since changed.
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+    const ctx = makeCtx({
+      issueNumber: 1246,
+      config: { phases: ["exec"], qualityLoop: false },
+      options: { autoDetectPhases: false },
+    });
+    ctx.services.stateManager = stateWithQa("completed") as never;
+    await runIssueWithLogging({
+      ...ctx,
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalled();
+    for (const call of mockCreatePR.mock.calls) {
+      expect(bodyOf(call)).toContain(
+        "> **QA has not run** — phases run: exec.",
+      );
+    }
+  });
+
+  it("AC-1: a quality-loop iteration's after-exec update shows the line again", async () => {
+    // [exec, qa AC_NOT_MET, loop, exec, qa]: the second exec's update must not
+    // read as reviewed — QA has not seen that exec's code yet.
+    let qaPass = 0;
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        qaPass++;
+        return qaResult(
+          qaPass > 1 ? "AC_MET_BUT_NOT_A_PLUS" : "AC_NOT_MET",
+          qaPass > 1,
+        );
+      }
+      return successResult(phase as string);
+    });
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(qaPass).toBe(2);
+    const bodies = mockCreatePR.mock.calls.map((c) => bodyOf(c));
+    // Two after-exec updates (one per iteration), then the post-QA update.
+    expect(bodies.length).toBeGreaterThanOrEqual(3);
+    for (const afterExec of bodies.slice(0, -1)) {
+      expect(afterExec).toContain(NOT_RUN);
+      expect(afterExec).not.toContain("loop");
+    }
+    expect(bodies.at(-1)).not.toContain(NOT_RUN);
+    expect(bodies.at(-1)).toContain("QA verdict: AC_MET_BUT_NOT_A_PLUS");
+  });
+
+  it("AC-1: a failed earlier qa does not count as QA having run", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      successResult(phase as string),
+    );
+    const ctx = makeCtx({
+      issueNumber: 1246,
+      config: { phases: ["exec"], qualityLoop: false },
+      options: { autoDetectPhases: false },
+    });
+    ctx.services.stateManager = stateWithQa("failed") as never;
+    await runIssueWithLogging({
+      ...ctx,
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(bodyOf(mockCreatePR.mock.calls.at(-1)!)).toContain(
+      "> **QA has not run** — phases run: exec.",
+    );
+  });
+
+  it("AC-2/AC-3: READY_FOR_MERGE — the after-exec body has the line, the post-QA body has neither line nor note", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      phase === "qa" ? qaResult("READY_FOR_MERGE") : successResult(phase),
+    );
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(2);
+    const afterExec = bodyOf(mockCreatePR.mock.calls[0]);
+    const afterQa = bodyOf(mockCreatePR.mock.calls[1]);
+    expect(afterExec).toContain("> **QA has not run** — phases run: exec.");
+    expect(afterQa).not.toContain(NOT_RUN);
+    expect(afterQa).not.toContain("QA verdict");
+    // AC-3: the reviewed body is today's body, byte for byte.
+    expect(afterQa).toBe(
+      buildAutomatedPRBody(1246, { qaVerdict: "READY_FOR_MERGE" }),
+    );
+  });
+
+  it("AC-2: AC_MET_BUT_NOT_A_PLUS — the post-QA body carries only the verdict note", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      phase === "qa" ? qaResult("AC_MET_BUT_NOT_A_PLUS") : successResult(phase),
+    );
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    const afterQa = bodyOf(mockCreatePR.mock.calls.at(-1)!);
+    expect(afterQa).toContain("QA verdict: AC_MET_BUT_NOT_A_PLUS");
+    expect(afterQa).not.toContain(NOT_RUN);
+    expect(
+      (mockCreatePR.mock.calls.at(-1)!.at(-1) as { qaNotRun?: unknown })
+        .qaNotRun,
+    ).toBeUndefined();
+  });
+
+  it("AC-2: a later qa-only run on the same PR (#1198) removes the line", async () => {
+    mockExecutePhase.mockResolvedValue(qaResult("READY_FOR_MERGE"));
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    expect(bodyOf(mockCreatePR.mock.calls[0])).not.toContain(NOT_RUN);
+  });
+
+  it("a qa that fails leaves the after-exec line in place (no post-QA update)", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      phase === "qa" ? qaResult("AC_NOT_MET", false) : successResult(phase),
+    );
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    expect(bodyOf(mockCreatePR.mock.calls[0])).toContain(NOT_RUN);
   });
 });
