@@ -57,6 +57,8 @@ const BROAD_TOOLS = [
   "python3",
   "uv",
   "deno",
+  "curl",
+  "wget",
 ];
 
 /** Entries starting with one of these run code the entry cannot pin down. */
@@ -133,6 +135,19 @@ function violation(entry: string): string | null {
   // leaves the subcommand to the wildcard: `git -C *` is `git *`.
   if (/^(git -[Cc]|gh (-R|--repo)) /.test(cmd) && cmd.endsWith("*")) {
     return "wildcard after a global option, before the subcommand (AC-1)";
+  }
+  // The portal reads `npm --version:*` as any npm command: a flag first
+  // leaves the subcommand to the wildcard.
+  if (
+    /^(npm|yarn|pnpm|bun|bunx|node|python3?|pip3?|uv|deno) -/.test(cmd) &&
+    cmd.endsWith("*")
+  ) {
+    return "package-manager or runner flag followed by a wildcard (AC-2)";
+  }
+  // A relative path names whatever file sits there in the current folder,
+  // not a file the plugin ships.
+  if (/^\.\.?\//.test(cmd) && cmd.endsWith("*")) {
+    return "relative-path script with a wildcard (AC-2)";
   }
   if (
     RUNNER_PREFIXES.some((p) => cmd.startsWith(p)) &&

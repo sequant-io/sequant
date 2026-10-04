@@ -31,9 +31,6 @@ allowed-tools:
   - Bash(git commit:*)
   - Bash(git push:*)
   - Bash(git worktree:*)
-  - Bash(./scripts/cleanup-worktree.sh:*)
-  - Bash(./scripts/new-feature.sh:*)
-  - Bash(./scripts/list-worktrees.sh:*)
   - Bash(npx sequant worktree resolve:*)
 ---
 

@@ -22,11 +22,7 @@ allowed-tools:
   - Bash(grep:*)
   - Bash(head:*)
   - Bash(node --version)
-  - Bash(npm --version:*)
   - Bash(which:*)
-  - Bash(yarn --version:*)
-  - Bash(pnpm --version:*)
-  - Bash(curl:*)
 ---
 
 <!-- sequant:local-override -->

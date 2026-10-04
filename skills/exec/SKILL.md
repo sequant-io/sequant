@@ -25,8 +25,6 @@ allowed-tools:
   - Bash(git push:*)
   - Bash(git worktree:*)
   # Worktree management
-  - Bash(./scripts/new-feature.sh:*)
-  - Bash(./scripts/cleanup-worktree.sh:*)
   - Bash(npx sequant worktree resolve:*)
   - Bash(npx sequant worktree verify:*)
   # GitHub CLI
