@@ -82,6 +82,7 @@ import type { ExecutionConfig, PhaseResult, RunOptions } from "./types.js";
 import type { PhaseMarker } from "./state-schema.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
 import type { SequantSettings } from "../settings.js";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 const LADDER = ["sonnet", "opus", "fable"];
 
@@ -1262,11 +1263,9 @@ describe("971 AC-4: a SPEC_DIVERGENCE marker halts without escalating", () => {
   it("the exec and loop skills tell agents when to emit the marker, in all three mirrored copies", async () => {
     const { readFileSync } = await import("fs");
     for (const skill of ["exec", "loop"]) {
-      const copies = [
-        `templates/skills/${skill}/SKILL.md`,
-        `.claude/skills/${skill}/SKILL.md`,
-        `skills/${skill}/SKILL.md`,
-      ].map((f) => readFileSync(f, "utf8"));
+      const copies = SKILL_ROOTS.map((root) =>
+        readFileSync(`${root}/${skill}/SKILL.md`, "utf8"),
+      );
 
       // Scoped to the section the AC is about, not the whole file: matching
       // anywhere would let an unrelated mention of the marker satisfy the gate.

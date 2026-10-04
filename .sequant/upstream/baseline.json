@@ -29,7 +29,7 @@
       "templates/hooks/pre-tool.sh",
       "templates/hooks/post-tool.sh",
       "templates/hooks/capture-tokens.sh",
-      "hooks/hooks.json"
+      "plugin/hooks/hooks.json"
     ]
   },
   "mcpServers": {
@@ -88,17 +88,17 @@
   "dependencyMap": {
     "PreToolUse": [
       "templates/hooks/pre-tool.sh",
-      "hooks/hooks.json",
+      "plugin/hooks/hooks.json",
       "templates/settings.json"
     ],
     "PostToolUse": [
       "templates/hooks/post-tool.sh",
-      "hooks/hooks.json",
+      "plugin/hooks/hooks.json",
       "templates/settings.json"
     ],
     "SessionEnd": [
       "templates/hooks/capture-tokens.sh",
-      "hooks/hooks.json",
+      "plugin/hooks/hooks.json",
       "templates/settings.json"
     ],
     "Task": [
