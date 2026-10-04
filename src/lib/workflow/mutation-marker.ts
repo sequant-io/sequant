@@ -64,6 +64,15 @@ function parseMarkersRaw(prBody: string): MutationMarker[] {
 }
 
 /**
+ * Render a marker back to its HTML-comment form: the inverse of the parser, so
+ * the grammar lives in this file (#1297). Field order matches the schema.
+ */
+export function renderMutationMarker(marker: MutationMarker): string {
+  const { ac, mutation, failedTest } = marker;
+  return `<!-- SEQUANT_MUTATION: ${JSON.stringify({ ac, mutation, failedTest })} -->`;
+}
+
+/**
  * Parse every `SEQUANT_MUTATION` marker from a PR body.
  *
  * Markers inside fenced code blocks or inline code (e.g. a doc example

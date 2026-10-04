@@ -5,8 +5,10 @@ import {
   buildAutomatedPRBody,
   resolvePrLinkMode,
   extractExecSummary,
+  composeExecSummary,
   sanitizeImportedClosingKeywords,
 } from "./worktree-manager.js";
+import { parseMutationMarkers } from "./mutation-marker.js";
 import type { GapFinding } from "./run-log-schema.js";
 
 describe("buildAutomatedPRBody (#749)", () => {
@@ -466,5 +468,71 @@ describe("buildAutomatedPRBody — QA has not run (#1246)", () => {
       buildAutomatedPRBody(1246),
     );
     expect(buildAutomatedPRBody(1246)).not.toContain("QA has not run");
+  });
+});
+
+// #1297: the exec output of the #1245 run — `## What changed`, `## Acceptance
+// criteria`, `## Checks`, `## Confidence`, no `## Summary`, three markers under
+// `## Checks`.
+const mk = (ac: string, test: string, mutation = "deleted the thing") =>
+  `<!-- SEQUANT_MUTATION: {"ac":"${ac}","mutation":"${mutation}","failedTest":"${test}"} -->`;
+const NO_SUMMARY_OUTPUT = [
+  "## What changed",
+  "- reads the latest qa verdict",
+  "",
+  "## Acceptance criteria",
+  "| AC | Status | Evidence |",
+  "|----|--------|----------|",
+  "| AC-1 | ✅ | batch-executor.ts:1 |",
+  "| AC-2 | ✅ | worktree-manager.ts:2 |",
+  "",
+  "## Checks",
+  "Mutation-verified results:",
+  mk("AC-1", "src/a.test.ts > a > one"),
+  mk("AC-2", "src/b.test.ts > b > two"),
+  mk("AC-3", "src/c.test.ts > c > three", "Closes #99 removed it"),
+  "",
+  "## Confidence",
+  "- weakest part: none",
+].join("\n");
+
+describe("composeExecSummary / buildAutomatedPRBody with no Summary section (#1297)", () => {
+  it("AC-1: carries every marker and the AC table; sanitizes closing keywords", () => {
+    const body = buildAutomatedPRBody(1245, { execOutput: NO_SUMMARY_OUTPUT });
+    expect(body).not.toContain("Automated PR for issue");
+    expect(parseMutationMarkers(body).map((m) => m.ac)).toEqual([
+      "AC-1",
+      "AC-2",
+      "AC-3",
+    ]);
+    expect(body).toContain("| AC-2 | ✅ | worktree-manager.ts:2 |");
+    expect(body).not.toContain("Closes #99");
+    expect(body).toContain("Refs #99");
+  });
+
+  it("AC-2a: a marker inside the Summary section appears once", () => {
+    const m = mk("AC-1", "src/a.test.ts > a > one");
+    const out = `## Summary\nworked\n${m}\n`;
+    const body = buildAutomatedPRBody(1, { execOutput: out });
+    expect(body.split("SEQUANT_MUTATION").length - 1).toBe(1);
+  });
+
+  it("AC-2b: a marker after the truncation cut still reaches the body", () => {
+    const m = mk("AC-9", "src/z.test.ts > z > last");
+    const out = `## Summary\n${"x".repeat(5000)}\n${m}\n`;
+    const composed = composeExecSummary(out)!;
+    expect(parseMutationMarkers(composed)).toHaveLength(1);
+  });
+
+  it("AC-2c: the same marker in Summary and elsewhere appears once", () => {
+    const m = mk("AC-1", "src/a.test.ts > a > one");
+    const out = `## Checks\n${m}\n## Summary\nworked\n${m}\n`;
+    const body = buildAutomatedPRBody(1, { execOutput: out });
+    expect(body.split("SEQUANT_MUTATION").length - 1).toBe(1);
+  });
+
+  it("returns undefined when there is nothing to carry", () => {
+    expect(composeExecSummary("just prose")).toBeUndefined();
+    expect(composeExecSummary(undefined)).toBeUndefined();
   });
 });

@@ -72,7 +72,7 @@ import {
   createCheckpointCommit,
   rebaseBeforePR,
   createPR,
-  extractExecSummary,
+  composeExecSummary,
   readCacheMetrics,
   filterResumedPhases,
 } from "./worktree-manager.js";
@@ -1187,6 +1187,14 @@ export async function runIssueWithLogging(
               ),
             ],
           };
+    // #1297 AC-3: say so when the body will be the placeholder.
+    if (!composeExecSummary(execOutput) && !execSummary?.trim()) {
+      log(
+        chalk.yellow(
+          "    !  PR body: exec output has no Summary or mutation markers; using placeholder",
+        ),
+      );
+    }
     const prResult = createPR(
       prPath,
       issueNumber,
@@ -2070,7 +2078,7 @@ export async function runIssueWithLogging(
         try {
           await stateManager.updateExecSummary(
             issueNumber,
-            extractExecSummary(result.output),
+            composeExecSummary(result.output),
           );
         } catch {
           // State tracking errors shouldn't stop execution
