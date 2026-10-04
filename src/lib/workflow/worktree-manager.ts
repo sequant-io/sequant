@@ -1940,9 +1940,14 @@ export function extractExecSummary(
   const end = nextHeading?.index ?? rest.length;
   const summary = rest.slice(0, end).trim();
   if (!summary) return undefined;
-  return summary.length > EXEC_SUMMARY_MAX_LENGTH
-    ? summary.slice(0, EXEC_SUMMARY_MAX_LENGTH).trim()
-    : summary;
+  if (summary.length <= EXEC_SUMMARY_MAX_LENGTH) return summary;
+  let capped = summary.slice(0, EXEC_SUMMARY_MAX_LENGTH);
+  // #1297: a cut inside an HTML comment (a `SEQUANT_MUTATION` marker) leaves a
+  // dangling `<!--` that would swallow the marker re-appended after it. Drop
+  // the partial comment; `composeExecSummary` re-adds it whole.
+  const open = capped.lastIndexOf("<!--");
+  if (open > capped.lastIndexOf("-->")) capped = capped.slice(0, open);
+  return capped.trim();
 }
 
 /**

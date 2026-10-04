@@ -524,6 +524,22 @@ describe("composeExecSummary / buildAutomatedPRBody with no Summary section (#12
     expect(parseMutationMarkers(composed)).toHaveLength(1);
   });
 
+  it("AC-2d: a cut landing inside a marker still yields every marker once", () => {
+    const m1 = mk("AC-1", "src/a.test.ts > a > one");
+    const m2 = mk("AC-2", "src/b.test.ts > b > two");
+    // The 4,000-character cap falls in the middle of m1.
+    const out = `## Summary\n${"x".repeat(3970)}\n${m1}\n${m2}\n`;
+    expect(out.indexOf(m1)).toBeLessThan(4000 + "## Summary\n".length);
+    expect(out.indexOf(m1) + m1.length).toBeGreaterThan(
+      4000 + "## Summary\n".length,
+    );
+    const body = buildAutomatedPRBody(1, { execOutput: out });
+    expect(parseMutationMarkers(body).map((m) => m.ac)).toEqual([
+      "AC-1",
+      "AC-2",
+    ]);
+  });
+
   it("AC-2c: the same marker in Summary and elsewhere appears once", () => {
     const m = mk("AC-1", "src/a.test.ts > a > one");
     const out = `## Checks\n${m}\n## Summary\nworked\n${m}\n`;
