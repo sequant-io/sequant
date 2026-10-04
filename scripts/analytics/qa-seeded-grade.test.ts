@@ -28,7 +28,10 @@ const DATASET_FILE = path.join(
 function caughtClasses(doc: string): Set<string> {
   const start = doc.indexOf("<!-- dataset-table:start -->");
   const end = doc.indexOf("<!-- dataset-table:end -->");
-  const rows = doc.slice(start, end).split("\n").filter((l) => l.startsWith("|"));
+  const rows = doc
+    .slice(start, end)
+    .split("\n")
+    .filter((l) => l.startsWith("|"));
   const header = rows[0].split("|").map((c) => c.trim());
   const caughtCol = header.indexOf("Caught");
   const classCol = header.indexOf("Defect class");
@@ -96,13 +99,18 @@ describe("grader edge cases", () => {
   };
 
   it("a verdict with no findings has undefined precision, not NaN", () => {
-    const p = gradePrecision("**Verdict:** READY_FOR_MERGE\n\nAll good.", truth);
+    const p = gradePrecision(
+      "**Verdict:** READY_FOR_MERGE\n\nAll good.",
+      truth,
+    );
     expect(p.total).toBe(0);
     expect(p.value).toBeNull();
   });
 
   it("matches whole identifiers only", () => {
-    expect(namesIdentifier("calls readNotesFileSync", "readNotesFile")).toBe(false);
+    expect(namesIdentifier("calls readNotesFileSync", "readNotesFile")).toBe(
+      false,
+    );
     expect(namesIdentifier("binds 10.0.0.0", "0.0.0.0")).toBe(false);
     expect(namesIdentifier("binds `0.0.0.0`.", "0.0.0.0")).toBe(true);
   });

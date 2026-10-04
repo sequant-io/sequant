@@ -117,7 +117,9 @@ function humanText(entry: Record<string, unknown>): string | null {
   if (!text) return null;
   // Harness-injected turns, not something the human typed.
   if (
-    /^\s*<(local-command|command-stdout|task-notification|system-reminder)/.test(text)
+    /^\s*<(local-command|command-stdout|task-notification|system-reminder)/.test(
+      text,
+    )
   )
     return null;
   if (/^\s*Caveat: The messages below/.test(text)) return null;
@@ -233,7 +235,7 @@ function priorQaMarkers(issue: number, before: string): number {
         "--paginate",
         `repos/{owner}/{repo}/issues/${issue}/comments`,
         "--jq",
-        ".[] | select(.created_at < \"" +
+        '.[] | select(.created_at < "' +
           before +
           '") | .body | select(test("SEQUANT_PHASE: \\\\{\\"phase\\":\\"qa\\"")) | "x"',
       ],
@@ -250,7 +252,9 @@ async function main(): Promise<void> {
   const github = args.includes("--github");
   const outIdx = args.indexOf("--out");
   const out =
-    outIdx >= 0 ? args[outIdx + 1] : path.join(".sequant", "qa-second-look.jsonl");
+    outIdx >= 0
+      ? args[outIdx + 1]
+      : path.join(".sequant", "qa-second-look.jsonl");
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const rows: string[] = [];
   console.log(
