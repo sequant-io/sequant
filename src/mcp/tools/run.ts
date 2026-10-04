@@ -21,6 +21,7 @@ import { homedir } from "os";
 import { formatResetTime } from "../../lib/errors.js";
 import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
 import type { RunLog, GapFinding } from "../../lib/workflow/run-log-schema.js";
+import { latestPhaseResult } from "../../lib/workflow/latest-phase.js";
 import { registerRun, unregisterRun } from "../run-registry.js";
 import { DEFAULT_FORCE_EXIT_TIMEOUT_MS } from "../../lib/shutdown.js";
 
@@ -249,8 +250,8 @@ export function buildStructuredResponse(
   errorOutput?: string,
 ): RunToolResponse {
   const issues: RunToolIssueSummary[] = runLog.issues.map((issue) => {
-    // Find QA verdict and summary from phase logs
-    const qaPhase = issue.phases.find((p) => p.phase === "qa");
+    // Latest qa attempt: a quality loop re-runs qa (#1245)
+    const qaPhase = latestPhaseResult(issue.phases, "qa");
     const verdict = qaPhase?.verdict;
     const qaSummary = qaPhase?.summary;
 
