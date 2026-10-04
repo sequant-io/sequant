@@ -21,13 +21,8 @@ allowed-tools:
   - Bash(jq:*)
   - Bash(grep:*)
   - Bash(head:*)
-  - Bash(node --version:*)
-  - Bash(node -e:*)
-  - Bash(npm --version:*)
+  - Bash(node --version)
   - Bash(which:*)
-  - Bash(yarn --version:*)
-  - Bash(pnpm --version:*)
-  - Bash(curl:*)
 ---
 
 <!-- sequant:local-override -->

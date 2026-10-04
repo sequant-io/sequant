@@ -82,7 +82,9 @@ allowed-tools:
 ---
 ```
 
-Skill `allowed-tools` restrict which tools a skill can use. They do not override project or user-level `deny` rules.
+Skill `allowed-tools` pre-approve tools while the skill is active: a matching command runs without a permission prompt. They do not override project or user-level `deny` rules.
+
+Sequant's own skills grant only the commands their instructions run. No skill grants bare `Bash`, `Bash(*)`, a wildcard straight after a tool such as `Bash(git *)`, or a runner wildcard such as `Bash(npx tsc:*)`. `src/lib/__tests__/skill-allowed-tools-gate.test.ts` enforces this (#1287). When you run a skill by hand, any other command it needs asks for permission first. Phases started by `sequant run` use `bypassPermissions`, so they do not prompt.
 
 ## Common Patterns
 

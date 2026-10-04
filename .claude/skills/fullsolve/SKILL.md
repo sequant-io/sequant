@@ -11,7 +11,6 @@ allowed-tools:
   - Write
   - Glob
   - Grep
-  - Bash
   - Skill  # For invoking child skills (/spec, /exec, /test, /qa)
   # Optional MCP tools (enhanced functionality if available)
   - mcp__chrome-devtools__*  # Browser testing - falls back to manual checklist if unavailable
@@ -27,14 +26,12 @@ allowed-tools:
   - Bash(git diff:*)
   - Bash(git status:*)
   - Bash(git log:*)
+  - Bash(git branch:*)
   - Bash(git add:*)
   - Bash(git commit:*)
   - Bash(git push:*)
   - Bash(git worktree:*)
-  - Bash(./scripts/dev/*:*)
-  - Bash(./scripts/cleanup-worktree.sh:*)
-  - Bash(./scripts/new-feature.sh:*)
-  - Bash(./scripts/list-worktrees.sh:*)
+  - Bash(npx sequant worktree resolve:*)
 ---
 
 <!-- sequant:local-override -->
