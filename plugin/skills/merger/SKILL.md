@@ -6,10 +6,23 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
-  - Bash(npx sequant worktree:*)
-  - Bash(git:*)
-  - Bash(gh pr:*)
-  - Bash(gh issue:*)
+  - Bash(npx sequant worktree resolve:*)
+  - Bash(git checkout:*)
+  - Bash(git pull:*)
+  - Bash(git merge:*)
+  - Bash(git merge-base:*)
+  - Bash(git merge-tree:*)
+  - Bash(git add:*)
+  - Bash(git commit:*)
+  - Bash(git log:*)
+  - Bash(git diff:*)
+  - Bash(git branch:*)
+  - Bash(git worktree list:*)
+  - Bash(git worktree remove:*)
+  - Bash(gh pr list:*)
+  - Bash(gh pr view:*)
+  - Bash(gh pr create:*)
+  - Bash(gh issue view:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Read

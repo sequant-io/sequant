@@ -9,8 +9,15 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-  - Bash(git *)
-  - Bash(gh *)
+  - Bash(git branch:*)
+  - Bash(git log:*)
+  - Bash(git diff:*)
+  - Bash(git rev-list:*)
+  - Bash(git worktree list:*)
+  - Bash(gh issue view:*)
+  - Bash(gh issue comment:*)
+  - Bash(gh pr list:*)
+  - Bash(gh pr view:*)
 ---
 
 <!-- sequant:local-override -->

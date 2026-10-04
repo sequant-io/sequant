@@ -7,15 +7,21 @@ metadata:
   version: "1.0"
 allowed-tools:
   - Read
-  - Bash
   - mcp__chrome-devtools__*  # Optional: falls back to manual checklist if unavailable
   - Glob
   - Grep
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
-  - Bash({{PM_RUN}} dev:*)
+  - Bash(npm run dev:*)
+  - Bash(pnpm dev:*)
+  - Bash(pnpm run dev:*)
+  - Bash(yarn dev:*)
+  - Bash(bun run dev:*)
   - Bash(lsof:*)
-  - Bash(npx tsx:*)
+  - Bash(git fetch:*)
+  - Bash(git rev-list:*)
+  - Bash(git diff:*)
+  - Bash(jq:*)
 ---
 
 <!-- sequant:local-override -->
