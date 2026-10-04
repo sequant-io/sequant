@@ -253,7 +253,7 @@ jobs:
         run: |
           echo "Running claude plugin validate --strict on plugin/ and the marketplace..."
           claude plugin validate --strict ./plugin
-          claude plugin validate --strict .
+          claude plugin validate --strict .claude-plugin/marketplace.json
 
       - name: Test marketplace add (local)
         run: |
