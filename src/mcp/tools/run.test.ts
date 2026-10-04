@@ -1092,6 +1092,14 @@ describe("sequant_run fullQa live-surface tripwire (#982 AC-3)", () => {
   });
 });
 
+describe("sequant_run phases description (#1246 AC-4)", () => {
+  it("no longer offers 'spec,exec' as a plain way to skip QA", () => {
+    const description = runToolInputSchema.phases.description ?? "";
+    expect(description).not.toMatch(/to skip QA/);
+    expect(description).toMatch(/opens a PR, marked as not reviewed by QA/);
+  });
+});
+
 describe("spawnAsync timeout reset (AC-4)", () => {
   it("should export PHASE_TIMEOUT and MAX_TOTAL_TIMEOUT constants", () => {
     expect(PHASE_TIMEOUT).toBe(1_800_000); // 30 minutes
