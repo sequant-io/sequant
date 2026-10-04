@@ -136,7 +136,7 @@ fi
 
 # 4. Try go.mod
 if [ -z "$PROJECT_NAME" ] && [ -f "go.mod" ]; then
-  MODULE_PATH=$(grep '^module ' go.mod | head -1 | awk '{print $2}' || true)
+  MODULE_PATH=$(grep '^module ' go.mod | head -1 | awk '{print \$2}' || true)
   PROJECT_NAME=$(basename "$MODULE_PATH")
 fi
 

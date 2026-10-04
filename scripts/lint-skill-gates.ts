@@ -494,7 +494,7 @@ export function parseEvidenceAcIdPattern(content: string): RegExp | null {
   const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
   if (anchor === -1) return null;
   const region = content.slice(anchor, anchor + PATTERN_REGION_CHARS);
-  const match = /tolower\(\$0\) ~ \/(.+?)\/ \{ print ac \}/.exec(region);
+  const match = /tolower\(\\?\$0\) ~ \/(.+?)\/ \{ print ac \}/.exec(region);
   if (!match) return null;
   try {
     return new RegExp(match[1], "i");
@@ -518,7 +518,7 @@ export function parseAcHeaderPattern(content: string): RegExp | null {
   const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
   if (anchor === -1) return null;
   const region = content.slice(anchor, anchor + PATTERN_REGION_CHARS);
-  const match = /isdecl = \(tolower\(\$0\) ~ \/(.+?)\/\)/.exec(region);
+  const match = /isdecl = \(tolower\(\\?\$0\) ~ \/(.+?)\/\)/.exec(region);
   if (!match) return null;
   try {
     return new RegExp(match[1], "i");
