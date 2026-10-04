@@ -233,6 +233,19 @@ describe("StateManager", () => {
       expect(state.issues["42"].phases["exec"]?.capped).toBeUndefined();
     });
 
+    it("should persist a declared SPEC_DIVERGENCE on the failed phase (#1254)", async () => {
+      await manager.updatePhaseStatus(42, "exec", "failed", {
+        error: "SPEC_DIVERGENCE declared: AC-2",
+        outcome: "SPEC_DIVERGENCE",
+        divergenceAcs: "AC-2",
+      });
+
+      const phase = (await manager.getState()).issues["42"].phases["exec"];
+      expect(phase?.status).toBe("failed");
+      expect(phase?.outcome).toBe("SPEC_DIVERGENCE");
+      expect(phase?.divergenceAcs).toBe("AC-2");
+    });
+
     it("should update issue status to in_progress on first phase start", async () => {
       await manager.updatePhaseStatus(42, "spec", "in_progress");
 

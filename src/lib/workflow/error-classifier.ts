@@ -24,6 +24,9 @@ import {
  * `pr_creation` (#920) is assigned only at the `deriveFailureCategory` call
  * site, not by `classifyError` — a failed `createPR` has no failing phase to
  * classify, so it would otherwise leave `failureCategory` `undefined`.
+ * `ladder_halt` (#1254) is likewise assigned only when the issue returns from a
+ * ladder halt (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) — the
+ * orchestrator's decision to stop, not a phase failure.
  * Keep in sync with the inline category enum in `run-log-schema.ts`.
  */
 export const ERROR_CATEGORIES = [
@@ -35,6 +38,7 @@ export const ERROR_CATEGORIES = [
   "rate_limit",
   "billing",
   "pr_creation",
+  "ladder_halt",
   "unknown",
 ] as const;
 

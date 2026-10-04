@@ -9,7 +9,11 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
-import type { RunConfig, PhaseLog } from "./run-log-schema.js";
+import {
+  IssueLogSchema,
+  type RunConfig,
+  type PhaseLog,
+} from "./run-log-schema.js";
 
 // Mock fs module - include all functions needed by log-rotation.ts
 vi.mock("fs", () => ({
@@ -423,6 +427,39 @@ describe("LogWriter", () => {
       await writer.initialize(mockConfig);
 
       expect(() => writer.markIssueFailed()).not.toThrow();
+    });
+
+    it("records a ladder halt's abortReason and evidence bundle on the issue entry (#1254)", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(1254, "ladder halt", ["bug"]);
+      writer.logPhase({ ...mockPhaseLog, issueNumber: 1254, phase: "exec" });
+
+      const bundle = {
+        issueNumber: 1254,
+        phase: "exec",
+        reason: "SPEC_DIVERGENCE" as const,
+        shasTried: [],
+        iterations: [],
+        escalationHistory: [],
+        declaredAcs: "AC-2",
+      };
+      writer.markIssueFailed(1254, {
+        abortReason: "ladder halt: SPEC_DIVERGENCE in exec (AC-2)",
+        evidenceBundle: bundle,
+      });
+      writer.completeIssue(1254);
+
+      const issue = writer.getRunLog()!.issues[0];
+      expect(issue.status).toBe("failure");
+      expect(issue.abortReason).toBe(
+        "ladder halt: SPEC_DIVERGENCE in exec (AC-2)",
+      );
+      expect(issue.evidenceBundle).toEqual(bundle);
+      // Not an external abort: `aborted` stays signal-only.
+      expect(issue.aborted).toBeUndefined();
+      // The persisted shape round-trips through the run-log schema.
+      expect(IssueLogSchema.parse(issue)).toEqual(issue);
     });
   });
 

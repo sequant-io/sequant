@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A ladder halt is recorded, not only printed (#1254).** When a run halts on `SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT` or `TOP_OF_LADDER`, the issue result carries the failure category `ladder_halt`, an `abortReason` such as `ladder halt: SPEC_DIVERGENCE in exec (AC-2)` and the evidence bundle; the run log's issue entry records `failure` with the same reason and bundle. A phase that declared `SPEC_DIVERGENCE` now reads failed in state (with `outcome` and `divergenceAcs`), in its run-log row and in its progress event, even when the agent exited cleanly. The MCP `sequant_run` result names `haltReason`, `declaredAcs` and `abortReason` per issue. Any other failure no failed phase accounts for (e.g. a rebase-conflict abort) is now also logged `failure` with its `abortReason`, instead of `success`.
 - **The `sequant run` PR body keeps exec's mutation markers and AC table when exec wrote no `## Summary` (#1297).** The body now carries every valid `SEQUANT_MUTATION` marker from exec's final output, including markers exec fenced in a code block (outside the 4,000-character cap, never duplicated) and, with no Summary, the AC table; the placeholder only appears when there is nothing to carry, and the run output warns when it does. The issue state's stored summary carries the markers too, so a qa-only re-run's PR update keeps them.
 
 ### Added
