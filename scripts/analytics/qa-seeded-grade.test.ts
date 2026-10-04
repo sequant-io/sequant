@@ -138,6 +138,48 @@ describe("grader edge cases", () => {
   });
 });
 
+describe("graders read sequant's real /qa template", () => {
+  const truth = loadTruth(TRUTH_FILE);
+  // Shape of a posted /qa review (see #1271's): AC table with MET /
+  // PARTIALLY_MET, Code Review **Issues**, and a Risk Assessment that every
+  // review fills in whether or not anything is wrong.
+  const verdict = [
+    "## QA Review for Issue #1",
+    "",
+    "### AC Coverage",
+    "",
+    "| AC | Source | Status | Notes |",
+    "|----|--------|--------|-------|",
+    "| AC-1 | Original | MET | runExport calls store.formatNotes correctly |",
+    "| AC-2 | Original | PARTIALLY_MET | parseSinceDate is never called |",
+    "",
+    "### Code Review",
+    "",
+    "**Issues**",
+    "- The preview server binds `0.0.0.0`.",
+    "",
+    "### Risk Assessment",
+    "",
+    "- **Likely failure mode:** a large store slows the export.",
+    "- **Not tested:** Windows paths.",
+    "- **Sibling sites considered:** every caller of readNotesFile.",
+    "- **Sibling-line audit:** clean.",
+    "",
+    "### Verdict: AC_NOT_MET",
+  ].join("\n");
+
+  it("Risk Assessment bullets are not findings; a PARTIALLY_MET row is", () => {
+    const findings = extractFindings(verdict);
+    expect(findings).toHaveLength(2);
+    expect(gradePrecision(verdict, truth)).toMatchObject({ hits: 2, total: 2 });
+  });
+
+  it("a neutral mention (MET row, risk note) is not a recall hit", () => {
+    // formatNotes appears only in a MET row; readNotesFile only in Risk.
+    expect(gradeRecall(verdict, truth)).toMatchObject({ hits: 2, total: 5 });
+  });
+});
+
 describe("AC-3: the seeded fixture is well-formed", () => {
   const truth = loadTruth(TRUTH_FILE);
   const patchLines = fs.readFileSync(PATCH_FILE, "utf-8").split("\n");

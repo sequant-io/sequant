@@ -4,8 +4,11 @@
  * Scores one posted `/qa` verdict against the ground truth of the
  * seeded-defect fixture (`docs/investigations/qa-seeded-fixture/`):
  *
- *   recall    = planted identifiers the verdict names ÷ planted identifiers
+ *   recall    = planted identifiers named in a finding ÷ planted identifiers
  *   precision = findings that name a planted identifier ÷ findings
+ *
+ * Recall reads findings only, not the whole verdict: a neutral mention such as
+ * an AC row marked MET that names `formatNotes` is not a catch.
  *
  * Both are deterministic. Matching is a literal, boundary-delimited match on
  * the identifier — a verdict that paraphrases a defect without naming its
@@ -15,9 +18,12 @@
  * What counts as a finding (the precision denominator):
  *   1. every top-level list item (`- `, `* `, `1. ` at column 0) inside a
  *      section whose heading names issues — blocker, issue, gap, finding,
- *      concern, problem, defect, bug, risk, recommendation;
- *   2. every markdown table row, anywhere, that marks an AC as not met
- *      (`AC_NOT_MET`, `NOT_MET`, `❌`, `Not met`).
+ *      concern, problem, defect, bug, recommendation. Not "risk": the /qa
+ *      template's "Risk Assessment" lists failure modes and untested paths
+ *      for every review, so its bullets are analysis, not findings;
+ *   2. every markdown table row, anywhere, that marks an AC as not met or
+ *      partially met (`AC_NOT_MET`, `NOT_MET`, `PARTIALLY_MET`, `❌`,
+ *      `Not met`, `Partially met`).
  * A section ends at the next heading of any level.
  *
  * Usage:
@@ -47,10 +53,11 @@ export interface Score {
 }
 
 const ISSUE_HEADING =
-  /\b(blockers?|issues?|gaps?|findings?|concerns?|problems?|defects?|bugs?|risks?|recommendations?)\b/i;
+  /\b(blockers?|issues?|gaps?|findings?|concerns?|problems?|defects?|bugs?|recommendations?)\b/i;
 const HEADING = /^\s{0,3}(#{1,6}\s+.*|\*\*[^*]+\*\*:?\s*)$/;
 const LIST_ITEM = /^(?:[-*+]|\d+[.)])\s+\S/;
-const NOT_MET_ROW = /(AC_NOT_MET|\bNOT_MET\b|❌|\bnot met\b)/i;
+const NOT_MET_ROW =
+  /(AC_NOT_MET|\bNOT_MET\b|\bPARTIALLY_MET\b|❌|\bnot met\b|\bpartially met\b)/i;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -103,8 +110,9 @@ function ratio(hits: number, total: number): Score {
 }
 
 export function gradeRecall(verdict: string, truth: GroundTruth): Score {
+  const findings = extractFindings(verdict);
   const hits = truth.defects.filter((d) =>
-    namesIdentifier(verdict, d.id),
+    findings.some((f) => namesIdentifier(f, d.id)),
   ).length;
   return ratio(hits, truth.defects.length);
 }
