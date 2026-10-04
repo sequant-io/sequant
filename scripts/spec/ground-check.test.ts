@@ -63,7 +63,7 @@ const INDEX = makeIndex([
   "scripts/qa/precheck.ts",
   ".claude/skills/qa/SKILL.md",
   "templates/skills/qa/SKILL.md",
-  "skills/qa/SKILL.md",
+  "plugin/skills/qa/SKILL.md",
   "bin/cli.ts",
   "package.json",
   "CHANGELOG.md",
@@ -235,7 +235,7 @@ describe("candidatePaths", () => {
       "qa/SKILL.md",
       ".claude/skills/qa/SKILL.md",
       "templates/skills/qa/SKILL.md",
-      "skills/qa/SKILL.md",
+      "plugin/skills/qa/SKILL.md",
     ]);
   });
 

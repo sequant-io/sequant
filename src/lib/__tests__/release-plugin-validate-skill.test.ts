@@ -22,9 +22,10 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { collectFiles } from "../../../scripts/check-skill-sync.js";
-
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+import {
+  collectFiles,
+  SKILL_ROOTS,
+} from "../../../scripts/check-skill-sync.js";
 
 /** src/lib/__tests__ -> repo root (anchor to this file, not process.cwd()). */
 const REPO_ROOT = path.resolve(

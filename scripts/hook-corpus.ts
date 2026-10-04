@@ -92,7 +92,8 @@ export function parseCorpus(text: string): CorpusCase[] {
         exit: raw.exit,
         block: raw.block ?? null,
         source: raw.source ?? "manual",
-        state: raw.state === "clean" || raw.state === "dirty" ? raw.state : "staged",
+        state:
+          raw.state === "clean" || raw.state === "dirty" ? raw.state : "staged",
       };
     });
 }
@@ -123,8 +124,14 @@ const REDACTED = "<redacted>";
 const REDACTION_RULES: Array<[RegExp, string]> = [
   // Claude Code session links, unrelated local projects and foreign repos.
   [/https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/g, "<redacted-session>"],
-  [/\/Users\/[^/\s"']+\/Projects\/(?!sequant\b)[^/\s"']+/g, "/Users/user/Projects/<project>"],
-  [/-Users-[^/\s"'-]+-Projects-(?!sequant\b)[^/\s"']+/g, "-Users-user-Projects-<project>"],
+  [
+    /\/Users\/[^/\s"']+\/Projects\/(?!sequant\b)[^/\s"']+/g,
+    "/Users/user/Projects/<project>",
+  ],
+  [
+    /-Users-[^/\s"'-]+-Projects-(?!sequant\b)[^/\s"']+/g,
+    "-Users-user-Projects-<project>",
+  ],
   [/(--repo\s+)(?!sequant-io\/)[^\s"']+\/[^\s"']+/g, "$1<owner>/<repo>"],
   // Header forms keep the header name and drop the value (and the scheme).
   [
@@ -290,7 +297,10 @@ export function replayCaseAsync(
     const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolveVerdict({ exit: code ?? -1, block: extractBlockReason(stderr, env) });
+      resolveVerdict({
+        exit: code ?? -1,
+        block: extractBlockReason(stderr, env),
+      });
     });
     child.stdin.on("error", () => undefined);
     child.stdin.end(
@@ -352,9 +362,13 @@ export function formatDiff(changes: VerdictChange[]): string {
   return lines.join("\n");
 }
 
-/** Extract the whole `hooks/` dir at `ref` — the hook sources sibling scripts. */
+/**
+ * Extract the whole `templates/hooks/` dir at `ref` — the hook sources sibling
+ * scripts. `templates/hooks/` is the source every installed copy is synced
+ * from, and it exists at every ref (the root `hooks/` copy was retired, #1271).
+ */
 export function extractHooksAt(ref: string, into: string): string {
-  const archive = spawnSync("git", ["archive", ref, "hooks"], {
+  const archive = spawnSync("git", ["archive", ref, "templates/hooks"], {
     cwd: REPO_ROOT,
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -364,8 +378,10 @@ export function extractHooksAt(ref: string, into: string): string {
     );
   }
   const untar = spawnSync("tar", ["-x", "-C", into], { input: archive.stdout });
-  if (untar.status !== 0) throw new Error("tar extract of hooks/ failed");
-  return join(into, "hooks", "pre-tool.sh");
+  if (untar.status !== 0) {
+    throw new Error("tar extract of templates/hooks/ failed");
+  }
+  return join(into, "templates", "hooks", "pre-tool.sh");
 }
 
 // ---------------------------------------------------------------------------
@@ -399,8 +415,6 @@ export function extractTranscriptCommands(jsonl: string): string[] {
   return out;
 }
 
-
-
 /**
  * A syntactically complete first line can still be a fragment: the log's
  * rule names what the *whole* command did, so a `commit-format` or
@@ -408,9 +422,13 @@ export function extractTranscriptCommands(jsonl: string): string[] {
  * `env-dump` block with no env-reading token, is the head of a longer command.
  */
 export function isRuleMismatch(rule: string, command: string): boolean {
-  if ((rule === "commit-format" || rule === "no-changes") && !/git\s+commit\b/.test(command))
+  if (
+    (rule === "commit-format" || rule === "no-changes") &&
+    !/git\s+commit\b/.test(command)
+  )
     return true;
-  if (rule === "env-dump" && !/\b(env|printenv|export|set)\b/.test(command)) return true;
+  if (rule === "env-dump" && !/\b(env|printenv|export|set)\b/.test(command))
+    return true;
   return false;
 }
 
@@ -521,7 +539,8 @@ export async function harvest(
   const blocked: CorpusCase[] = [];
   const allowed: CorpusCase[] = [];
   const queue = [...fresh.values()].filter(
-    ({ command, source }) => source !== "transcript" || GUARD_RELEVANT.test(command),
+    ({ command, source }) =>
+      source !== "transcript" || GUARD_RELEVANT.test(command),
   );
   const worker = async (): Promise<void> => {
     for (let item = queue.shift(); item; item = queue.shift()) {
@@ -567,7 +586,7 @@ function flagValue(args: string[], flag: string): string | undefined {
 }
 
 export async function main(args: string[]): Promise<number> {
-  const hookPath = join(REPO_ROOT, "hooks", "pre-tool.sh");
+  const hookPath = join(REPO_ROOT, "templates", "hooks", "pre-tool.sh");
 
   if (args.includes("--diff")) {
     const ref = flagValue(args, "--diff");

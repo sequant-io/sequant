@@ -1,14 +1,14 @@
 #!/usr/bin/env npx tsx
 /**
- * Check three-directory skill sync
+ * Check skill mirror sync
  *
- * Compares files across .claude/skills/, templates/skills/, and skills/
+ * Compares files across .claude/skills/, templates/skills/ and plugin/skills/
  * to detect divergence.
  *
  * SOURCE OF TRUTH: .claude/skills/ is canonical. It is the working copy that
  * receives edits first; `templates/skills/` (consumed by `sequant init`/`sync`)
- * and `skills/` (the published Claude Code plugin) are MIRRORS generated from
- * it. Reconcile drift in the direction .claude/skills -> mirrors (run --fix),
+ * and `plugin/skills/` (the published Claude Code plugin) are MIRRORS generated
+ * from it. The root `skills/` copy was retired in #1271. Reconcile drift in the direction .claude/skills -> mirrors (run --fix),
  * never the reverse. `.claude/skills` is canonical even when a mirror happens to
  * be longer — extra mirror lines are almost always stale, pre-refactor content.
  * See CONTRIBUTING.md ("Skill mirror sync") and issue #738.
@@ -34,24 +34,31 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, "..");
 
-const SOURCE_DIR = join(PROJECT_ROOT, ".claude/skills");
-const MIRROR_DIRS = [
-  join(PROJECT_ROOT, "templates/skills"),
-  join(PROJECT_ROOT, "skills"),
-  join(PROJECT_ROOT, "plugin/skills"),
-];
-const DIR_LABELS = [
-  ".claude/skills",
+/**
+ * The skill mirror roots, repo-relative. This is the single owner of the list:
+ * gate tests and lint scripts import it instead of re-declaring their own copy
+ * (#1271 — the hand copies had already drifted).
+ */
+export const SKILL_SOURCE_ROOT = ".claude/skills";
+export const SKILL_MIRROR_ROOTS: readonly string[] = [
   "templates/skills",
-  "skills",
   "plugin/skills",
 ];
+/** Source first, then every mirror. */
+export const SKILL_ROOTS: readonly string[] = [
+  SKILL_SOURCE_ROOT,
+  ...SKILL_MIRROR_ROOTS,
+];
+
+const SOURCE_DIR = join(PROJECT_ROOT, SKILL_SOURCE_ROOT);
+const MIRROR_DIRS = SKILL_MIRROR_ROOTS.map((d) => join(PROJECT_ROOT, d));
+const DIR_LABELS = SKILL_ROOTS;
 
 /**
- * Files intentionally excluded from the three-directory sync check.
+ * Files intentionally excluded from the skill mirror sync check.
  *
  * Entries are POSIX-style relative paths under each skill root. Add a file here
- * ONLY when it legitimately should not be mirrored across all three roots, and
+ * ONLY when it legitimately should not be mirrored across every root, and
  * document the reason inline. Excluded files are never reported as "diverged"
  * or "missing".
  *

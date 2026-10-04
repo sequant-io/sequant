@@ -468,7 +468,7 @@ describe("token-utils", () => {
       const copies = [
         "templates/hooks/capture-tokens.sh",
         ".claude/hooks/capture-tokens.sh",
-        "hooks/capture-tokens.sh",
+        "plugin/hooks/capture-tokens.sh",
       ].map((rel) => {
         const abs = path.resolve(rel);
         expect(realFs.existsSync(abs)).toBe(true);
@@ -481,7 +481,10 @@ describe("token-utils", () => {
 
     it("986 hook registers SessionEnd on both the plugin and project surfaces", async () => {
       const realFs = await vi.importActual<typeof import("fs")>("fs");
-      for (const rel of ["hooks/hooks.json", "templates/settings.json"]) {
+      for (const rel of [
+        "plugin/hooks/hooks.json",
+        "templates/settings.json",
+      ]) {
         const cfg = JSON.parse(
           realFs.readFileSync(path.resolve(rel), "utf-8"),
         ) as {

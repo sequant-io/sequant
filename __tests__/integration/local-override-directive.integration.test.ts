@@ -14,15 +14,13 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 // Stable sentinel at the top of every managed SKILL.md body. Asserting on the
 // sentinel (not prose) keeps the test robust to wording tweaks.
 const SENTINEL = "<!-- sequant:local-override -->";
-
-// All three mirror dirs the harness/plugin/published-package read from.
-const SKILL_ROOTS = [".claude/skills", "templates/skills", "skills"];
 
 function findSkillFiles(root: string): string[] {
   const base = path.join(REPO_ROOT, root);

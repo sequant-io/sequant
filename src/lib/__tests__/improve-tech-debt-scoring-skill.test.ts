@@ -14,9 +14,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-import { collectFiles } from "../../../scripts/check-skill-sync.js";
-
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+import {
+  collectFiles,
+  SKILL_ROOTS,
+} from "../../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

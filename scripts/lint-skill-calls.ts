@@ -25,6 +25,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { dirname, join, relative } from "path";
 import { fileURLToPath } from "url";
+import { SKILL_ROOTS } from "./check-skill-sync.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -52,12 +53,7 @@ export const ANTHROPIC_TOP_LEVEL_NAMES: readonly string[] = [
   "fewer-permission-prompts",
 ];
 
-const SCAN_DIRS = [
-  ".claude/skills",
-  "templates/skills",
-  "skills",
-  "plugin/skills",
-];
+const SCAN_DIRS = SKILL_ROOTS;
 
 export interface Violation {
   file: string;

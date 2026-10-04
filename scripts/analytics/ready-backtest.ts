@@ -42,6 +42,7 @@
 import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { SKILL_ROOTS } from "../check-skill-sync.js";
 
 type Kind = "real-bug" | "clean";
 
@@ -118,7 +119,7 @@ const REPO_ROOT = execFileSync("git", ["rev-parse", "--show-toplevel"], {
 }).trim();
 const CLI = path.join(REPO_ROOT, "dist", "bin", "cli.js");
 const BACKTEST_DIR = path.join(REPO_ROOT, ".sequant", "backtest");
-const SKILL_DIRS = [".claude/skills", "templates/skills", "skills"];
+const SKILL_DIRS = SKILL_ROOTS;
 
 function git(args: string[], cwd = REPO_ROOT): string {
   return execFileSync("git", args, { cwd, encoding: "utf-8" }).trim();

@@ -22,15 +22,14 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SKILL_ROOTS } from "../scripts/check-skill-sync.js";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(HERE, "..");
 
-const COPIES: Array<[label: string, path: string]> = [
-  "skills/qa/scripts/quality-checks.sh",
-  ".claude/skills/qa/scripts/quality-checks.sh",
-  "templates/skills/qa/scripts/quality-checks.sh",
-].map((rel) => [rel, join(REPO_ROOT, rel)]);
+const COPIES: Array<[label: string, path: string]> = SKILL_ROOTS.map(
+  (root) => `${root}/qa/scripts/quality-checks.sh`,
+).map((rel) => [rel, join(REPO_ROOT, rel)]);
 
 let sandbox: string;
 let main: string;

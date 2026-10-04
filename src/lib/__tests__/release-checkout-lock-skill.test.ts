@@ -24,8 +24,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 /** src/lib/__tests__ -> repo root (anchor to this file, not process.cwd()). */
 const REPO_ROOT = path.resolve(

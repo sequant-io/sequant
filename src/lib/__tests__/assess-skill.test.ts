@@ -15,12 +15,9 @@ import * as fs from "fs";
 import * as path from "path";
 import { describe, expect, it, beforeAll } from "vitest";
 import { getPhaseNames } from "../workflow/phase-registry.ts";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
-const SKILL_DIRS = [
-  ".claude/skills/assess/SKILL.md",
-  "skills/assess/SKILL.md",
-  "templates/skills/assess/SKILL.md",
-];
+const SKILL_DIRS = SKILL_ROOTS.map((root) => `${root}/assess/SKILL.md`);
 
 describe("assess skill phase vocabulary", () => {
   let skillContent: string;

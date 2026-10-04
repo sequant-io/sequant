@@ -17,15 +17,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-import { collectFiles } from "../../../scripts/check-skill-sync.js";
+import {
+  collectFiles,
+  SKILL_ROOTS,
+} from "../../../scripts/check-skill-sync.js";
 import { parseSections } from "../../../scripts/lint-skill-gates.js";
-
-const SKILL_ROOTS = [
-  ".claude/skills",
-  "skills",
-  "templates/skills",
-  "plugin/skills",
-] as const;
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

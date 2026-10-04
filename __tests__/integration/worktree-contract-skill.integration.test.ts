@@ -18,11 +18,9 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync } from "fs";
 import path from "path";
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
-
-/** All three skill roots. `.claude/skills` is canonical; the others mirror it. */
-const SKILL_ROOTS = [".claude/skills", "templates/skills", "skills"] as const;
 
 /**
  * Skills the orchestrator hands `SEQUANT_WORKTREE` and which therefore need

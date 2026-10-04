@@ -11,14 +11,11 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(here, "../../..");
-const COPIES = [
-  ".claude/skills/exec/SKILL.md",
-  "templates/skills/exec/SKILL.md",
-  "skills/exec/SKILL.md",
-];
+const COPIES = SKILL_ROOTS.map((root) => `${root}/exec/SKILL.md`);
 
 function checksFirstRegion(skill: string): string {
   const start = skill.indexOf("### 3. Checks-first Mindset");

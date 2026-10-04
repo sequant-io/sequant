@@ -21,9 +21,10 @@ import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const MIRROR_ROOTS = [".claude/skills", "templates/skills", "skills"];
+const MIRROR_ROOTS = SKILL_ROOTS;
 
 const TOUCHED_FILES = [
   "spec/SKILL.md",

@@ -21,12 +21,9 @@ import stringWidth from "string-width";
 
 import { GEOMETRY, render } from "./renderer.js";
 import { parseAssessResult } from "./types.js";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
-const SKILL_DIRS = [
-  "skills/assess/SKILL.md",
-  ".claude/skills/assess/SKILL.md",
-  "templates/skills/assess/SKILL.md",
-];
+const SKILL_DIRS = SKILL_ROOTS.map((root) => `${root}/assess/SKILL.md`);
 
 const repoRoot = new URL("../../../", import.meta.url);
 
