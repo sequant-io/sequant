@@ -89,6 +89,8 @@ export interface TranscriptSignals {
   commitsBeforeGap: number;
   commitsAfterGap: number;
   orchestratorSet: boolean;
+  /** Timestamp of the first transcript entry — the session start. */
+  startedAt: string | null;
 }
 
 interface ContentBlock {
@@ -134,6 +136,7 @@ export function mineLines(lines: Iterable<string>): TranscriptSignals {
     commitsBeforeGap: 0,
     commitsAfterGap: 0,
     orchestratorSet: false,
+    startedAt: null,
   };
   let turn = -1;
   for (const line of lines) {
@@ -144,6 +147,9 @@ export function mineLines(lines: Iterable<string>): TranscriptSignals {
       entry = JSON.parse(line);
     } catch {
       continue;
+    }
+    if (s.startedAt === null && typeof entry.timestamp === "string") {
+      s.startedAt = entry.timestamp;
     }
     const human = humanText(entry);
     if (human !== null) {
@@ -198,6 +204,7 @@ async function mineCheckpoint(p: string): Promise<TranscriptSignals> {
     if (
       line.includes('"type":"user"') ||
       line.includes('"type":"assistant"') ||
+      (lines.length === 0 && line.includes('"timestamp"')) ||
       line.includes("SEQUANT_ORCHESTRATOR=")
     ) {
       lines.push(line);
@@ -254,7 +261,11 @@ async function main(): Promise<void> {
     const createdAt: string = meta.created_at ?? "";
     const hash = gitShow(`${c.path}/content_hash.txt`);
     const sig = await mineCheckpoint(c.path);
-    const priorQa = github ? priorQaMarkers(c.issues[0], createdAt) : null;
+    // Before the session STARTED: `created_at` is when the checkpoint was
+    // written, which is after any QA comment this session itself posted.
+    const priorQa = github
+      ? priorQaMarkers(c.issues[0], sig.startedAt ?? createdAt)
+      : null;
     rows.push(
       JSON.stringify({ ...c, createdAt, contentHash: hash, priorQa, ...sig }),
     );
