@@ -11,6 +11,7 @@
 import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { createPhaseLogFromTiming, LogWriter } from "./log-writer.js";
+import { latestPhaseResult, latestWhere } from "./latest-phase.js";
 import {
   Phase,
   ExecutionConfig,
@@ -638,9 +639,10 @@ export async function executeBatch(
 export function deriveFailureCategory(
   phaseResults: PhaseResult[],
 ): ErrorCategory | undefined {
-  const failedPhase = [...phaseResults]
-    .reverse()
-    .find((p) => !p.success && p.phase !== "loop");
+  const failedPhase = latestWhere(
+    phaseResults,
+    (p) => !p.success && p.phase !== "loop",
+  );
   if (!failedPhase) return undefined;
   const typedError =
     failedPhase.structuredError ??
@@ -648,21 +650,9 @@ export function deriveFailureCategory(
   return errorTypeToCategory(typedError);
 }
 
-/**
- * The LAST result recorded for `phase`, or undefined when it never ran.
- *
- * A quality-loop iteration re-runs exec and qa, so the first match
- * (`phaseResults.find`) describes work the loop has since changed. (#1249;
- * the first-match verdict readers are #1245's.)
- *
- * @internal Exported for testing
- */
-export function latestPhaseResult(
-  phaseResults: PhaseResult[],
-  phase: Phase,
-): PhaseResult | undefined {
-  return [...phaseResults].reverse().find((p) => p.phase === phase);
-}
+// Re-exported for the #1249 call sites and tests; the accessor lives in a leaf
+// module so `mcp/tools` and `commands` need not import the orchestrator (#1245).
+export { latestPhaseResult };
 
 /**
  * "Halt, don't loop" predicate for the outer `-Q` quality loop (#799).
@@ -2391,7 +2381,7 @@ export async function runIssueWithLogging(
   // Hoisted out of the `if (stateManager)` block below because the checkpoint
   // warning also has to name this status, and naming the wrong one is exactly
   // the #837 inaccuracy being fixed here.
-  const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
+  const qaVerdict = latestPhaseResult(phaseResults, "qa")?.verdict;
   // #1233: a terminal "ready" status asserts qa actually reviewed the work.
   // A successful run that never ran qa (e.g. `--phases spec` or `--phases
   // exec`) stays `in_progress` so a later `sequant run N --phases exec`
@@ -2510,7 +2500,7 @@ export async function runIssueWithLogging(
   if (shouldCreatePR) {
     // #749: surface a non-A+ qa verdict (e.g. AC_MET_BUT_NOT_A_PLUS) in the PR
     // body so a reviewer sees why the run broke to PR rather than reaching A+.
-    const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
+    const qaVerdict = latestPhaseResult(phaseResults, "qa")?.verdict;
     const prResult = await openOrUpdatePR(worktreePath, branch, {
       qaVerdict,
       // #817 AC-6: surface the ready-gate outcome in the PR body the same way

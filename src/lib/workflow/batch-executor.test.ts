@@ -3208,6 +3208,48 @@ describe("#972: NEEDS_VERIFICATION maps to awaiting_verification state", () => {
     expect(finalStatuses).not.toContain("ready_for_merge");
   });
 
+  it("a looped qa AC_NOT_MET then NEEDS_VERIFICATION records awaiting_verification and hands createPR the latest verdict (#1245 AC-1, AC-2)", async () => {
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 1245,
+      prUrl: "https://example.test/pr/1245",
+    });
+    let qaPass = 0;
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        qaPass++;
+        return {
+          phase: "qa",
+          success: qaPass > 1,
+          durationSeconds: 5,
+          verdict: qaPass > 1 ? "NEEDS_VERIFICATION" : "AC_NOT_MET",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1245,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1245", branch: "feature/1245" },
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    expect(qaPass).toBe(2);
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("awaiting_verification");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+    // The post-QA call is the last; the after-exec calls pass no verdict.
+    const post = mockCreatePR.mock.calls.at(-1)!.at(-1) as {
+      qaVerdict?: string;
+    };
+    expect(post.qaVerdict).toBe("NEEDS_VERIFICATION");
+  });
+
   it("sets status to ready_for_merge when qa verdict is READY_FOR_MERGE", async () => {
     mockExecutePhase.mockImplementation(async (_i, phase) => {
       if (phase === "qa") {

@@ -26,6 +26,7 @@ import {
   isBillingFailure,
 } from "../lib/errors.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
+import { latestWhere } from "../lib/workflow/latest-phase.js";
 import { LOOP_PHASE } from "../lib/workflow/status-derivation.js";
 import type { IssueResult } from "../lib/workflow/types.js";
 
@@ -101,9 +102,10 @@ function toIssueSummary(r: IssueResult): IssueSummary {
   // recovery, and a trailing loop failure would mask the phase that actually
   // failed. Reverse scan rather than `findLast`: tsconfig pins `lib: ES2022`
   // and `findLast` is ES2023.
-  const failedPhase = [...r.phaseResults]
-    .reverse()
-    .find((p) => !p.success && p.phase !== LOOP_PHASE);
+  const failedPhase = latestWhere(
+    r.phaseResults,
+    (p) => !p.success && p.phase !== LOOP_PHASE,
+  );
   const summary: IssueSummary = {
     issueNumber: r.issueNumber,
     success: r.success,
@@ -156,9 +158,10 @@ export function buildRateLimitHaltNotice(
   // exists; scan defensively anyway.
   for (const r of results) {
     if (r.success) continue;
-    const failedPhase = [...r.phaseResults]
-      .reverse()
-      .find((p) => !p.success && p.phase !== LOOP_PHASE);
+    const failedPhase = latestWhere(
+      r.phaseResults,
+      (p) => !p.success && p.phase !== LOOP_PHASE,
+    );
     const err = failedPhase?.structuredError;
     if (err instanceof RateLimitError || err instanceof BillingError) {
       // Event-derived errors get their message from formatRateLimitMessage, so
