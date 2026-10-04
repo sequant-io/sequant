@@ -18,6 +18,11 @@ import {
 import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
+  parseMutationMarkers,
+  parseMutationMarkersFromExecOutput,
+  renderMutationMarker,
+} from "./mutation-marker.js";
+import {
   readRecordedBaseRef,
   recordWorktreeBaseRef,
   resolveBaseRef,
@@ -1936,9 +1941,84 @@ export function extractExecSummary(
   const end = nextHeading?.index ?? rest.length;
   const summary = rest.slice(0, end).trim();
   if (!summary) return undefined;
-  return summary.length > EXEC_SUMMARY_MAX_LENGTH
-    ? summary.slice(0, EXEC_SUMMARY_MAX_LENGTH).trim()
-    : summary;
+  return capImportedText(summary);
+}
+
+/**
+ * Cap imported exec text at `EXEC_SUMMARY_MAX_LENGTH` (#1297). A cut inside an
+ * HTML comment (a `SEQUANT_MUTATION` marker) leaves a dangling `<!--` that
+ * would swallow the markers `composeExecSummary` re-appends after it, so the
+ * partial comment is dropped; the marker is re-added whole.
+ */
+function capImportedText(text: string): string {
+  if (text.length <= EXEC_SUMMARY_MAX_LENGTH) return text;
+  let capped = text.slice(0, EXEC_SUMMARY_MAX_LENGTH);
+  const open = capped.lastIndexOf("<!--");
+  if (open > capped.lastIndexOf("-->")) capped = capped.slice(0, open);
+  return capped.trim();
+}
+
+/**
+ * The `## Acceptance criteria` section of exec's output, or failing that the
+ * first run of table rows naming an `AC-N` (#1297).
+ */
+function extractAcTable(execOutput: string): string | undefined {
+  const heading = /^(#{2,3})\s+Acceptance criteria\b.*$/im.exec(execOutput);
+  if (heading) {
+    const rest = execOutput.slice(heading.index + heading[0].length);
+    const next = rest.match(new RegExp(`^#{1,${heading[1].length}}\\s+`, "m"));
+    const section = rest.slice(0, next?.index ?? rest.length).trim();
+    if (section) return section;
+  }
+  const rows: string[] = [];
+  for (const line of execOutput.split("\n")) {
+    if (/^\s*\|/.test(line) && /AC-\d+/.test(line)) rows.push(line.trim());
+    else if (rows.length > 0) break;
+  }
+  return rows.length > 0 ? rows.join("\n") : undefined;
+}
+
+/**
+ * Everything of exec's final output that the PR body must carry (#1297): the
+ * capped Summary section, the AC table when there is no Summary, and every
+ * `SEQUANT_MUTATION` marker the Summary text does not already hold. Markers
+ * sit outside the cap, so truncation never drops one, and a session with no
+ * `## Summary` heading (13 of 20 on 2026-09-30) still reaches QA's §6i.
+ * Returns `undefined` when there is nothing to carry.
+ *
+ * @internal Exported for testing
+ */
+export function composeExecSummary(
+  execOutput: string | undefined,
+): string | undefined {
+  if (!execOutput) return undefined;
+  const summary = extractExecSummary(execOutput);
+  const key = (m: { ac: string; mutation: string; failedTest: string }) =>
+    JSON.stringify([m.ac, m.mutation, m.failedTest]);
+  const seen = new Set(
+    // What QA's §6i parse sees in the Summary: code-stripped, so a marker
+    // exec fenced inside its Summary is still re-rendered outside the fence.
+    parseMutationMarkers(summary ?? "").map(key),
+  );
+  const markers: string[] = [];
+  for (const marker of parseMutationMarkersFromExecOutput(execOutput)) {
+    if (seen.has(key(marker))) continue;
+    seen.add(key(marker));
+    markers.push(renderMutationMarker(marker));
+  }
+  const parts: string[] = [];
+  if (summary) {
+    parts.push(summary);
+  } else {
+    const table = extractAcTable(execOutput);
+    if (table) {
+      parts.push(
+        `**Acceptance criteria (from exec):**\n\n${capImportedText(table)}`,
+      );
+    }
+  }
+  if (markers.length > 0) parts.push(markers.join("\n"));
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
 
 /**
@@ -2094,7 +2174,7 @@ export function buildAutomatedPRBody(
   const closingLine =
     linkMode === "refs" ? `Refs #${issueNumber}` : `Fixes #${issueNumber}`;
   const execSummary =
-    extractExecSummary(opts?.execOutput) ?? opts?.execSummary?.trim();
+    composeExecSummary(opts?.execOutput) ?? opts?.execSummary?.trim();
   const summaryLine = execSummary
     ? sanitizeImportedClosingKeywords(execSummary)
     : `Automated PR for issue #${issueNumber}.`;

@@ -1,0 +1,44 @@
+The first-match qa readers now take the latest qa pass. A looped `qa AC_NOT_MET → loop → qa NEEDS_VERIFICATION` run records `awaiting_verification`, and the PR-body QA note and MCP result report the second pass.
+
+The branch is pushed and I opened no PR, because the orchestrator opens it (#1247).
+
+## What changed
+- **Shared helper:** `src/lib/workflow/latest-phase.ts` holds `latestPhaseResult` (generic, so it also takes the run log's `PhaseLog[]`) and `latestWhere` for predicate scans. I moved the #1249 accessor there instead of writing a second one, and `batch-executor.ts` re-exports it so existing call sites and tests keep working.
+- **Stale readers fixed:** terminal status and the PR-body QA note in `batch-executor.ts`, and the MCP result in `src/mcp/tools/run.ts`.
+- **Hand-rolled reverse scans replaced:** `deriveFailureCategory` and both failed-phase scans in `run-display.ts` (the card summary and `buildRateLimitHaltNotice`) now use `latestWhere`.
+- **CHANGELOG:** a `### Fixed` entry under `[Unreleased]`.
+- **Not done:** the optional `iteration` field on `PhaseResult`/`PhaseLog`. The spec recommended skipping it.
+
+## Acceptance criteria
+| AC | Status | Evidence |
+|----|--------|----------|
+| AC-1 | ✅ | Loop fixture in `batch-executor.test.ts` records `awaiting_verification` and not `ready_for_merge` |
+| AC-2 | ✅ | Post-QA `createPR` call gets `NEEDS_VERIFICATION` as its 8th positional argument (the after-exec call gets none) |
+| AC-3 | ✅ | `run.test.ts` with two qa entries: verdict, `acMet`, `gaps` and `findings` all come from the second |
+| AC-4 | ✅ | All three scans use the shared helper; the #972, #749 and #1200 tests stay green |
+| AC-5 (derived) | ✅ | No `find((p) => p.phase === "qa")` is left in non-test code under `src/` |
+
+The AC-5 check came back empty because zsh rejected `--include=*.ts` before grep ran. I filtered out tests and excluded no file, so `stats.ts:894` was not exempted. Its `find` doesn't match this pattern.
+
+## Checks
+- `npm run build`, `npm run lint` and `tsc --noEmit` pass.
+- The AC test files (`latest-phase.test.ts`, `batch-executor.test.ts`, `ready-gate-run.test.ts`, `mcp/tools/run.test.ts`, `src/commands/run-display`) ran as 5 files, 258 tests, all passing. I skipped the full `npm test` because the spec says it hits the 30-minute wall and CI runs it.
+- The new tests are mutation-verified. Reverting the `batch-executor.ts` reader to `.find` fails exactly the two new loop tests. Reverting the `run.ts` reader fails exactly the new MCP test. Both were restored.
+
+For the PR body's `## Summary` section:
+```
+<!-- SEQUANT_MUTATION: {"ac":"AC-1","mutation":"reverted terminal-status qaVerdict reader to phaseResults.find","failedTest":"src/lib/workflow/batch-executor.test.ts > #972: NEEDS_VERIFICATION maps to awaiting_verification state > a looped qa AC_NOT_MET then NEEDS_VERIFICATION records awaiting_verification (#1245 AC-1)"} -->
+<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"reverted PR-body qaVerdict reader to phaseResults.find","failedTest":"src/lib/workflow/batch-executor.test.ts > #1223: the PR body gets the latest exec pass's output > hands createPR the latest qa verdict after a quality loop (#1245 AC-2)"} -->
+<!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"reverted MCP qa reader to issue.phases.find","failedTest":"src/mcp/tools/run.test.ts > buildStructuredResponse — qa summary (#1200 AC-1) > reports the latest qa entry when a quality loop recorded two (#1245 AC-3)"} -->
+```
+I did not run the `parseMutationMarkers` check from `/qa` §6i on these markers.
+
+## Confidence
+- **Weakest part:** "latest" is positional, so it relies on `phaseResults` and the run log keeping attempts in order. That holds today, and it is the assumption the optional `iteration` field would remove.
+- **Coverage gaps:** `run-display.ts` has no new test of its own. Its scans are a behaviour-preserving swap to `latestWhere`, and the existing `run-display` tests pass.
+
+**PR status:** left to the orchestrator; branch `feature/1245-fix-run-status-pr-body-qa-note-and-mcp-result-use-` is pushed.
+
+The orchestrator PR should use `Closes #1245` and `Refs` for any other issue.
+
+<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2026-10-04T03:05:00Z"} -->

@@ -49,9 +49,9 @@ vi.mock("./phase-executor.js", async (importOriginal) => ({
 vi.mock("./worktree-manager.js", async (importOriginal) => ({
   // #1247 AC-3: the exec-summary extraction batch-executor persists is pure;
   // keep the real one so the stored value is what a PR body would use.
-  extractExecSummary: (
+  composeExecSummary: (
     await importOriginal<typeof import("./worktree-manager.js")>()
-  ).extractExecSummary,
+  ).composeExecSummary,
   // #1246: real body builder, so tests can render the body createPR would
   // publish from the arguments it was handed.
   buildAutomatedPRBody: (
@@ -2422,6 +2422,81 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
     expect(opts.execOutput).toBe("## Summary\nfresh");
     expect(opts.execSummary).toBeUndefined();
     expect(stateManager.issues.get(1247)?.execSummary).toBe("fresh");
+  });
+
+  describe("#1297 AC-3: placeholder fallback is visible", () => {
+    const WARNING = "using placeholder";
+    const runExec = async (output: string, stored?: string) => {
+      const stateManager = makeMemoryStateManager();
+      if (stored) stateManager.issues.set(1297, { execSummary: stored });
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec"
+          ? { ...successResult("exec"), output }
+          : ({
+              phase: "qa",
+              success: true,
+              durationSeconds: 10,
+              verdict: "READY_FOR_MERGE",
+            } as PhaseResult),
+      );
+      const ctx = makeCtx({
+        issueNumber: 1297,
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      });
+      ctx.services.stateManager = stateManager as never;
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        await runIssueWithLogging({
+          ...ctx,
+          worktree: { path: "/tmp/wt-1297", branch: "feature/1297" },
+        });
+        return spy.mock.calls.map((c) => String(c[0])).join("\n");
+      } finally {
+        spy.mockRestore();
+      }
+    };
+
+    it("warns when exec output has no Summary and no markers", async () => {
+      expect(await runExec("did some work, no headings")).toContain(WARNING);
+    });
+
+    it("does not warn when exec wrote a Summary", async () => {
+      expect(await runExec("## Summary\nall done")).not.toContain(WARNING);
+    });
+
+    it("does not warn when only markers exist (no Summary heading)", async () => {
+      const marker =
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-1","mutation":"m","failedTest":"a.test.ts > t"} -->';
+      expect(await runExec(`## Checks\n${marker}`)).not.toContain(WARNING);
+    });
+
+    it("stores markers on the state summary so a qa-only re-run keeps them", async () => {
+      const marker =
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-1","mutation":"m","failedTest":"a.test.ts > t"} -->';
+      const stateManager = makeMemoryStateManager();
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec"
+          ? { ...successResult("exec"), output: `## Checks\n${marker}` }
+          : ({
+              phase: "qa",
+              success: false,
+              durationSeconds: 10,
+              verdict: "AC_NOT_MET",
+            } as PhaseResult),
+      );
+      const ctx = makeCtx({
+        issueNumber: 1297,
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      });
+      ctx.services.stateManager = stateManager as never;
+      await runIssueWithLogging({
+        ...ctx,
+        worktree: { path: "/tmp/wt-1297", branch: "feature/1297" },
+      });
+      expect(stateManager.issues.get(1297)?.execSummary).toContain(marker);
+    });
   });
 
   it("AC-4: under --no-pr a qa-only run with a stored summary still opens no PR", async () => {
