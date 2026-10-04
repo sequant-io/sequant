@@ -18,6 +18,7 @@ import {
 import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
+  parseMutationMarkers,
   parseMutationMarkersFromExecOutput,
   renderMutationMarker,
 } from "./mutation-marker.js";
@@ -1995,7 +1996,9 @@ export function composeExecSummary(
   const key = (m: { ac: string; mutation: string; failedTest: string }) =>
     JSON.stringify([m.ac, m.mutation, m.failedTest]);
   const seen = new Set(
-    parseMutationMarkersFromExecOutput(summary ?? "").map(key),
+    // What QA's §6i parse sees in the Summary: code-stripped, so a marker
+    // exec fenced inside its Summary is still re-rendered outside the fence.
+    parseMutationMarkers(summary ?? "").map(key),
   );
   const markers: string[] = [];
   for (const marker of parseMutationMarkersFromExecOutput(execOutput)) {

@@ -569,6 +569,13 @@ describe("composeExecSummary / buildAutomatedPRBody with no Summary section (#12
     }
   });
 
+  it("AC-2f: a marker fenced inside the Summary reaches QA's code-stripped parse", () => {
+    const m = mk("AC-1", "src/a.test.ts > a > one");
+    const out = `## Summary\nworked\n\n\`\`\`\n${m}\n\`\`\`\n`;
+    const body = buildAutomatedPRBody(1, { execOutput: out });
+    expect(parseMutationMarkers(body).map((x) => x.ac)).toEqual(["AC-1"]);
+  });
+
   it("AC-2c: the same marker in Summary and elsewhere appears once", () => {
     const m = mk("AC-1", "src/a.test.ts > a > one");
     const out = `## Checks\n${m}\n## Summary\nworked\n${m}\n`;
