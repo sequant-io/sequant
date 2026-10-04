@@ -275,3 +275,41 @@ describe("971 AC-D2: an unconfigured run takes no progress snapshot", () => {
     expect(snapshot).toHaveBeenCalledTimes(6);
   });
 });
+
+// #1254 AC-1: the two halts only a configured ladder reaches return a recorded
+// halt — `ladder_halt`, an abortReason naming it, and the evidence bundle.
+describe("#1254: loop-only ladder halts are recorded on the IssueResult", () => {
+  it("DIVERGENCE_SUSPECT: advancing SHAs at a failing verdict", async () => {
+    let n = 0;
+    const result = await runIssueWithLogging(
+      makeCtx({ modelLadder: LADDER }, () => ({
+        sha: `sha-${n++}`,
+        dirty: [],
+      })),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("ladder_halt");
+    expect(result.abortReason).toBe("ladder halt: DIVERGENCE_SUSPECT in exec");
+    expect(result.evidenceBundle).toMatchObject({
+      reason: "DIVERGENCE_SUSPECT",
+      phase: "exec",
+      escalationHistory: [],
+    });
+  });
+
+  it("TOP_OF_LADDER: a further trigger on the last rung", async () => {
+    const result = await runIssueWithLogging(
+      makeCtx({ modelLadder: ["sonnet", "opus"], maxIterations: 6 }, () => ({
+        sha: "frozen",
+        dirty: [],
+      })),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("ladder_halt");
+    expect(result.abortReason).toBe("ladder halt: TOP_OF_LADDER in exec");
+    expect(result.evidenceBundle?.reason).toBe("TOP_OF_LADDER");
+    expect(result.evidenceBundle?.escalationHistory.length).toBeGreaterThan(0);
+  });
+});

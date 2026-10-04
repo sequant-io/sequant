@@ -59,6 +59,12 @@ interface RunToolIssueSummary {
   findings?: GapFinding[];
   /** Set when gaps or findings were capped or dropped to fit the response (#1200 AC-2) */
   truncated?: boolean;
+  /** Why the issue stopped outside a phase, e.g. `ladder halt: SPEC_DIVERGENCE in exec (AC-2)` (#1254) */
+  abortReason?: string;
+  /** Ladder-halt reason, read from the run log's evidence bundle (#1254 AC-3) */
+  haltReason?: "SPEC_DIVERGENCE" | "DIVERGENCE_SUSPECT" | "TOP_OF_LADDER";
+  /** AC IDs the halting phase declared impossible, from the same bundle (#1254 AC-3) */
+  declaredAcs?: string;
 }
 
 /**
@@ -286,6 +292,16 @@ export function buildStructuredResponse(
       ...(verdict ? { verdict } : {}),
       durationSeconds: issue.totalDurationSeconds,
       ...summaryFields,
+      // #1254: a halt names its cause here, not only in the truncatable rawOutput.
+      ...(issue.abortReason ? { abortReason: issue.abortReason } : {}),
+      ...(issue.evidenceBundle
+        ? {
+            haltReason: issue.evidenceBundle.reason,
+            ...(issue.evidenceBundle.declaredAcs !== undefined
+              ? { declaredAcs: issue.evidenceBundle.declaredAcs }
+              : {}),
+          }
+        : {}),
     };
   });
 

@@ -137,7 +137,8 @@ export const ErrorContextSchema = z.object({
   /**
    * Classified error category (legacy, kept for backwards compatibility).
    * Keep in sync with `ERROR_CATEGORIES` in `error-classifier.ts` —
-   * `rate_limit` / `billing` added by #761 AC-6, `pr_creation` by #920.
+   * `rate_limit` / `billing` added by #761 AC-6, `pr_creation` by #920,
+   * `ladder_halt` by #1254.
    */
   category: z.enum([
     "context_overflow",
@@ -148,6 +149,7 @@ export const ErrorContextSchema = z.object({
     "rate_limit",
     "billing",
     "pr_creation",
+    "ladder_halt",
     "unknown",
   ]),
   /** Typed error class name (AC-8), e.g. "ApiError", "BuildError" */
@@ -297,6 +299,38 @@ export const PhaseLogSchema = z.object({
 export type PhaseLog = z.infer<typeof PhaseLogSchema>;
 
 /**
+ * The evidence bundle a ladder halt prints (#995), persisted with the issue
+ * (#1254). Mirrors `EvidenceBundle` in `divergence-halt.ts`; `escalationHistory`
+ * is always present, because an empty history is the proof no rung was spent.
+ */
+export const EvidenceBundleSchema = z.object({
+  issueNumber: z.number().int().positive(),
+  phase: z.string(),
+  reason: z.enum(["SPEC_DIVERGENCE", "DIVERGENCE_SUSPECT", "TOP_OF_LADDER"]),
+  shasTried: z.array(z.string()),
+  iterations: z.array(
+    z.object({
+      iteration: z.number().int(),
+      sha: z.string().optional(),
+      verdict: z.string().optional(),
+    }),
+  ),
+  escalationHistory: z.array(
+    z.object({
+      phase: z.string(),
+      rung: z.number().int(),
+      base: z.string(),
+      escalated: z.string(),
+      trigger: z.string(),
+      requestedModel: z.string().optional(),
+      topOfLadder: z.boolean().optional(),
+    }),
+  ),
+  declaredAcs: z.string().optional(),
+  message: z.string().optional(),
+});
+
+/**
  * Complete execution record for a single issue
  */
 export const IssueLogSchema = z.object({
@@ -324,8 +358,14 @@ export const IssueLogSchema = z.object({
    * `phases[]`.
    */
   aborted: z.boolean().optional(),
-  /** Human-readable cause of the abort (e.g. `terminated by SIGTERM`). */
+  /**
+   * Human-readable cause of an issue that stopped outside a phase: an external
+   * abort (`terminated by SIGTERM`, with `aborted: true`) or an orchestrator
+   * decision such as a ladder halt (#1254, without `aborted`).
+   */
   abortReason: z.string().optional(),
+  /** The ladder-halt evidence bundle, when the issue stopped on one (#1254). */
+  evidenceBundle: EvidenceBundleSchema.optional(),
   /** PR number if created after successful QA */
   prNumber: z.number().int().positive().optional(),
   /** PR URL if created after successful QA */

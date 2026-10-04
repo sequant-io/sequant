@@ -143,6 +143,35 @@ function makeRunLog(overrides?: Partial<RunLog>): RunLog {
 }
 
 describe("buildStructuredResponse", () => {
+  // #1254 AC-3: a ladder halt names its reason and declared ACs per issue,
+  // read from the run log's evidence bundle rather than the truncated rawOutput.
+  it("carries haltReason and declaredAcs from a halted issue's evidence bundle", () => {
+    const runLog = makeRunLog();
+    runLog.issues[1] = {
+      ...runLog.issues[1],
+      abortReason: "ladder halt: SPEC_DIVERGENCE in exec (AC-2)",
+      evidenceBundle: {
+        issueNumber: 200,
+        phase: "exec",
+        reason: "SPEC_DIVERGENCE",
+        shasTried: [],
+        iterations: [],
+        escalationHistory: [],
+        declaredAcs: "AC-2",
+      },
+    };
+
+    const response = buildStructuredResponse(runLog, "", "failure");
+
+    expect(response.issues[1]).toMatchObject({
+      haltReason: "SPEC_DIVERGENCE",
+      declaredAcs: "AC-2",
+      abortReason: "ladder halt: SPEC_DIVERGENCE in exec (AC-2)",
+    });
+    expect(response.issues[0].haltReason).toBeUndefined();
+    expect(response.issues[0].declaredAcs).toBeUndefined();
+  });
+
   // AC-1: Structured JSON with per-issue summaries
   it("should return structured JSON with per-issue summaries", () => {
     const runLog = makeRunLog();

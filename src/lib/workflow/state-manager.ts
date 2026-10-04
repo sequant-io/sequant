@@ -359,6 +359,9 @@ export class StateManager {
       error?: string;
       iteration?: number;
       capped?: boolean;
+      /** #1254: the phase declared `SPEC_DIVERGENCE`. */
+      outcome?: "SPEC_DIVERGENCE";
+      divergenceAcs?: string;
     },
   ): Promise<void> {
     await this.withLock(async () => {
@@ -393,6 +396,14 @@ export class StateManager {
       // this is what makes the "reversible later" resume path first-class.
       if (options?.capped !== undefined) {
         phaseState.capped = options.capped;
+      }
+
+      // #1254: a declared spec divergence, so `sequant status` names the cause.
+      if (options?.outcome) {
+        phaseState.outcome = options.outcome;
+      }
+      if (options?.divergenceAcs !== undefined) {
+        phaseState.divergenceAcs = options.divergenceAcs;
       }
 
       // Preserve startedAt if already set
