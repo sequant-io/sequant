@@ -1148,15 +1148,25 @@ export async function runIssueWithLogging(
     const execOutput = latestExec?.output;
     // #1247 AC-3: a run with no exec pass (qa-only re-run) falls back to the
     // summary the last exec pass recorded on the issue's state.
-    // #1246 AC-1: the same state read tells whether an earlier run completed
-    // qa (e.g. `--resume` past qa). Read once, only when needed.
-    const ranQaThisRun = latestPhaseResult(phaseResults, "qa") !== undefined;
+    // #1246 AC-1: "QA has run" means QA reviewed the latest exec. In this run
+    // that is a qa result after the last exec result: a quality-loop
+    // iteration's after-exec update (`[exec, qa, loop, exec]`) is unreviewed.
+    // A qa completed by an earlier run (state) counts only when this run ran
+    // no exec (`--resume` past qa, a qa-only re-run): an exec re-run puts code
+    // on the PR that the earlier qa never saw.
+    const lastIndexOf = (phase: Phase): number => {
+      for (let i = phaseResults.length - 1; i >= 0; i--) {
+        if (phaseResults[i].phase === phase) return i;
+      }
+      return -1;
+    };
+    const qaCoversLatestExec = lastIndexOf("qa") > lastIndexOf("exec");
     let execSummary: string | undefined;
     let priorQaCompleted = false;
-    if ((!latestExec || !ranQaThisRun) && stateManager) {
+    if (!latestExec && stateManager) {
       try {
         const state = await stateManager.getIssueState(issueNumber);
-        if (!latestExec) execSummary = state?.execSummary;
+        execSummary = state?.execSummary;
         priorQaCompleted = state?.phases?.qa?.status === "completed";
       } catch {
         // State read errors fall back to the placeholder text and count as
@@ -1166,10 +1176,16 @@ export async function runIssueWithLogging(
     // #1246 AC-1: a PR from a run QA has not reviewed says so. Distinct from
     // `ranQa` below (#1233 status), which deliberately ignores prior runs.
     const qaNotRun =
-      ranQaThisRun || priorQaCompleted
+      qaCoversLatestExec || priorQaCompleted
         ? undefined
         : {
-            phasesRun: [...new Set(phaseResults.map((p) => p.phase))],
+            phasesRun: [
+              ...new Set(
+                phaseResults
+                  .map((p) => p.phase)
+                  .filter((phase) => phase !== "loop"),
+              ),
+            ],
           };
     const prResult = createPR(
       prPath,

@@ -3717,7 +3717,8 @@ describe("#1246: a PR from a run QA has not reviewed says so", () => {
     }
   });
 
-  it("AC-1: a completed qa recorded on state from an earlier run suppresses the line", async () => {
+  it("AC-1: an exec re-run shows the line even when an earlier run completed qa", async () => {
+    // The earlier qa reviewed code this run's exec has since changed.
     mockExecutePhase.mockImplementation(async (_i, phase) =>
       successResult(phase as string),
     );
@@ -3734,8 +3735,45 @@ describe("#1246: a PR from a run QA has not reviewed says so", () => {
 
     expect(mockCreatePR).toHaveBeenCalled();
     for (const call of mockCreatePR.mock.calls) {
-      expect(bodyOf(call)).not.toContain(NOT_RUN);
+      expect(bodyOf(call)).toContain(
+        "> **QA has not run** — phases run: exec.",
+      );
     }
+  });
+
+  it("AC-1: a quality-loop iteration's after-exec update shows the line again", async () => {
+    // [exec, qa AC_NOT_MET, loop, exec, qa]: the second exec's update must not
+    // read as reviewed — QA has not seen that exec's code yet.
+    let qaPass = 0;
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        qaPass++;
+        return qaResult(
+          qaPass > 1 ? "AC_MET_BUT_NOT_A_PLUS" : "AC_NOT_MET",
+          qaPass > 1,
+        );
+      }
+      return successResult(phase as string);
+    });
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1246,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-1246", branch: "feature/1246" },
+    });
+
+    expect(qaPass).toBe(2);
+    const bodies = mockCreatePR.mock.calls.map((c) => bodyOf(c));
+    // Two after-exec updates (one per iteration), then the post-QA update.
+    expect(bodies.length).toBeGreaterThanOrEqual(3);
+    for (const afterExec of bodies.slice(0, -1)) {
+      expect(afterExec).toContain(NOT_RUN);
+      expect(afterExec).not.toContain("loop");
+    }
+    expect(bodies.at(-1)).not.toContain(NOT_RUN);
+    expect(bodies.at(-1)).toContain("QA verdict: AC_MET_BUT_NOT_A_PLUS");
   });
 
   it("AC-1: a failed earlier qa does not count as QA having run", async () => {
