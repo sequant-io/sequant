@@ -157,6 +157,10 @@ jobs:
       - name: Lint skill calls
         run: npm run lint:skill-calls
 
+      # Claude Code substitutes $0/$1 in skill text, fenced code included (#1289).
+      - name: Lint skill argument substitution
+        run: npm run lint:skill-argument-substitution
+
       # Asserts /qa's declared verdict floors are reachable from its §7
       # algorithm. §2h's gate was prose-only from the day it shipped (#834).
       - name: Lint skill gates
