@@ -469,8 +469,11 @@ describe("Error Category Constants", () => {
       // pr_creation added by #920 — assigned only at the deriveFailureCategory
       // call site for a PR-creation failure, which has no failing phase.
       expect(ERROR_CATEGORIES).toContain("pr_creation");
+      // ladder_halt added by #1254 — assigned only when the issue returns from
+      // a ladder halt, which is the orchestrator's decision, not a phase's.
+      expect(ERROR_CATEGORIES).toContain("ladder_halt");
       expect(ERROR_CATEGORIES).toContain("unknown");
-      expect(ERROR_CATEGORIES).toHaveLength(9);
+      expect(ERROR_CATEGORIES).toHaveLength(10);
     });
   });
 

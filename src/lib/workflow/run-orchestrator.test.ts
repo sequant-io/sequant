@@ -212,7 +212,10 @@ describe("RunOrchestrator.executeOneIssue — live completion path (#879)", () =
       765,
     );
 
-    expect(logWriter.markIssueFailed).toHaveBeenCalledWith(765);
+    expect(logWriter.markIssueFailed).toHaveBeenCalledWith(765, {
+      abortReason: undefined,
+      evidenceBundle: undefined,
+    });
     expect(logWriter.completeIssue).toHaveBeenCalledWith(765);
     // Flip before completion, or completeIssue snapshots the stale "success".
     expect(logWriter.markIssueFailed.mock.invocationCallOrder[0]).toBeLessThan(
