@@ -123,7 +123,7 @@ fi
 
 ```bash
 # Extract verdict from QA comment
-verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print $2}' || true)
+verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print $(2)}' || true)
 
 # Extract NOT_MET AC items
 not_met_acs=$(echo "$qa_comment" | grep -E "NOT_MET|PARTIALLY_MET" || true)
