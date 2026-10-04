@@ -27,6 +27,8 @@ vi.mock("./phase-executor.js", async (importOriginal) => ({
 }));
 
 vi.mock("./worktree-manager.js", () => ({
+  // #1297: batch-executor checks for an empty composed exec summary.
+  composeExecSummary: vi.fn(() => undefined),
   createCheckpointCommit: vi.fn(),
   rebaseBeforePR: vi.fn(),
   createPR: vi.fn(() => ({ attempted: true, success: false })),

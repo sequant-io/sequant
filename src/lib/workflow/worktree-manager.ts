@@ -1940,11 +1940,18 @@ export function extractExecSummary(
   const end = nextHeading?.index ?? rest.length;
   const summary = rest.slice(0, end).trim();
   if (!summary) return undefined;
-  if (summary.length <= EXEC_SUMMARY_MAX_LENGTH) return summary;
-  let capped = summary.slice(0, EXEC_SUMMARY_MAX_LENGTH);
-  // #1297: a cut inside an HTML comment (a `SEQUANT_MUTATION` marker) leaves a
-  // dangling `<!--` that would swallow the marker re-appended after it. Drop
-  // the partial comment; `composeExecSummary` re-adds it whole.
+  return capImportedText(summary);
+}
+
+/**
+ * Cap imported exec text at `EXEC_SUMMARY_MAX_LENGTH` (#1297). A cut inside an
+ * HTML comment (a `SEQUANT_MUTATION` marker) leaves a dangling `<!--` that
+ * would swallow the markers `composeExecSummary` re-appends after it, so the
+ * partial comment is dropped; the marker is re-added whole.
+ */
+function capImportedText(text: string): string {
+  if (text.length <= EXEC_SUMMARY_MAX_LENGTH) return text;
+  let capped = text.slice(0, EXEC_SUMMARY_MAX_LENGTH);
   const open = capped.lastIndexOf("<!--");
   if (open > capped.lastIndexOf("-->")) capped = capped.slice(0, open);
   return capped.trim();
@@ -2003,11 +2010,7 @@ export function composeExecSummary(
     const table = extractAcTable(execOutput);
     if (table) {
       parts.push(
-        `**Acceptance criteria (from exec):**\n\n${
-          table.length > EXEC_SUMMARY_MAX_LENGTH
-            ? table.slice(0, EXEC_SUMMARY_MAX_LENGTH).trim()
-            : table
-        }`,
+        `**Acceptance criteria (from exec):**\n\n${capImportedText(table)}`,
       );
     }
   }

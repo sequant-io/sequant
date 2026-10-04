@@ -554,6 +554,21 @@ describe("composeExecSummary / buildAutomatedPRBody with no Summary section (#12
     ]);
   });
 
+  it("AC-2e: a cut inside a marker on the no-Summary AC-table path keeps every marker", () => {
+    // The AC-table cap had no comment guard: a cut at 3973-3975 left a
+    // dangling `<!--` that swallowed AC-1's re-appended marker.
+    const m1 = mk("AC-1", "src/a.test.ts > a > one");
+    const m2 = mk("AC-2", "src/b.test.ts > b > two");
+    for (let n = 3940; n <= 4010; n++) {
+      const out = `## Acceptance criteria\n\n${"x".repeat(n)}\n${m1}\n${m2}\n`;
+      const body = buildAutomatedPRBody(1, { execOutput: out });
+      const acs = parseMutationMarkers(body)
+        .map((m) => m.ac)
+        .sort();
+      expect(acs, `cut offset ${n}`).toEqual(["AC-1", "AC-2"]);
+    }
+  });
+
   it("AC-2c: the same marker in Summary and elsewhere appears once", () => {
     const m = mk("AC-1", "src/a.test.ts > a > one");
     const out = `## Checks\n${m}\n## Summary\nworked\n${m}\n`;
