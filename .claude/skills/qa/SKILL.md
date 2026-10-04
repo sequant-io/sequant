@@ -2604,7 +2604,7 @@ npx tsx -e '
 | Status | Criteria |
 |--------|----------|
 | **Verified** | The in-scope AC has a `SEQUANT_MUTATION` marker whose `failedTest` names a test or CI workflow file present in the diff |
-| **Missing** | The in-scope AC has no `SEQUANT_MUTATION` marker |
+| **Missing** | The in-scope AC has no `SEQUANT_MUTATION` marker. Under `SEQUANT_ORCHESTRATOR`, the gap text says "add the markers to exec's final `## Summary`", never to the PR body (the orchestrator builds the body from it) |
 | **Failed** | The in-scope AC has a marker naming a test or CI workflow file NOT present in the diff — a fabricated marker is worse than a missing one |
 
 **Aggregate `mutation_verification_status`** (the single §7 step-2 token — worst case across in-scope ACs wins, mirroring §6e's per-AC-table-to-single-status rollup): `Failed` if any in-scope AC is `Failed`; else `Missing` if any in-scope AC is `Missing`; else `Verified` if every in-scope AC is `Verified`; `Not-Applicable` when no AC in the diff is a gate-test AC.
