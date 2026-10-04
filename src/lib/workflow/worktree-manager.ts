@@ -18,7 +18,7 @@ import {
 import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
-  parseMutationMarkers,
+  parseMutationMarkersFromExecOutput,
   renderMutationMarker,
 } from "./mutation-marker.js";
 import {
@@ -1987,9 +1987,11 @@ export function composeExecSummary(
   const summary = extractExecSummary(execOutput);
   const key = (m: { ac: string; mutation: string; failedTest: string }) =>
     JSON.stringify([m.ac, m.mutation, m.failedTest]);
-  const seen = new Set(parseMutationMarkers(summary ?? "").map(key));
+  const seen = new Set(
+    parseMutationMarkersFromExecOutput(summary ?? "").map(key),
+  );
   const markers: string[] = [];
-  for (const marker of parseMutationMarkers(execOutput)) {
+  for (const marker of parseMutationMarkersFromExecOutput(execOutput)) {
     if (seen.has(key(marker))) continue;
     seen.add(key(marker));
     markers.push(renderMutationMarker(marker));

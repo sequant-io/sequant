@@ -41,9 +41,12 @@ export interface ClassifiedMutationMarker extends MutationMarker {
   classification: MutationMarkerClassification;
 }
 
-function parseMarkersRaw(prBody: string): MutationMarker[] {
+function parseMarkersRaw(
+  prBody: string,
+  includeCode = false,
+): MutationMarker[] {
   const markers: MutationMarker[] = [];
-  const stripped = stripMarkdownCode(prBody);
+  const stripped = includeCode ? prBody : stripMarkdownCode(prBody);
   MUTATION_MARKER_REGEX.lastIndex = 0;
 
   let match: RegExpExecArray | null;
@@ -61,6 +64,19 @@ function parseMarkersRaw(prBody: string): MutationMarker[] {
   }
 
   return markers;
+}
+
+/**
+ * Collect markers from exec's output, fenced blocks included (#1297). Exec
+ * often fences the markers it writes "for the PR body"; unlike doc text, that
+ * output is meant to reach the PR body, so a fence is not an example here.
+ * Malformed markers are still dropped, and callers re-render the rest through
+ * {@link renderMutationMarker}.
+ */
+export function parseMutationMarkersFromExecOutput(
+  output: string,
+): MutationMarker[] {
+  return parseMarkersRaw(output, true);
 }
 
 /**

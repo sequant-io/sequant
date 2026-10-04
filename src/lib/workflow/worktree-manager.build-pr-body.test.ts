@@ -510,6 +510,20 @@ describe("composeExecSummary / buildAutomatedPRBody with no Summary section (#12
     expect(body).toContain("Refs #99");
   });
 
+  it("AC-1: the verbatim #1245 exec output (markers fenced) yields all 3 markers", () => {
+    const output = readFileSync(
+      join(__dirname, "__fixtures__/exec-output/1245-fenced-markers.txt"),
+      "utf-8",
+    );
+    const body = buildAutomatedPRBody(1245, { execOutput: output });
+    expect(parseMutationMarkers(body).map((m) => m.ac)).toEqual([
+      "AC-1",
+      "AC-2",
+      "AC-3",
+    ]);
+    expect(body).toContain("| AC-3 | ✅ |");
+  });
+
   it("AC-2a: a marker inside the Summary section appears once", () => {
     const m = mk("AC-1", "src/a.test.ts > a > one");
     const out = `## Summary\nworked\n${m}\n`;
