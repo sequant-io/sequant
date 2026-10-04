@@ -14,6 +14,7 @@ import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import type { SequantError } from "../errors.js";
 import type { ErrorCategory } from "./error-classifier.js";
+import type { EvidenceBundle } from "./divergence-halt.js";
 // Type-only import — erased at compile, so the ready-gate ⇄ types cycle is
 // purely nominal (ready-gate.ts imports these types back, also type-only).
 import type { ReadyResult } from "./ready-gate.js";
@@ -505,7 +506,17 @@ export interface IssueResult {
   issueNumber: number;
   success: boolean;
   phaseResults: PhaseResult[];
+  /**
+   * Why the issue stopped when no failed phase says so: a chain/rebase abort,
+   * a lock, or a ladder halt (#1254: `ladder halt: <reason> in <phase>`).
+   */
   abortReason?: string;
+  /**
+   * The evidence bundle of a ladder halt (#1254) — `SPEC_DIVERGENCE`,
+   * `DIVERGENCE_SUSPECT` or `TOP_OF_LADDER`. Present iff the run halted on
+   * one; `failureCategory` is then `ladder_halt`.
+   */
+  evidenceBundle?: EvidenceBundle;
   loopTriggered?: boolean;
   durationSeconds?: number;
   /** PR number if created after successful QA */

@@ -161,6 +161,14 @@ export const PhaseStateSchema = z.object({
    * Additive/optional — existing persisted state is unaffected.
    */
   capped: z.boolean().optional(),
+  /**
+   * Set when the phase declared `SPEC_DIVERGENCE` (#1254). The phase is stored
+   * `failed` whatever its exit status, and these say why — the same fields the
+   * phase marker carries (#995).
+   */
+  outcome: z.enum(["SPEC_DIVERGENCE"]).optional(),
+  /** AC IDs the phase declared impossible, comma-separated (#1254). */
+  divergenceAcs: z.string().optional(),
   /** Number of loop iterations (for loop phase) */
   iteration: z.number().int().nonnegative().optional(),
 });

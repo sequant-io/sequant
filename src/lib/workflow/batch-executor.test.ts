@@ -111,6 +111,8 @@ import { createPhaseLogFromTiming } from "./log-writer.js";
 import {
   runIssueWithLogging,
   recordIssueCompletion,
+  ladderHaltOutcome,
+  phaseRecordFor,
 } from "./batch-executor.js";
 import {
   buildAutomatedPRBody,
@@ -2800,7 +2802,10 @@ describe("recordIssueCompletion (#879) — shared completion sequence", () => {
       765,
     );
 
-    expect(lw.markIssueFailed).toHaveBeenCalledWith(765);
+    expect(lw.markIssueFailed).toHaveBeenCalledWith(765, {
+      abortReason: undefined,
+      evidenceBundle: undefined,
+    });
     expect(lw.completeIssue).toHaveBeenCalledWith(765);
     // The failure flip must precede completion, or completeIssue snapshots the
     // still-"success" status.
@@ -3948,5 +3953,256 @@ describe("#1246: a PR from a run QA has not reviewed says so", () => {
 
     expect(mockCreatePR).toHaveBeenCalledTimes(1);
     expect(bodyOf(mockCreatePR.mock.calls[0])).toContain(NOT_RUN);
+  });
+});
+
+// #1254: a ladder halt is the orchestrator's decision, not a phase failure, so
+// nothing derived from the phases recorded it. Every halt now returns
+// `ladder_halt` + an abortReason + the bundle, and a SPEC_DIVERGENCE phase is
+// recorded as failed by one decision shared by state, run log and progress.
+describe("#1254: a ladder halt is recorded, not only printed", () => {
+  const divergence = { acs: "AC-2", message: "AC-2 contradicts AC-1" };
+
+  function recordingCtx(base: IssueExecutionContext): {
+    ctx: IssueExecutionContext;
+    updatePhaseStatus: ReturnType<typeof vi.fn>;
+    onProgress: ReturnType<typeof vi.fn>;
+  } {
+    const updatePhaseStatus = vi.fn().mockResolvedValue(undefined);
+    const onProgress = vi.fn();
+    return {
+      ctx: {
+        ...base,
+        services: {
+          logWriter: { logPhase: vi.fn() } as never,
+          stateManager: { updatePhaseStatus } as never,
+        },
+        onProgress,
+      },
+      updatePhaseStatus,
+      onProgress,
+    };
+  }
+
+  /** The status a phase was logged with, from `createPhaseLogFromTiming`. */
+  function loggedStatusFor(phase: string): unknown {
+    const call = vi
+      .mocked(createPhaseLogFromTiming)
+      .mock.calls.find((c) => c[0] === phase);
+    return call?.[4];
+  }
+
+  /** The terminal state write for a phase (the last non-in_progress one). */
+  function finalStateFor(
+    updatePhaseStatus: ReturnType<typeof vi.fn>,
+    phase: string,
+  ): unknown[] | undefined {
+    return updatePhaseStatus.mock.calls
+      .filter((c) => c[1] === phase && c[2] !== "in_progress")
+      .at(-1);
+  }
+
+  async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      return await fn();
+    } finally {
+      logSpy.mockRestore();
+    }
+  }
+
+  it("spec path: a clean-exit spec divergence returns ladder_halt, an abortReason and the bundle", async () => {
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation(async (_n, phase) =>
+      phase === "spec"
+        ? { ...successResult("spec"), specDivergence: divergence }
+        : successResult(phase),
+    );
+    const { ctx, updatePhaseStatus, onProgress } = recordingCtx(
+      makeCtx({ issueNumber: 1254, options: { autoDetectPhases: true } }),
+    );
+
+    const result = await quietly(() => runIssueWithLogging(ctx));
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("ladder_halt");
+    expect(result.abortReason).toBe(
+      "ladder halt: SPEC_DIVERGENCE in spec (AC-2)",
+    );
+    expect(result.evidenceBundle).toMatchObject({
+      issueNumber: 1254,
+      phase: "spec",
+      reason: "SPEC_DIVERGENCE",
+      declaredAcs: "AC-2",
+      escalationHistory: [],
+    });
+    // AC-2: state, run-log row and progress event all read failure.
+    expect(finalStateFor(updatePhaseStatus, "spec")).toEqual([
+      1254,
+      "spec",
+      "failed",
+      expect.objectContaining({
+        outcome: "SPEC_DIVERGENCE",
+        divergenceAcs: "AC-2",
+      }),
+    ]);
+    expect(loggedStatusFor("spec")).toBe("failure");
+    const specEvents = onProgress.mock.calls
+      .filter((c) => c[1] === "spec")
+      .map((c) => c[2]);
+    expect(specEvents).toEqual(["start", "failed"]);
+  });
+
+  it("loop path: an exec that exits cleanly with SPEC_DIVERGENCE is recorded failed everywhere", async () => {
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation(async (_n, phase) =>
+      phase === "exec"
+        ? { ...successResult("exec"), specDivergence: divergence }
+        : successResult(phase),
+    );
+    const { ctx, updatePhaseStatus, onProgress } = recordingCtx(
+      makeCtx({
+        issueNumber: 1254,
+        config: { phases: ["exec", "qa"] },
+        options: { autoDetectPhases: false },
+      }),
+    );
+
+    const result = await quietly(() => runIssueWithLogging(ctx));
+
+    expect(mockExecutePhase.mock.calls.map((c) => c[1])).toEqual(["exec"]);
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("ladder_halt");
+    expect(result.abortReason).toBe(
+      "ladder halt: SPEC_DIVERGENCE in exec (AC-2)",
+    );
+    expect(result.evidenceBundle?.reason).toBe("SPEC_DIVERGENCE");
+    expect(result.evidenceBundle?.declaredAcs).toBe("AC-2");
+    expect(finalStateFor(updatePhaseStatus, "exec")).toEqual([
+      1254,
+      "exec",
+      "failed",
+      expect.objectContaining({
+        outcome: "SPEC_DIVERGENCE",
+        divergenceAcs: "AC-2",
+        error: "SPEC_DIVERGENCE declared: AC-2",
+      }),
+    ]);
+    expect(loggedStatusFor("exec")).toBe("failure");
+    const execEvents = onProgress.mock.calls
+      .filter((c) => c[1] === "exec")
+      .map((c) => c[2]);
+    expect(execEvents).toEqual(["start", "failed"]);
+  });
+
+  it("a run without a halt carries no abortReason or bundle", async () => {
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation(async (_n, phase) => ({
+      ...successResult(phase),
+      success: phase !== "exec",
+      error: phase === "exec" ? "build failed" : undefined,
+    }));
+    const result = await quietly(() =>
+      runIssueWithLogging(
+        makeCtx({
+          config: { phases: ["exec"] },
+          options: { autoDetectPhases: false },
+        }),
+      ),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).not.toBe("ladder_halt");
+    expect(result.abortReason).toBeUndefined();
+    expect(result.evidenceBundle).toBeUndefined();
+  });
+
+  it("recordIssueCompletion forces failure and hands the reason and bundle to the run log", () => {
+    const bundle = {
+      issueNumber: 1254,
+      phase: "exec",
+      reason: "SPEC_DIVERGENCE" as const,
+      shasTried: [],
+      iterations: [],
+      escalationHistory: [],
+      declaredAcs: "AC-2",
+    };
+    const lw = {
+      setPRInfo: vi.fn(),
+      markIssueFailed: vi.fn(),
+      completeIssue: vi.fn(),
+    };
+    recordIssueCompletion(
+      lw as unknown as Parameters<typeof recordIssueCompletion>[0],
+      {
+        issueNumber: 1254,
+        success: false,
+        // The halting phase exited cleanly: no failed phase sets the status.
+        phaseResults: [successResult("exec")],
+        ...ladderHaltOutcome(bundle),
+      },
+      1254,
+    );
+
+    expect(lw.markIssueFailed).toHaveBeenCalledWith(1254, {
+      abortReason: "ladder halt: SPEC_DIVERGENCE in exec (AC-2)",
+      evidenceBundle: bundle,
+    });
+    expect(lw.markIssueFailed.mock.invocationCallOrder[0]).toBeLessThan(
+      lw.completeIssue.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("recordIssueCompletion leaves a phase-failed issue to its phases (timeout stays partial)", () => {
+    const lw = {
+      setPRInfo: vi.fn(),
+      markIssueFailed: vi.fn(),
+      completeIssue: vi.fn(),
+    };
+    recordIssueCompletion(
+      lw as unknown as Parameters<typeof recordIssueCompletion>[0],
+      {
+        issueNumber: 1,
+        success: false,
+        phaseResults: [
+          {
+            phase: "exec",
+            success: false,
+            durationSeconds: 1,
+            error: "Timeout",
+          },
+        ],
+      },
+      1,
+    );
+    expect(lw.markIssueFailed).not.toHaveBeenCalled();
+  });
+
+  it("ladderHaltOutcome names the reason and phase, and omits empty ACs", () => {
+    const outcome = ladderHaltOutcome({
+      issueNumber: 1,
+      phase: "qa",
+      reason: "DIVERGENCE_SUSPECT",
+      shasTried: [],
+      iterations: [],
+      escalationHistory: [],
+    });
+    expect(outcome.failureCategory).toBe("ladder_halt");
+    expect(outcome.abortReason).toBe("ladder halt: DIVERGENCE_SUSPECT in qa");
+  });
+
+  it("phaseRecordFor: a declared divergence is a failure whatever the exit status", () => {
+    expect(
+      phaseRecordFor({ ...successResult("exec"), specDivergence: {} }),
+    ).toEqual({
+      success: false,
+      error: "SPEC_DIVERGENCE declared: (the agent named no AC)",
+      outcome: "SPEC_DIVERGENCE",
+      divergenceAcs: "",
+    });
+    expect(phaseRecordFor(successResult("exec"))).toEqual({
+      success: true,
+      error: undefined,
+    });
   });
 });

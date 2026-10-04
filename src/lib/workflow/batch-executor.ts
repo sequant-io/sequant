@@ -544,8 +544,22 @@ export function recordIssueCompletion(
   if (result.prNumber && result.prUrl) {
     logWriter.setPRInfo(result.prNumber, result.prUrl, issueNumber);
   }
-  if (result.prCreationError) {
-    logWriter.markIssueFailed(issueNumber);
+  // #1254: any failure no failed phase accounts for — a PR-creation failure,
+  // a ladder halt, an abort before the phases — is forced to `failure`, and
+  // its reason and evidence bundle go on the issue entry. A failed phase
+  // already sets the status (`failure`, or `partial` on a timeout).
+  const failedPhase = result.phaseResults.some(
+    (p) => !p.success && p.phase !== "loop",
+  );
+  if (
+    result.prCreationError ||
+    result.evidenceBundle ||
+    (!result.success && !failedPhase)
+  ) {
+    logWriter.markIssueFailed(issueNumber, {
+      abortReason: result.abortReason,
+      evidenceBundle: result.evidenceBundle,
+    });
   }
   logWriter.completeIssue(issueNumber);
 }
@@ -648,6 +662,61 @@ export function deriveFailureCategory(
     failedPhase.structuredError ??
     classifyError(failedPhase.stderrTail ?? [], failedPhase.exitCode);
   return errorTypeToCategory(typedError);
+}
+
+/**
+ * The issue-level record of a ladder halt (#1254).
+ *
+ * A halt is the orchestrator's decision, not a phase failure, so
+ * {@link deriveFailureCategory} finds nothing to classify — a halt where every
+ * phase exited cleanly used to return `success: false` with no category and no
+ * reason. Both `runIssueWithLogging` return sites spread this, so all four
+ * producers (spec path, loop `SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`,
+ * `TOP_OF_LADDER`) are recorded through one owner. Reuses `abortReason` rather
+ * than a halt-specific field (owner decision 2026-10-04).
+ *
+ * @internal Exported for testing
+ */
+export function ladderHaltOutcome(
+  bundle: EvidenceBundle,
+): Pick<IssueResult, "failureCategory" | "abortReason" | "evidenceBundle"> {
+  const acs = bundle.declaredAcs?.trim();
+  return {
+    failureCategory: "ladder_halt",
+    abortReason: `ladder halt: ${bundle.reason} in ${bundle.phase}${acs ? ` (${acs})` : ""}`,
+    evidenceBundle: bundle,
+  };
+}
+
+/**
+ * How a finished phase is recorded — in state, the run-log phase row and the
+ * progress event alike (#1254).
+ *
+ * A phase that declared `SPEC_DIVERGENCE` halted the run, so it is recorded as
+ * failed whatever its exit status, with the declaration as its outcome. Every
+ * writer reads this one decision; before #1254 each copied `result.success`,
+ * so a clean-exit divergence read `completed` everywhere a reader looks.
+ *
+ * @internal Exported for testing
+ */
+export function phaseRecordFor(result: PhaseResult): {
+  success: boolean;
+  error?: string;
+  outcome?: "SPEC_DIVERGENCE";
+  divergenceAcs?: string;
+} {
+  if (!result.specDivergence) {
+    return { success: result.success, error: result.error };
+  }
+  const acs = result.specDivergence.acs ?? "";
+  return {
+    success: false,
+    error:
+      result.error ??
+      `SPEC_DIVERGENCE declared: ${acs.trim() || "(the agent named no AC)"}`,
+    outcome: "SPEC_DIVERGENCE",
+    divergenceAcs: acs,
+  };
 }
 
 // Re-exported for the #1249 call sites and tests; the accessor lives in a leaf
@@ -1370,12 +1439,14 @@ export async function runIssueWithLogging(
 
     phaseResults.push(specResult);
     specAlreadyRan = true;
+    // #1254: one decision for the progress event, run-log row and state.
+    const specRecord = phaseRecordFor(specResult);
 
     // Emit completion/failure progress event (AC-8)
     const specDurationSec = Math.round(
       (specEndTime.getTime() - specStartTime.getTime()) / 1000,
     );
-    if (specResult.success) {
+    if (specRecord.success) {
       const extra = { durationSeconds: specDurationSec };
       emitProgressLine(issueNumber, "spec", "complete", extra);
       try {
@@ -1396,7 +1467,7 @@ export async function runIssueWithLogging(
           ? "turn cap reached — partial output preserved (resume to continue)"
           : isBillingOrWindowHalt(specResult)
             ? billingHaltReason(specResult)
-            : (specResult.error ?? "unknown"),
+            : (specRecord.error ?? "unknown"),
       };
       emitProgressLine(issueNumber, "spec", "failed", extra);
       try {
@@ -1432,13 +1503,13 @@ export async function runIssueWithLogging(
         issueNumber,
         specStartTime,
         specEndTime,
-        specResult.success
+        specRecord.success
           ? "success"
           : specResult.error?.includes("Timeout")
             ? "timeout"
             : "failure",
         {
-          error: specResult.error,
+          error: specRecord.error,
           // Mark a turn-capped spec phase distinctly in the log (#739), matching
           // the main phase loop: status stays "failure" but `capped` flags it.
           capped: specResult.capped,
@@ -1455,12 +1526,14 @@ export async function runIssueWithLogging(
     // Track spec phase completion in state
     if (stateManager) {
       try {
-        const phaseStatus = specResult.success ? "completed" : "failed";
+        const phaseStatus = specRecord.success ? "completed" : "failed";
         await stateManager.updatePhaseStatus(issueNumber, "spec", phaseStatus, {
-          error: specResult.error,
+          error: specRecord.error,
           // Mark a turn-capped spec halt distinctly in state (#739), matching
           // the run-log marker — status stays "failed", `capped` flags it.
           capped: specResult.capped,
+          outcome: specRecord.outcome,
+          divergenceAcs: specRecord.divergenceAcs,
         });
       } catch {
         // State tracking errors shouldn't stop execution
@@ -1476,14 +1549,11 @@ export async function runIssueWithLogging(
     // halt the phase loop applies (#995). Outside the success split for the
     // same reason: a spec that declares divergence and still emits a valid
     // `SEQUANT_SPEC` passes the #1193 guard and would otherwise reach exec.
-    if (specResult.specDivergence) {
-      log(
-        chalk.yellow(
-          formatEvidenceBundle(
-            buildBundle("SPEC_DIVERGENCE", "spec", specResult.specDivergence),
-          ),
-        ),
-      );
+    const specBundle = specResult.specDivergence
+      ? buildBundle("SPEC_DIVERGENCE", "spec", specResult.specDivergence)
+      : null;
+    if (specBundle) {
+      log(chalk.yellow(formatEvidenceBundle(specBundle)));
     }
 
     if (!specResult.success || specResult.specDivergence) {
@@ -1507,7 +1577,10 @@ export async function runIssueWithLogging(
         phaseResults,
         durationSeconds,
         loopTriggered: false,
-        failureCategory: deriveFailureCategory(phaseResults),
+        // #1254: a halt records its reason and bundle, not an empty category.
+        ...(specBundle
+          ? ladderHaltOutcome(specBundle)
+          : { failureCategory: deriveFailureCategory(phaseResults) }),
       };
     }
 
@@ -1902,11 +1975,14 @@ export async function runIssueWithLogging(
           : result,
       );
 
+      // #1254: one decision for the progress event, run-log row and state.
+      const record = phaseRecordFor(result);
+
       // Emit completion/failure progress event (AC-8)
       const phaseDurationSec = Math.round(
         (phaseEndTime.getTime() - phaseStartTime.getTime()) / 1000,
       );
-      if (result.success) {
+      if (record.success) {
         const extra = { durationSeconds: phaseDurationSec, iteration };
         emitProgressLine(issueNumber, phase, "complete", extra);
         try {
@@ -1929,7 +2005,7 @@ export async function runIssueWithLogging(
                 // the run summary doesn't cascade into a downstream
                 // `QA completed without a parseable verdict`.
                 billingHaltReason(result)
-              : (result.error ?? "unknown"),
+              : (record.error ?? "unknown"),
           iteration,
         };
         emitProgressLine(issueNumber, phase, "failed", extra);
@@ -2018,13 +2094,13 @@ export async function runIssueWithLogging(
           issueNumber,
           phaseStartTime,
           phaseEndTime,
-          result.success
+          record.success
             ? "success"
             : result.error?.includes("Timeout")
               ? "timeout"
               : "failure",
           {
-            error: result.error,
+            error: record.error,
             // Mark a turn-capped phase distinctly in the log (#739): status stays
             // "failure" (no new enum value) but `capped` flags it as recoverable.
             capped: result.capped,
@@ -2049,7 +2125,7 @@ export async function runIssueWithLogging(
       // Track phase completion in state
       if (stateManager) {
         try {
-          const phaseStatus = result.success
+          const phaseStatus = record.success
             ? "completed"
             : result.error?.includes("Timeout")
               ? "failed"
@@ -2059,11 +2135,13 @@ export async function runIssueWithLogging(
             phase as Phase,
             phaseStatus,
             {
-              error: result.error,
+              error: record.error,
               // Mark a turn-capped phase halt distinctly in state (#739),
               // matching the run-log marker — status stays "failed",
               // `capped` flags it as recoverable for the resume path.
               capped: result.capped,
+              outcome: record.outcome,
+              divergenceAcs: record.divergenceAcs,
             },
           );
         } catch {
@@ -2598,6 +2676,11 @@ export async function runIssueWithLogging(
         // on a PR-only failure) doesn't reopen for this failure path.
         (deriveFailureCategory(phaseResults) ??
         (prCreationError ? "pr_creation" : undefined)),
+    // #1254: a ladder halt overrides the phase-derived category with
+    // `ladder_halt` and carries its reason and evidence bundle.
+    ...(divergenceBundle && !overallSuccess
+      ? ladderHaltOutcome(divergenceBundle)
+      : {}),
     // #817: present only when `--ready-gate` ran the gate; the summary renders
     // its terminal reason (AC-6).
     readyGate: readyGateResult,

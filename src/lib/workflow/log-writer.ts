@@ -36,6 +36,7 @@ import {
   type RotationSettings,
   DEFAULT_ROTATION_SETTINGS,
 } from "./log-rotation.js";
+import type { EvidenceBundle } from "./divergence-halt.js";
 
 export interface LogWriterOptions {
   /** Path to log directory (default: .sequant/logs in current directory) */
@@ -227,8 +228,14 @@ export class LogWriter {
    * `success`. Call this after the last phase is logged and before
    * {@link completeIssue} to count it under `failed`. No-op if the issue is not
    * active. Reuses the existing `failure` enum — no schema change.
+   *
+   * `details` (#1254) records why the issue stopped when no phase says so — a
+   * ladder halt's reason and evidence bundle — on the issue entry.
    */
-  markIssueFailed(issueNumber?: number): void {
+  markIssueFailed(
+    issueNumber?: number,
+    details?: { abortReason?: string; evidenceBundle?: EvidenceBundle },
+  ): void {
     const issue = issueNumber
       ? (this.activeIssues.get(issueNumber) ?? this.currentIssue)
       : this.currentIssue;
@@ -236,6 +243,8 @@ export class LogWriter {
       return;
     }
     issue.status = "failure";
+    if (details?.abortReason) issue.abortReason = details.abortReason;
+    if (details?.evidenceBundle) issue.evidenceBundle = details.evidenceBundle;
     // completeIssue re-derives status from the phase list (#856), so the seed
     // above is not enough on its own — mark the slot so completion honors it.
     this.forcedFailures.add(issue);
@@ -301,7 +310,12 @@ export class LogWriter {
       totalDurationSeconds,
       ...(abort && {
         aborted: true,
-        abortReason: abort.reason,
+      }),
+      ...((abort?.reason ?? issue.abortReason) != null && {
+        abortReason: abort?.reason ?? issue.abortReason,
+      }),
+      ...(issue.evidenceBundle != null && {
+        evidenceBundle: issue.evidenceBundle,
       }),
       ...(issue.prNumber != null && {
         prNumber: issue.prNumber,
