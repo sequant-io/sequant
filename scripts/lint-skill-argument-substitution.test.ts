@@ -11,8 +11,14 @@ describe("lint-skill-argument-substitution", () => {
     expect(findViolations(body).map((v) => v.line)).toEqual([2]);
   });
 
-  it("accepts the escaped form", () => {
-    expect(findViolations("awk '{ print \\$0 }'")).toEqual([]);
+  it("rejects the backslash escape, which other drivers read literally", () => {
+    expect(findViolations("awk '{ print \\$0 }'").map((v) => v.line)).toEqual([1]);
+  });
+
+  it("accepts the $(N) and -v field forms", () => {
+    expect(
+      findViolations("awk '{ print substr($(0), 2) }'\nawk -v n=2 '{ print $n, $NF }'"),
+    ).toEqual([]);
   });
 
   it("accepts $ARGUMENTS and non-positional dollars", () => {
@@ -37,7 +43,7 @@ describe("lint-skill-argument-substitution", () => {
     }
   });
 
-  it("the shipped skills have no bare positional $N", () => {
+  it("the shipped skills have no positional $N", () => {
     expect(scanRoots()).toEqual([]);
   });
 });

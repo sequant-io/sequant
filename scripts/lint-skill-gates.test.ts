@@ -606,8 +606,8 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
   it("fails loud when an uppercase literal is reintroduced into an awk pattern", () => {
     const upper = mutate(
       realSkill(),
-      "tolower(\\$0) ~ /manual test|",
-      "tolower(\\$0) ~ /Manual Test|",
+      "tolower($(0)) ~ /manual test|",
+      "tolower($(0)) ~ /Manual Test|",
     );
     expect(
       messagesFor(lintSkillContent(upper).violations, "PARSE").join("\n"),
@@ -621,7 +621,7 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     // The grep half and the awk half are checked independently.
     const awkGutted = mutate(
       realSkill(),
-      "tolower(\\$0) ~ /manual test|",
+      "tolower($(0)) ~ /manual test|",
       "MUTATED-NO-PATTERN /manual test|",
     );
     const result = lintSkillContent(awkGutted);
@@ -638,7 +638,7 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     // running §7's pipeline for real.
     const anchorGutted = mutate(
       realSkill(),
-      "isdecl = (tolower(\\$0) ~ /",
+      "isdecl = (tolower($(0)) ~ /",
       "isdecl = (MUTATED(",
     );
     const result = lintSkillContent(anchorGutted);

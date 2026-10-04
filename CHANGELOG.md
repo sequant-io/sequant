@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Skills no longer break when Claude Code substitutes `$0`/`$1` in their text (#1289).** Claude Code replaces positional `$N` in a skill's body when the skill gets arguments, and fenced code blocks are not exempt: `/qa 1249` turned `substr($0, 2)` into `substr(1249, 2)`, silently breaking §6c's added-line extraction and the manual-AC attribution program. Awk fields in the shipped skills are now written `$(N)`, which Claude Code leaves alone and which also works for drivers that read the files untemplated (codex, opencode). The §6c extraction moved to `qa/scripts/added-lines.sh`. A new CI lint, `npm run lint:skill-argument-substitution`, rejects any `$N` in a SKILL.md body, escaped or not.
+
 - **The `sequant run` PR body keeps exec's mutation markers and AC table when exec wrote no `## Summary` (#1297).** The body now carries every valid `SEQUANT_MUTATION` marker from exec's final output, including markers exec fenced in a code block (outside the 4,000-character cap, never duplicated) and, with no Summary, the AC table; the placeholder only appears when there is nothing to carry, and the run output warns when it does. The issue state's stored summary carries the markers too, so a qa-only re-run's PR update keeps them.
 
 ### Added

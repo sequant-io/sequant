@@ -1635,8 +1635,8 @@ fi
 # Find new exported functions (added lines only)
 # Catches: export function foo, export async function foo,
 #          export const foo = () =>, export const foo = async () =>
-fn_exports=$(git diff origin/main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print \$2}' || true)
-arrow_exports=$(git diff origin/main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print \$2}' || true)
+fn_exports=$(git diff origin/main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $(2)}' || true)
+arrow_exports=$(git diff origin/main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print $(2)}' || true)
 new_exports=$(echo -e "${fn_exports}\n${arrow_exports}" | sed '/^$/d' | sort -u)
 export_count=$(echo "$new_exports" | grep -c . || echo 0)
 
@@ -2054,7 +2054,7 @@ For each extracted command type:
 # Verify each field exists
 
 # Get valid fields
-valid_fields=$(gh pr checks --help 2>/dev/null | grep -A 50 "JSON FIELDS" | grep -E "^\s+\w+" | awk '{print \$1}' || true)
+valid_fields=$(gh pr checks --help 2>/dev/null | grep -A 50 "JSON FIELDS" | grep -E "^\s+\w+" | awk '{print $(1)}' || true)
 
 # Check if "conclusion" is valid (spoiler: it's not)
 echo "$valid_fields" | grep -qw "conclusion" && echo "✅ conclusion exists" || echo "❌ conclusion NOT a valid field"
@@ -2840,13 +2840,13 @@ manual_test_acs=$(echo "$spec_comment" | \
 #       headings alone left ~59% of ACs unattributed (the #547 class, §6c).
 #   (b) A non-AC heading CLEARS the current AC, so later prose and table rows
 #       are not credited to the last AC declared (5 of 9 were, before).
-#   (c) `tolower(\$0)` instead of gawk-only `BEGIN{IGNORECASE=1}` (a no-op on
+#   (c) `tolower($(0))` instead of gawk-only `BEGIN{IGNORECASE=1}` (a no-op on
 #       macOS awk), so every pattern literal below stays lowercase.
 manual_ac_ids=$(echo "$spec_comment" | awk '
-  { isdecl = (tolower(\$0) ~ /^(#+ ac-[0-9]+|\*\*ac-[0-9]+|- \[[ x]\] (\*\*)?ac-[0-9]+)/) }
-  isdecl { ac = \$0 }
+  { isdecl = (tolower($(0)) ~ /^(#+ ac-[0-9]+|\*\*ac-[0-9]+|- \[[ x]\] (\*\*)?ac-[0-9]+)/) }
+  isdecl { ac = $(0) }
   !isdecl && /^#+ / { ac = "" }
-  tolower(\$0) ~ /manual test|\*\*verify:\*\*|try .*, confirm|verify by|test that|corpus check|against several real|[0-9]+ samples?|sampled/ { print ac }
+  tolower($(0)) ~ /manual test|\*\*verify:\*\*|try .*, confirm|verify by|test that|corpus check|against several real|[0-9]+ samples?|sampled/ { print ac }
 ' | grep -oE 'AC-[0-9]+' | sort -u || true)
 ```
 
@@ -2958,8 +2958,8 @@ deleted_tests=$(git diff origin/main...HEAD --diff-filter=D --name-only | grep -
 files_changed=$(git diff origin/main...HEAD --name-only | wc -l | xargs)
 
 # Size check
-additions=$(git diff origin/main...HEAD --numstat | awk '{sum+=\$1} END {print sum+0}')
-deletions=$(git diff origin/main...HEAD --numstat | awk '{sum+=\$2} END {print sum+0}')
+additions=$(git diff origin/main...HEAD --numstat | awk '{sum+=$(1)} END {print sum+0}')
+deletions=$(git diff origin/main...HEAD --numstat | awk '{sum+=$(2)} END {print sum+0}')
 
 # Security scan
 npx tsx scripts/lib/__tests__/run-security-scan.ts 2>/dev/null

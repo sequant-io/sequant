@@ -5,8 +5,11 @@
  * Claude Code substitutes `$0`, `$1`, ... in a skill's text when the skill is
  * invoked with arguments, and fenced code blocks are NOT exempt (reproduced on
  * 2.1.289, #1289): `awk '{ print substr($0, 2) }'` reaches the model as
- * `substr(1249, 2)`. The escape is a single backslash (`\$0`). Shell and awk
- * that needs a bare `$N` belongs in a script file under the skill's `scripts/`.
+ * `substr(1249, 2)`. Write awk fields as `$(N)` (or `-v n=N` + `$n`), which
+ * Claude Code leaves alone. The backslash escape (`\$0`) is rejected too:
+ * Claude Code strips the backslash, but the codex and opencode drivers read
+ * the same files through `.agents/skills` untemplated, and awk fails on `\$0`
+ * with a syntax error. A longer program belongs in the skill's `scripts/`.
  *
  * Only SKILL.md is scanned: references and scripts are read as files, not
  * templated.
@@ -29,7 +32,8 @@ export interface Violation {
   snippet: string;
 }
 
-const POSITIONAL_RE = /(?<!\\)\$[0-9]/;
+// Escaped or not: `\$0` contains `$0`, so it is caught as well.
+const POSITIONAL_RE = /\$[0-9]/;
 
 export function findViolations(
   content: string,
@@ -62,10 +66,10 @@ export function scanRoots(root: string = PROJECT_ROOT): Violation[] {
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const violations = scanRoots();
   if (violations.length === 0) {
-    console.log("✅ No bare positional $N in skill bodies");
+    console.log("✅ No positional $N in skill bodies");
   } else {
     console.error(
-      `❌ ${violations.length} bare positional $N in skill bodies (Claude Code substitutes them; escape as \\$N or move to a script, #1289):`,
+      `❌ ${violations.length} positional $N in skill bodies (Claude Code substitutes them; write $(N) or move to a script, #1289):`,
     );
     for (const v of violations) {
       console.error(`  ${v.file}:${v.line}  ${v.snippet}`);
