@@ -16,6 +16,11 @@
  * #1265 added `plugin/hooks/` as a second mirror (the slim plugin folder
  * `marketplace.json` now ships) and holds it to the same byte-identity bar.
  *
+ * `plugin/hooks/hooks.json` is the one file there with no templates/ source:
+ * it is the hand-maintained registration manifest. #1271 retired the root
+ * `hooks/` copy it used to be synced from, so the guard on it is structural:
+ * every script it registers must exist in `plugin/hooks/`.
+ *
  * Run `npm run sync-hooks` (scripts/sync-hooks.sh) to regenerate
  * `.claude/hooks/` and `plugin/hooks/` from the templates after editing any
  * template hook.
@@ -35,6 +40,29 @@ function listHookFiles(dir: string): string[] {
     .readdirSync(dir)
     .filter((n) => fs.statSync(path.join(dir, n)).isFile())
     .sort();
+}
+
+/**
+ * Script file names a plugin hooks.json registers, from commands of the form
+ * `"${CLAUDE_PLUGIN_ROOT}/hooks/<name>"`. A command in any other form is
+ * returned whole, so it reads as missing rather than being skipped.
+ */
+function registeredHookScripts(
+  events: Record<string, Array<{ hooks: Array<{ command: string }> }>>,
+): string[] {
+  const prefix = "${CLAUDE_PLUGIN_ROOT}/hooks/";
+  const names = new Set<string>();
+  for (const groups of Object.values(events)) {
+    for (const group of groups) {
+      for (const hook of group.hooks) {
+        const command = hook.command.replace(/^"|"$/g, "");
+        names.add(
+          command.startsWith(prefix) ? command.slice(prefix.length) : command,
+        );
+      }
+    }
+  }
+  return [...names].sort();
 }
 
 describe("hook sync (#645)", () => {
@@ -87,19 +115,20 @@ describe("hook sync (#645)", () => {
     expect(drift).toEqual([]);
   });
 
-  it("plugin/hooks/hooks.json is byte-identical to hooks/hooks.json (#1265)", () => {
-    // hooks.json has no templates/ source (it's the hook-registration
-    // manifest, not a hook script) — scripts/sync-hooks.sh copies it from
-    // the hand-maintained root hooks/hooks.json instead. Nothing previously
-    // checked that copy stayed in sync (QA finding, #1265 round 3).
-    const rootPath = path.join(process.cwd(), "hooks", "hooks.json");
-    const pluginPath = path.join(process.cwd(), PLUGIN_DIR, "hooks.json");
-    expect(fs.existsSync(rootPath)).toBe(true);
-    expect(fs.existsSync(pluginPath)).toBe(true);
+  it("every script plugin/hooks/hooks.json registers exists in plugin/hooks/ (#1271)", () => {
+    const pluginPath = path.join(process.cwd(), PLUGIN_DIR);
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(pluginPath, "hooks.json"), "utf-8"),
+    ) as {
+      hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+    };
+    const registered = registeredHookScripts(manifest.hooks);
+    expect(registered.length).toBeGreaterThan(0);
 
-    const rootBytes = fs.readFileSync(rootPath);
-    const pluginBytes = fs.readFileSync(pluginPath);
-    expect(pluginBytes.equals(rootBytes)).toBe(true);
+    const missing = registered.filter(
+      (name) => !fs.existsSync(path.join(pluginPath, name)),
+    );
+    expect(missing).toEqual([]);
   });
 
   it(".claude/hooks/ may have extra local-only files (e.g. capture-tokens.sh)", () => {

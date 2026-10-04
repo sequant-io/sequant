@@ -1,5 +1,5 @@
 /**
- * Tests for the three-directory skill-sync checker (scripts/check-skill-sync.ts).
+ * Tests for the skill mirror sync checker (scripts/check-skill-sync.ts).
  *
  * Focus: the #738 hardening — collectFiles() skips dotfiles and dot-directories
  * so transient, git-ignored artifacts (e.g. .sequant/.token-usage-*.json) never

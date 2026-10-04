@@ -8,14 +8,11 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(here, "../../..");
-const COPIES = [
-  ".claude/skills/release/SKILL.md",
-  "templates/skills/release/SKILL.md",
-  "skills/release/SKILL.md",
-];
+const COPIES = SKILL_ROOTS.map((root) => `${root}/release/SKILL.md`);
 
 function stepRegion(skill: string): string {
   const start = skill.indexOf("### Step 4.67");

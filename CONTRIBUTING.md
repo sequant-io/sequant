@@ -160,7 +160,7 @@ Skill files are mirrored across **three** roots:
 |------|------|
 | `.claude/skills/` | **Canonical source of truth** — the working copy, edited first |
 | `templates/skills/` | Mirror consumed by `sequant init` / `sequant sync` |
-| `skills/` | Mirror published as the Claude Code plugin |
+| `plugin/skills/` | Mirror published as the Claude Code plugin (`marketplace.json` `source: ./plugin`) |
 
 Always edit `.claude/skills/` and propagate **outward** to the mirrors — never
 the reverse. `.claude/skills/` is canonical even when a mirror happens to be
@@ -170,7 +170,7 @@ longer; extra mirror lines are almost always stale, pre-refactor content.
 # 1. Edit the canonical copy under .claude/skills/
 # 2. Check what diverged
 npm run lint:skill-sync
-# 3. Propagate .claude/skills/ -> templates/skills/ and skills/
+# 3. Propagate .claude/skills/ -> templates/skills/ and plugin/skills/
 npx tsx scripts/check-skill-sync.ts --fix
 # 4. Re-run to confirm "0 diverged, 0 missing"
 npm run lint:skill-sync
@@ -402,11 +402,13 @@ If you installed Sequant as a Claude Code plugin, here's how to contribute:
 git clone https://github.com/sequant-io/sequant.git
 cd sequant
 
-# The plugin skills are in the skills/ directory (not templates/)
-# These are the files that get loaded when using the plugin
+# The plugin is the plugin/ directory: plugin/skills/ and plugin/hooks/ are
+# the files that get loaded when using the plugin. Both are generated —
+# edit .claude/skills/ and templates/hooks/, then run npm run sync:skills
+# and npm run sync:hooks.
 
-# Test skill changes by running Claude Code in this directory
-# Skills in skills/ will override your installed plugin
+# Load your local copy in place of the installed plugin
+claude --plugin-dir ./plugin
 ```
 
 ### Plugin Directory Structure
@@ -415,27 +417,29 @@ When contributing to the plugin, understand these key directories:
 
 | Directory | Purpose | Used By |
 |-----------|---------|---------|
-| `skills/` | Plugin skills (loaded by Claude Code plugin system) | Plugin users |
+| `plugin/skills/` | Plugin skills (loaded by Claude Code plugin system) | Plugin users |
 | `templates/skills/` | Template skills (copied by `sequant init`) | npm users |
-| `hooks/` | Plugin hooks (pre-tool, post-tool) | Plugin users |
+| `plugin/hooks/` | Plugin hooks (pre-tool, post-tool) and the `hooks.json` manifest | Plugin users |
 | `templates/hooks/` | Template hooks (copied by `sequant init`) | npm users |
-| `memory/` | Plugin memory (constitution) | Plugin users |
-| `scripts/` | Plugin helper scripts | Plugin users |
+| `plugin/memory/` | Plugin memory (constitution) | Plugin users |
 
-**Important:** If you modify a skill, update BOTH locations:
-- `skills/<skill-name>/SKILL.md` - For plugin users
-- `templates/skills/<skill-name>/SKILL.md` - For npm users
+**Important:** edit a skill in `.claude/skills/` only, then run
+`npm run sync:skills` — it writes `templates/skills/` (npm users) and
+`plugin/skills/` (plugin users). Hook scripts are edited in `templates/hooks/`
+and synced with `npm run sync:hooks`; `plugin/hooks/hooks.json` has no
+template and is edited in place.
 
 ### Contributing New Skills
 
-1. Create skill in both locations:
+1. Create the skill in the canonical root, then sync the mirrors:
    ```bash
-   mkdir -p skills/myskill templates/skills/myskill
+   mkdir -p .claude/skills/myskill
+   npm run sync:skills
    ```
 
 2. Create `SKILL.md` following the [skill format](#adding-a-new-skill)
 
-3. Update `skills/_shared/references/` if adding shared references
+3. Update `.claude/skills/_shared/references/` if adding shared references
 
 4. Test with the plugin:
    ```bash
@@ -443,9 +447,9 @@ When contributing to the plugin, understand these key directories:
    # by setting up a local marketplace or using direct path
    ```
 
-5. Validate both locations:
+5. Validate both shipped locations:
    ```bash
-   npx skills-ref validate skills/myskill
+   npx skills-ref validate plugin/skills/myskill
    npx skills-ref validate templates/skills/myskill
    ```
 

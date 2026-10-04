@@ -3,7 +3,7 @@
  *
  * Internal surface. The `/assess` skill builds the JSON, calls this, and pastes
  * stdout verbatim. Shipping it as a CLI subcommand rather than a `scripts/`
- * shell-out is what makes the fix reach end users: `skills/spec/SKILL.md:78`
+ * shell-out is what makes the fix reach end users: `.claude/skills/spec/SKILL.md`
  * establishes that skills may only run `npx tsx` blocks when the sequant source
  * tree is present, so a script would work in this repo and nowhere else. A
  * subcommand ships via `package.json` `bin` + `files: ["dist", ...]` and is

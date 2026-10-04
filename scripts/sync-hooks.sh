@@ -10,14 +10,15 @@
 #
 # Every hook now lives in templates/hooks/ and is regenerated here; there are
 # no local-only hooks left. capture-tokens.sh was the last one — #986 promoted
-# it into templates/ (and into hooks/ + hooks.json for plugin users) because
+# it into templates/ (and into plugin hooks.json for plugin users) because
 # the token-usage fallback it feeds is worthless if it only exists in this
 # repo.
 #
-# plugin/hooks/hooks.json has no templates/ source (hooks.json is the
-# registration manifest, not a hook script) — it is copied from the
-# hand-maintained root hooks/hooks.json, which #1265 keeps around until root
-# hooks/ is retired in a follow-up PR.
+# plugin/hooks/hooks.json is not a sync target. It is the hand-maintained
+# registration manifest and is its own source (#1271 retired the root hooks/
+# copy it used to be copied from). It has no templates/ source because
+# templates/hooks/* is copied into every consumer's .claude/hooks/, and the
+# manifest is for the plugin only.
 #
 # plugin/memory/constitution.md is a straight copy of
 # templates/memory/constitution.md (#1265) — this repo's own
@@ -52,16 +53,6 @@ for src in "$TEMPLATES_DIR"/*; do
     changed=$((changed + 1))
   done
 done
-
-HOOKS_JSON_SRC="${REPO_ROOT}/hooks/hooks.json"
-HOOKS_JSON_DEST="${PLUGIN_DIR}/hooks.json"
-if [[ -f "$HOOKS_JSON_SRC" ]]; then
-  if [[ ! -f "$HOOKS_JSON_DEST" ]] || ! cmp -s "$HOOKS_JSON_SRC" "$HOOKS_JSON_DEST"; then
-    cp -p "$HOOKS_JSON_SRC" "$HOOKS_JSON_DEST"
-    echo "synced: hooks.json -> plugin/hooks/hooks.json"
-    changed=$((changed + 1))
-  fi
-fi
 
 CONSTITUTION_SRC="${REPO_ROOT}/templates/memory/constitution.md"
 CONSTITUTION_DEST="${REPO_ROOT}/plugin/memory/constitution.md"

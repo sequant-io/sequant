@@ -33,8 +33,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import { describe, expect, it } from "vitest";
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
 const INGEST_SKILLS = ["spec", "exec", "qa", "loop", "assess"] as const;
 
 const read = (rel: string): string =>

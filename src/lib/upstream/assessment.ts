@@ -410,7 +410,7 @@ function getDefaultBaseline(): Baseline {
         "templates/hooks/pre-tool.sh",
         "templates/hooks/post-tool.sh",
         "templates/hooks/capture-tokens.sh",
-        "hooks/hooks.json",
+        "plugin/hooks/hooks.json",
       ],
     },
     mcpServers: {
@@ -439,9 +439,12 @@ function getDefaultBaseline(): Baseline {
       "subagent",
     ],
     dependencyMap: {
-      PreToolUse: ["templates/hooks/pre-tool.sh", "hooks/hooks.json"],
-      PostToolUse: ["templates/hooks/post-tool.sh", "hooks/hooks.json"],
-      SessionEnd: ["templates/hooks/capture-tokens.sh", "hooks/hooks.json"],
+      PreToolUse: ["templates/hooks/pre-tool.sh", "plugin/hooks/hooks.json"],
+      PostToolUse: ["templates/hooks/post-tool.sh", "plugin/hooks/hooks.json"],
+      SessionEnd: [
+        "templates/hooks/capture-tokens.sh",
+        "plugin/hooks/hooks.json",
+      ],
       Task: [".claude/skills/**/*.md"],
     },
     commands: [

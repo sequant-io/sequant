@@ -40,7 +40,10 @@ const HOOK_COPIES: Array<[label: string, path: string]> = [
     "templates/hooks/pre-tool.sh",
     join(REPO_ROOT, "templates", "hooks", "pre-tool.sh"),
   ],
-  ["hooks/pre-tool.sh", join(REPO_ROOT, "hooks", "pre-tool.sh")],
+  [
+    "plugin/hooks/pre-tool.sh",
+    join(REPO_ROOT, "plugin", "hooks", "pre-tool.sh"),
+  ],
   [
     ".claude/hooks/pre-tool.sh",
     join(REPO_ROOT, ".claude", "hooks", "pre-tool.sh"),

@@ -19,8 +19,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { describe, expect, it } from "vitest";
-
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 const SECTION_HEADING = "### 9. Update GitHub Issue";
 

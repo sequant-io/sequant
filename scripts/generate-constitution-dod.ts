@@ -28,13 +28,13 @@ export const PROJECT_ROOT = join(__dirname, "..");
 /**
  * Canonical qa skill path.
  * Same first-match precedence as lint-skill-gates.ts SCAN_ROOTS:
- * `.claude/skills` → `templates/skills` → `skills`.
+ * `.claude/skills` → `templates/skills` → `plugin/skills`.
  */
 export function resolveQaSkillPath(root: string): string {
   const candidates = [
     join(root, ".claude", "skills", "qa", "SKILL.md"),
     join(root, "templates", "skills", "qa", "SKILL.md"),
-    join(root, "skills", "qa", "SKILL.md"),
+    join(root, "plugin", "skills", "qa", "SKILL.md"),
   ];
   for (const c of candidates) {
     try {

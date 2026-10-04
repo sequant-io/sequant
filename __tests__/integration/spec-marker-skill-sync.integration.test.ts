@@ -11,19 +11,20 @@
 //
 // Run with: npx vitest run __tests__/integration/spec-marker-skill-sync.integration.test.ts
 //
-// #1265 added plugin/skills as a 4th mirror, so scripts/check-skill-sync.ts's
-// own "N/N match" denominator grew from 3 to 4 (its MIRROR_DIRS). The
-// "3-dir"/"all 3 mirrors" framing below describes this test's original #921
-// scope and is left as historical context; only the "synced N/N" assertion
-// follows the script's real output.
+// The mirror roots and the "synced N/N" denominator both come from
+// SKILL_ROOTS in scripts/check-skill-sync.ts (#1271), so they follow the
+// script's real mirror set.
 
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const MIRROR_ROOTS = [".claude/skills", "templates/skills", "skills"];
+/** check-skill-sync.ts reports "N/N match" over the source plus every mirror. */
+const ROOT_COUNT = SKILL_ROOTS.length;
+const MIRROR_ROOTS = SKILL_ROOTS;
 
 const TOUCHED_FILES = [
   "spec/SKILL.md",
@@ -82,12 +83,14 @@ describe("AC-1: SEQUANT_SPEC marker present in Output Template, mirrored 3-dir",
     })();
 
     for (const rel of TOUCHED_FILES) {
-      it(`reports synced 4/4 for ${rel}`, () => {
+      it(`reports synced ${ROOT_COUNT}/${ROOT_COUNT} for ${rel}`, () => {
         const escaped = rel.replace(/[/.]/g, (m) => "\\" + m);
-        const syncedRe = new RegExp(`synced\\s+${escaped}\\s+—\\s+4\\/4 match`);
+        const syncedRe = new RegExp(
+          `synced\\s+${escaped}\\s+—\\s+${ROOT_COUNT}\\/${ROOT_COUNT} match`,
+        );
         expect(
           syncedRe.test(output),
-          `Expected '${rel}' synced 4/4, got:\n${output}`,
+          `Expected '${rel}' synced ${ROOT_COUNT}/${ROOT_COUNT}, got:\n${output}`,
         ).toBe(true);
         const divergedRe = new RegExp(`DIVERGED\\s+${escaped}`);
         const missingRe = new RegExp(`missing\\s+${escaped}`);

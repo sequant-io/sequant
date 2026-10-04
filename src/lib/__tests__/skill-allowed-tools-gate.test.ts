@@ -24,18 +24,13 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { collectFiles } from "../../../scripts/check-skill-sync.js";
+import {
+  collectFiles,
+  SKILL_ROOTS,
+} from "../../../scripts/check-skill-sync.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(here, "../../..");
-
-/** `.claude/skills` is canonical; the other three are synced mirrors. */
-const SKILL_ROOTS = [
-  ".claude/skills",
-  "templates/skills",
-  "skills",
-  "plugin/skills",
-] as const;
 
 /** A wildcard straight after one of these grants (nearly) any command. */
 const BROAD_TOOLS = [

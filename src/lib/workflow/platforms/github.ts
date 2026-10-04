@@ -269,7 +269,7 @@ export class GitHubProvider implements PlatformProvider {
 
   /**
    * Get the head branch name for a PR by number.
-   * Used by hooks/pre-tool.sh for pre-merge worktree cleanup.
+   * Used by the pre-tool hook (templates/hooks/pre-tool.sh) for pre-merge worktree cleanup.
    */
   getPRHeadBranchSync(prNumber: number): string | null {
     const result = spawnSync(

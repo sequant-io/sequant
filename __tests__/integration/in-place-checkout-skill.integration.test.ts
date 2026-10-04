@@ -34,7 +34,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { collectFiles } from "../../scripts/check-skill-sync.js";
+import { collectFiles, SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
 import {
   listWorktrees,
   slugify,
@@ -45,8 +45,6 @@ import {
 } from "../../src/lib/workflow/worktree-resolver.js";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
-
-const SKILL_ROOTS = [".claude/skills", "templates/skills", "skills"] as const;
 
 /** Skills besides /exec that locate a worktree and so need the in-place entry. */
 const RESOLVING_SKILLS = ["qa", "loop", "testgen"] as const;
@@ -251,7 +249,9 @@ function runEntry(
 describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
   describe("exec", () => {
     it("creates feature/<N>-<slug> from origin/<base> when on the base branch (AC-1)", () => {
-      const code = codeBlocks(region(readSkill(root, "exec"), MAIN_REGION).body);
+      const code = codeBlocks(
+        region(readSkill(root, "exec"), MAIN_REGION).body,
+      );
 
       // Entered only by the explicit flag.
       expect(code).toContain('"${SEQUANT_CHECKOUT:-}" == "in-place"');
@@ -261,7 +261,9 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
       expect(code).not.toMatch(/\bgh\b/);
       // On the base branch (or detached), branch from the remote base.
       expect(code).toContain('"$CURRENT" == "$BASE"');
-      expect(code).toContain('feature/<issue-number>-$(echo "$SLUG" | cut -c1-50)');
+      expect(code).toContain(
+        'feature/<issue-number>-$(echo "$SLUG" | cut -c1-50)',
+      );
       expect(code).toContain('git checkout -b "$BRANCH" "origin/$BASE"');
 
       // Run it: a fresh clone on main ends on the new-feature.sh branch name,
@@ -311,10 +313,15 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
     it("skips the dev-server smoke test unless SEQUANT_SMOKE=1 and never invokes /test (AC-1)", () => {
       const content = readSkill(root, "exec");
       const main = region(content, MAIN_REGION).body;
-      const smoke = region(content, "in-place-checkout-skip: smoke-test (#1136)");
+      const smoke = region(
+        content,
+        "in-place-checkout-skip: smoke-test (#1136)",
+      );
 
       expect(main).toContain("**Never invoke `/test`.**");
-      expect(smoke.body).toMatch(/skip this section unless\s+`SEQUANT_SMOKE=1`/);
+      expect(smoke.body).toMatch(
+        /skip this section unless\s+`SEQUANT_SMOKE=1`/,
+      );
       // The marker must precede the dev-server command it skips.
       expect(smoke.start).toBeLessThan(content.indexOf("npm run dev &"));
     });
@@ -391,13 +398,18 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
       });
       expect(onFeature.status, onFeature.out).toBe(0);
       const adopted = /WORKTREE=(.*)/.exec(onFeature.out)?.[1] ?? "";
-      const verified = verifyWorktreePath(adopted, { issue: ISSUE, cwd: s.clone });
+      const verified = verifyWorktreePath(adopted, {
+        issue: ISSUE,
+        cwd: s.clone,
+      });
       expect(verified.ok && verified.branch).toBe(EXPECTED_BRANCH);
       expect(readFileSync(s.npxLog, "utf8")).toBe("");
       expect(onFeature.branch).toBe(EXPECTED_BRANCH);
 
       git(s.clone, "checkout", "-q", "--detach");
-      const detached = runEntry(s, root, skill, { SEQUANT_CHECKOUT: "in-place" });
+      const detached = runEntry(s, root, skill, {
+        SEQUANT_CHECKOUT: "in-place",
+      });
       expect(detached.status).toBe(1);
     });
   });
@@ -405,7 +417,10 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
   describe("qa", () => {
     it("skips worktree resolve in the implementation status check (AC-2)", () => {
       const content = readSkill(root, "qa");
-      const skip = region(content, "in-place-checkout-skip: status-check (#1136)");
+      const skip = region(
+        content,
+        "in-place-checkout-skip: status-check (#1136)",
+      );
 
       expect(skip.body).toContain('worktree_path="$PWD"');
       const call = content.indexOf(

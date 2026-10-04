@@ -24,8 +24,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-
-const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
 
 /**
  * Anchor to this file's own location, not `process.cwd()`. Under CI the two

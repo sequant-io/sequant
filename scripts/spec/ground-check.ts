@@ -34,6 +34,7 @@
 import * as fs from "fs";
 import * as nodePath from "path";
 import { execFileSync } from "child_process";
+import { SKILL_ROOTS } from "../check-skill-sync.js";
 
 // `git` reports POSIX-separated paths on every platform, and every path this
 // module manipulates originates from `git` or from citation text that uses `/`.
@@ -504,13 +505,11 @@ export function candidatePaths(cited: string): string[] {
   const p = stripLineSuffix(cited);
   const candidates = [p];
 
-  // Bare `<skill>/SKILL.md` -> the three mirrors it could name.
+  // Bare `<skill>/SKILL.md` -> the mirrors it could name.
   const skillMirror = p.match(/^([a-z][a-z0-9_-]*)\/SKILL\.md$/);
   if (skillMirror) {
     candidates.push(
-      `.claude/skills/${skillMirror[1]}/SKILL.md`,
-      `templates/skills/${skillMirror[1]}/SKILL.md`,
-      `skills/${skillMirror[1]}/SKILL.md`,
+      ...SKILL_ROOTS.map((root) => `${root}/${skillMirror[1]}/SKILL.md`),
     );
   }
 
@@ -587,8 +586,7 @@ export function resolvePath(
   const p = stripLineSuffix(cited);
 
   // Directory citation. Accept an elided leading path the same way files do:
-  // `skills/` names a real directory even though it is also a suffix of
-  // `.claude/skills/`.
+  // `skills/` resolves to `.claude/skills/`, of which it is a suffix.
   if (p.endsWith("/")) {
     if (index.dirs.has(p)) return { exists: true, matchedAt: p };
     const bare = p.slice(0, -1);
