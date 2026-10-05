@@ -15,7 +15,7 @@ The README says a study of 27 fresh second-look `/qa` reviews found that 12 (44%
 - **10 of 27 (37%) caught a would-ship bug, not 12 of 27 (44%).** 13 found only quality gaps and 4 were clean. The original split was 12/11/2.
 - **7 of the 10 catches landed only after the human's follow-up turn** ("any gaps?"). 3 were in the first verdict. None needed a step that orchestrated QA skips. **The second look's value is mostly the human-driven second pass, not the fresh session.** The docs that still cite 44% and attribute it to the fresh session are corrected in #1309. They are `docs/reference/ready-command.md`, `docs/features/run-ready-gate.md`, `docs/investigations/ready-gate-backtest.md` and `docs/internal/what-weve-built.md`; the README has no such claim.
 - Every session but one asked about gaps, usually on turn 1, the human's first reply. A reviewer that never gets that prompt is a different treatment, and that comparison is #1068's to make.
-- The fixture plants 5 defects, one per class the dataset caught. The graders reproduce the hand-written example exactly (recall 0.60, precision 0.60). Calibration runs (AC-6/7/8) are **pending the runner**.
+- The fixture plants 5 defects, one per class the dataset caught. The graders reproduce the hand-written example exactly (recall 0.60, precision 0.60). Calibration (AC-6/7/8): five opus `/qa` runs each caught all 5 planted defects by human reading, at about $0.92 per run. The literal grader scored recall 0.60 and precision 0.36 mean, disagreeing with the human on 10 of 25 cases, so it needs recalibration before #1068 (#1313).
 
 ## Method
 
@@ -177,30 +177,49 @@ precision 0.60 (3/5)
 
 **Known bias:** a verdict that describes a defect without writing its identifier is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched. The opposite bias, a neutral mention counted as a catch, is closed by reading recall from findings only. A finding that names an identifier while calling it correct would still count. AC-7's human pass is where that shows up. **Risk Assessment is invisible to the grader.** A `/qa` run that names `0.0.0.0` (or any identifier) only in §5 Risk Assessment, or only in the Trust-Boundary `**Finding:**` line, scores a recall miss for it. That is a deliberate under-count, the price of not counting §5's routine bullets as findings, and AC-7's human pass must report it per class, `security-exposure` first.
 
-## Calibration: ⏳ pending-runner (AC-6, AC-7, AC-8)
+## Calibration (AC-6, AC-7, AC-8)
 
-These need a provisioned fixture repo and ≥5 `sequant run <N> --phases qa` runs. A phase agent can't nest that or fit it in its 30-minute wall. Provisioning steps: [`qa-seeded-fixture/README.md`](qa-seeded-fixture/README.md).
+**Setup (2026-10-04).** A private throwaway repo got the fixture's `base/` on `main`, plus five identical issues (#1–#5, the `fixture-issue.md` body). Each issue has its own PR carrying `defects.patch`; the five diffs hash identically. One issue per run means no run sees an earlier run's comment, and §0a's prior-QA short-circuit can't fire.
 
-**Cost source (AC-8):** `sequant stats` aggregates by phase × model, not by run. For per-run cost, use each run's `metrics.costUSD` in `.sequant/metrics.json`. That is the SDK `modelUsage` sum (`src/lib/workflow/metrics-schema.ts`, `RunMetricsSchema.costUSD`, #986), not the transcript hook. Alternatively, run `sequant stats --json --since <date>` scoped so each window holds one run.
+Each run is `sequant run <N> --phases qa` (sequant 2.19.0, dev build at `79808fa7`). QA runs on opus with the default orchestrated weight (no `--full-qa`). The runs ran back to back from a launchd job, not from a Claude session. The repo carries a copy of this repo's `.claude/skills` at `79808fa7`.
 
-### Results (AC-6, AC-8): ⏳ pending-runner
+**What was graded.** Each run's full QA review, meaning the phase agent's final report taken from its transcript. Under `sequant run`, the comment posted on the issue is the orchestrator's short summary, and it is graded separately below. Run 5's summary was never posted. `GitHubProvider.postComment` ignores `gh`'s exit status, so the failure was silent (#1312).
 
-| Run | Date | Model | First verdict | Recall | Precision | Findings | Cost (USD) |
-|-----|------|-------|---------------|--------|-----------|----------|------------|
-| 1 | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| 2 | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| 3 | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| 4 | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| 5 | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ | ⏳ |
-| **min / max / mean** | | | | ⏳ | ⏳ | | ⏳ |
+### Results (AC-6, AC-8)
 
-### Grader vs human (AC-7): ⏳ pending-runner
+| Run | Date | Model | Verdict | Recall | Precision | Findings | Planted named | Cost (USD) | Wall (s) |
+|-----|------|-------|---------|--------|-----------|----------|---------------|------------|----------|
+| 1 | 2026-10-05 03:13Z | opus | `AC_NOT_MET` (0/5) | 0.40 | 0.27 | 15 | 4 | 0.91 | 83 |
+| 2 | 2026-10-05 03:14Z | opus | `AC_NOT_MET` (0/5) | 0.80 | 0.42 | 12 | 5 | 0.95 | 80 |
+| 3 | 2026-10-05 03:16Z | opus | `AC_NOT_MET` (0/5, AC-1 partial) | 0.80 | 0.36 | 11 | 4 | 0.92 | 73 |
+| 4 | 2026-10-05 03:17Z | opus | `AC_NOT_MET` (0/5, AC-1 partial) | 0.40 | 0.36 | 11 | 4 | 0.90 | 75 |
+| 5 | 2026-10-05 03:18Z | opus | `AC_NOT_MET` (0/5) | 0.60 | 0.38 | 13 | 5 | 0.92 | 87 |
+| **min / max / mean** | | | | 0.40 / 0.80 / **0.60** | 0.27 / 0.42 / **0.36** | | | 0.90 / 0.95 / **0.92** | |
 
-For each run and each planted defect, a human reads the verdict and marks it caught or missed, and compares that with the grader's recall hit. The overlapping classes are all five; each was caught at least once in the dataset. Template:
+- **Cost** is each run's `metrics.costUSD` in the fixture repo's `.sequant/metrics.json`, the SDK `modelUsage` sum. It is opus QA plus a small haiku helper call. The five runs together cost $4.60.
+- **Posted summary graded instead:** recall 0.00 / 0.80 / 0.60 / 0.40 / n/a (run 5 not posted). The summary is a one-line-per-gap paraphrase, and it rarely keeps an identifier.
 
-> grader and human labels disagree on ⏳K of ⏳M overlapping cases; classes: ⏳…
+### Grader vs human (AC-7)
 
-M = 5 defects × number of runs. In addition, the dataset's caught rate per class (the per-class counts in the Dataset table) gives the human second-look baseline that the fixture's per-class recall is compared against.
+The maintainer's runner read every review and marked each planted defect caught or missed, regardless of wording. **Every run caught all 5 planted defects (human recall 1.00 in each of the five runs).** Each review ran the CLI and quoted the behaviour:
+- `--format md` prints JSON;
+- `--since` is ignored;
+- a bad store prints `[]` and exits 0;
+- `lsof` shows `*:4399`;
+- the mocked test fails.
+
+**Grader and human labels disagree on 10 of 25 overlapping cases; classes: `error-path` (5 of 5 runs), `unmet-ac` (3: runs 1, 4, 5) and `primary-path-broken` (2: runs 1, 4).** In each one the human marks the defect caught and the grader marks it missed. The other 15 agree. Three of the agreeing `formatNotes` hits (runs 2, 3, 5) are right for the wrong reason: the identifier came from a sentence about the `vi.mock` test, not from the format bug.
+
+**Precision.** Human reading finds **0 false positives** across the five reviews. Every finding without a planted identifier is one of three things:
+1. a restatement of a planted defect without its identifier (the AC row, the Issues bullet, Next steps);
+2. a real defect that wasn't planted: the serve handler has no try/catch so a request hangs, `--port abc` gives `NaN`, and the PR body claims an integration test it doesn't have;
+3. grader noise: intro bullets under `## QA Review for Issue #N`, where the heading matches "Issue", and `❌` rows in the build table.
+
+The grader's 0.36 measures "share of findings naming a planted identifier", not a false-positive rate.
+
+**Reading.** On this fixture, `/qa` under `sequant run` catches every planted defect, in all five runs, for about $0.92 each. The grader as built under-reads it by 40% on recall. The miss is concentrated in two identifiers, `formatNotes` and `readNotesFile`. Both name pre-existing `store.ts` helpers, not the defect site, and reviewers cite the site instead (`export.ts:25`, the empty `catch`). **The grader is not ready to be #1068's instrument.** Recalibration is tracked in #1313: identifiers at the defect site, a precision that doesn't penalise real extra findings, and no heading or status-table noise.
+
+**Against the dataset.** The human second-look baseline in the Dataset table caught each of these five classes at least once in 27 reviews. The fixture's per-class human recall is 5/5 for every class. The fixture defects are easier than the field ones: each breaks a stated AC that the reviewer can run. Treat recall 1.00 here as a ceiling for "obvious, AC-visible" defects, not as the field catch rate.
 
 ## Reproducing this analysis
 
