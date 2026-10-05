@@ -90,13 +90,26 @@ const RUNNER_ALLOWLIST: Record<string, string> = {
 };
 
 /**
- * A wildcard straight after one of these writes or deletes any file, or
- * sends any API request (`gh api -X DELETE …`). #1292.
+ * With a wildcard anywhere, one of these can write or delete any file, or
+ * send any API request (`gh api -X DELETE …`). A flag before the wildcard
+ * only widens it (`rm -rf *`), so every wildcard entry for these tools is
+ * rejected unless BROAD_ALLOWLIST names it. #1292.
  */
 const FILE_WRITE_TOOLS = ["gh api", "rm", "mv", "find", "sed", "cp"];
 
-/** `<tool> *` entries for FILE_WRITE_TOOLS that are kept, with the reason. */
-const BROAD_ALLOWLIST: Record<string, string> = {};
+/** Wildcard entries for FILE_WRITE_TOOLS that are kept, with the reason. */
+const BROAD_ALLOWLIST: Record<string, string> = {
+  "mv * docs/archive/*":
+    "clean archives stale docs; the target must be inside docs/archive/",
+  "mv * scripts/archive/*":
+    "clean archives stale scripts; the target must be inside scripts/archive/",
+  "cp * .claude/memory/constitution.md":
+    "setup copies the constitution template; the target file is fixed",
+  "cp -R * .claude/skills/*":
+    "setup copies skill templates; the target must be inside .claude/skills/",
+  "sed -i.bak * .claude/memory/constitution.md":
+    "setup fills {{PROJECT_NAME}}; `*` also matches extra file arguments, so this is narrower than `sed:*` but not exact",
+};
 
 /** Frontmatter `---` block. Throws so a malformed file fails loudly. */
 function frontmatter(text: string, file: string): string {
@@ -139,7 +152,8 @@ function violation(entry: string): string | null {
     return "wildcard directly after the tool (AC-1)";
   }
   if (
-    FILE_WRITE_TOOLS.some((t) => cmd === `${t} *`) &&
+    cmd.includes("*") &&
+    FILE_WRITE_TOOLS.some((t) => cmd.startsWith(`${t} `)) &&
     !(cmd in BROAD_ALLOWLIST)
   ) {
     return "file-writing or API wildcard not in BROAD_ALLOWLIST (#1292)";
@@ -214,4 +228,20 @@ describe("skill allowed-tools grant no broad shell access (#1287)", () => {
       expect(violation(entry)).not.toBeNull();
     },
   );
+
+  // A flag before the wildcard widens the grant, so it must not slip past
+  // the exact `<tool> *` form (#1292 QA).
+  it.each([
+    "Bash(rm -rf:*)",
+    "Bash(gh api -X:*)",
+    "Bash(find . -delete:*)",
+    "Bash(sed -i:*)",
+  ])("rejects the prefix variant %s (#1292)", (entry) => {
+    expect(violation(entry)).not.toBeNull();
+  });
+
+  it("keeps an exact, wildcard-free file-writing command (#1292)", () => {
+    expect(violation("Bash(cat package.json)")).toBeNull();
+    expect(violation("Bash(rm -f .DS_Store)")).toBeNull();
+  });
 });
