@@ -14,6 +14,9 @@
  *   a reason.
  * - AC-3: an unrendered `{{…}}` placeholder. `plugin/skills/` is copied
  *   without placeholder rendering, so such an entry never matches anything.
+ * - #1292: `Bash(<tool> *)` / `Bash(<tool>:*)` for a file-writing or API
+ *   tool in FILE_WRITE_TOOLS (`gh api`, `rm`, `sed`, …) — unless
+ *   BROAD_ALLOWLIST names it with a reason.
  *
  * Scoped to the frontmatter block (between the first two `---` lines) — the
  * skill bodies legitimately mention `Bash` and `{{PM_RUN}}`. Each case walks
@@ -86,6 +89,15 @@ const RUNNER_ALLOWLIST: Record<string, string> = {
     "read-only check; the wildcard is the path and --issue number",
 };
 
+/**
+ * A wildcard straight after one of these writes or deletes any file, or
+ * sends any API request (`gh api -X DELETE …`). #1292.
+ */
+const FILE_WRITE_TOOLS = ["gh api", "rm", "mv", "find", "sed", "cp"];
+
+/** `<tool> *` entries for FILE_WRITE_TOOLS that are kept, with the reason. */
+const BROAD_ALLOWLIST: Record<string, string> = {};
+
 /** Frontmatter `---` block. Throws so a malformed file fails loudly. */
 function frontmatter(text: string, file: string): string {
   const lines = text.split("\n");
@@ -125,6 +137,12 @@ function violation(entry: string): string | null {
   if (cmd === "*") return "Bash(*) (AC-1)";
   if (BROAD_TOOLS.some((t) => cmd === `${t} *`)) {
     return "wildcard directly after the tool (AC-1)";
+  }
+  if (
+    FILE_WRITE_TOOLS.some((t) => cmd === `${t} *`) &&
+    !(cmd in BROAD_ALLOWLIST)
+  ) {
+    return "file-writing or API wildcard not in BROAD_ALLOWLIST (#1292)";
   }
   // A global option before the subcommand (`git -C <path>`, `gh -R <repo>`)
   // leaves the subcommand to the wildcard: `git -C *` is `git *`.
@@ -187,6 +205,13 @@ describe("skill allowed-tools grant no broad shell access (#1287)", () => {
           .map(([e, why]) => `${f}: ${e} — ${why}`),
       );
       expect(found).toEqual([]);
+    },
+  );
+
+  it.each(["Bash(gh api:*)", "Bash(rm:*)", "Bash(curl:*)", "Bash(sed:*)"])(
+    "rejects %s (#1292)",
+    (entry) => {
+      expect(violation(entry)).not.toBeNull();
     },
   );
 });
