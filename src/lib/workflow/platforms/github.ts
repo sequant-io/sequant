@@ -103,6 +103,30 @@ export interface RollupEntry {
   state?: string;
 }
 
+/**
+ * Run `gh` and throw unless it exited 0 (#1312). `spawnSync` never throws on a
+ * non-zero exit, a timeout or a failed spawn, so each of those has to be
+ * checked here; the thrown message carries gh's stderr.
+ */
+function runGhOrThrow(args: string[]): void {
+  const result = spawnSync("gh", args, {
+    stdio: "pipe",
+    encoding: "utf-8",
+    timeout: 15000,
+  });
+  if (result.error || result.signal || result.status !== 0) {
+    const stderr = String(result.stderr ?? "").trim();
+    const cause = result.error
+      ? result.error.message
+      : result.signal
+        ? `killed by ${result.signal}`
+        : `exit ${result.status}`;
+    throw new Error(
+      `gh ${args.slice(0, 2).join(" ")} failed (${cause})${stderr ? `: ${stderr}` : ""}`,
+    );
+  }
+}
+
 /** PR mergeability as reported by `gh pr view --json mergeable`. */
 export type MergeableState = "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
 
@@ -934,24 +958,15 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async postComment(issueId: string, body: string): Promise<void> {
-    spawnSync("gh", ["issue", "comment", issueId, "--body", body], {
-      stdio: "pipe",
-      timeout: 15000,
-    });
+    runGhOrThrow(["issue", "comment", issueId, "--body", body]);
   }
 
   async addLabel(issueId: string, label: string): Promise<void> {
-    spawnSync("gh", ["issue", "edit", issueId, "--add-label", label], {
-      stdio: "pipe",
-      timeout: 15000,
-    });
+    runGhOrThrow(["issue", "edit", issueId, "--add-label", label]);
   }
 
   async removeLabel(issueId: string, label: string): Promise<void> {
-    spawnSync("gh", ["issue", "edit", issueId, "--remove-label", label], {
-      stdio: "pipe",
-      timeout: 15000,
-    });
+    runGhOrThrow(["issue", "edit", issueId, "--remove-label", label]);
   }
 
   async createPR(opts: CreatePROptions): Promise<PRInfo> {
