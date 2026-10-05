@@ -22,6 +22,7 @@ import {
   isRateLimitFailureInfo,
 } from "../../errors.js";
 import { RingBuffer } from "../ring-buffer.js";
+import { appendAgentText, joinAgentTexts } from "./agent-text.js";
 import type {
   AgentDriver,
   AgentExecutionConfig,
@@ -192,12 +193,15 @@ export class ClaudeCodeDriver implements AgentDriver {
             type: string;
             text?: string;
           }>;
-          const textContent = content
-            .filter((c) => c.type === "text" && c.text)
-            .map((c) => c.text)
-            .join("");
+          const textContent = joinAgentTexts(
+            content
+              .filter((c) => c.type === "text" && c.text)
+              .map((c) => c.text as string),
+          );
           if (textContent) {
-            capturedOutput += textContent;
+            // #1311: a newline between messages keeps a later `## Summary`
+            // at the start of a line.
+            capturedOutput = appendAgentText(capturedOutput, textContent);
             const lines = textContent.split("\n").filter((l) => l.length > 0);
             for (const line of lines) {
               stdoutBuffer.push(line);
