@@ -17,10 +17,9 @@ allowed-tools:
   - Bash(npm run build:*)
   - Bash(npm run lint:*)
   - Bash(ls:*)
-  - Bash(mv:*)
+  - Bash(mv * docs/archive/*)
+  - Bash(mv * scripts/archive/*)
   - Bash(mkdir:*)
-  - Bash(rm:*)
-  - Bash(find:*)
   - Read
   - Write
   - Glob
