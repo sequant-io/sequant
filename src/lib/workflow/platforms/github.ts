@@ -1008,10 +1008,7 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async postPRComment(prId: string, body: string): Promise<void> {
-    spawnSync("gh", ["pr", "comment", prId, "--body", body], {
-      stdio: "pipe",
-      timeout: 15000,
-    });
+    runGhOrThrow(["pr", "comment", prId, "--body", body]);
   }
 
   async checkAuth(): Promise<boolean> {

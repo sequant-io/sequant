@@ -1071,6 +1071,7 @@ async function runReadyGateForIssue(
       onProgress,
       // #937 AC-4: persist the final gap report as an issue comment.
       postReport: (body) => postComment(issueNumber, body),
+      log,
     });
 
     log(

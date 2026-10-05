@@ -39,6 +39,7 @@ describe("GitHubProvider gh failures (#1312)", () => {
     ["postComment", (p) => p.postComment("1", "body")],
     ["addLabel", (p) => p.addLabel("1", "bug")],
     ["removeLabel", (p) => p.removeLabel("1", "bug")],
+    ["postPRComment", (p) => p.postPRComment("7", "body")],
   ];
 
   for (const [name, call] of calls) {
