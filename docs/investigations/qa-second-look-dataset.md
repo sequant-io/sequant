@@ -261,3 +261,11 @@ A bare `catch` was tried and dropped: it also matches "no try/catch" in the unre
 **Grader vs human: 0 disagreements of 25** (was 10 of 25; AC-1 allows ≤ 2). The unmatched findings are the real non-planted ones (serve handler without try/catch, unvalidated `--port`, the PR-body claim) plus restated AC rows whose text names no alias.
 
 **Caveat: in-sample.** The aliases were chosen with these five reviews in view, so 25/25 is a fit, not a validation. #1068 should grade new runs it has not seen. The final alias set came from trying a bare `catch` first and reading what each alias matched, which is the tuning the caveat is about.
+
+**Known false catches (#1313 QA probes).** Every alias hit in the five reviews is about the right defect. On constructed input, the aliases over-count:
+- `export.test.ts` scores the `unmet-ac` defect for any finding that names the test file, e.g. a typo in a `describe` name.
+- `export.ts:25` scores the format defect even in "`export.ts:25` is fine; the bug is in serve.ts".
+- `empty catch` scores the `export.ts` error defect for an empty catch anywhere, e.g. in `src/serve.ts`.
+- Matching is case-insensitive, so `"Markdown"` matches `"markdown"`. The same widening is what lets a bold "**Empty catch**" count.
+
+The integrity test requires only one alias per defect to occur on exactly one patch line. The other aliases are not constrained: `export.test.ts` occurs on two. So #1068 must spot-check every grader catch by hand, at least for the `unmet-ac`, `primary-path-broken` and `error-path` classes, before it reports a leave-one-out difference.
