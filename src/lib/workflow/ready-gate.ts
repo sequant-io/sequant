@@ -242,10 +242,13 @@ export interface RunReadyGateOptions {
    * Persist the final gap report as an issue comment when the gate reaches
    * a terminal state with a QA verdict (#937 AC-4) — callers wire this to
    * `GitHubProvider.postComment`. Best-effort: a failure here is caught and
-   * swallowed, never failing the gate itself — `result.report` (returned to
-   * the caller either way) is the primary channel.
+   * reported through {@link RunReadyGateOptions.log}, never failing the gate
+   * itself — `result.report` (returned to the caller either way) is the
+   * primary channel.
    */
   postReport?: (body: string) => Promise<void>;
+  /** Warning sink for non-fatal failures (#1315); defaults to `console.warn`. */
+  log?: (message: string) => void;
 }
 
 /**
@@ -723,8 +726,14 @@ export async function runReadyGate(
     if (result.finalVerdict !== null && opts.postReport) {
       try {
         await opts.postReport(result.report);
-      } catch {
-        // Non-fatal — see comment above.
+      } catch (error) {
+        // Non-fatal — see comment above — but never silent (#1315).
+        const warn = opts.log ?? ((m: string) => console.warn(m));
+        warn(
+          `Failed to post ready-gate report for #${issueNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
 

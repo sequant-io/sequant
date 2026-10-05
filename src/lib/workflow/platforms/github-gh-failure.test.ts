@@ -35,10 +35,12 @@ describe("GitHubProvider gh failures (#1312)", () => {
     mockSpawn.mockReset();
   });
 
-  const calls: Array<[string, (p: GitHubProvider) => Promise<void>]> = [
+  const calls: Array<[string, (p: GitHubProvider) => Promise<unknown>]> = [
     ["postComment", (p) => p.postComment("1", "body")],
     ["addLabel", (p) => p.addLabel("1", "bug")],
     ["removeLabel", (p) => p.removeLabel("1", "bug")],
+    ["postPRComment", (p) => p.postPRComment("7", "body")],
+    ["getIssueComments", (p) => p.getIssueComments("1")],
   ];
 
   for (const [name, call] of calls) {
@@ -59,8 +61,14 @@ describe("GitHubProvider gh failures (#1312)", () => {
     });
 
     it(`${name} resolves on exit 0`, async () => {
-      mockSpawn.mockReturnValue({ status: 0, stderr: "" } as never);
-      await expect(call(new GitHubProvider())).resolves.toBeUndefined();
+      mockSpawn.mockReturnValue({
+        status: 0,
+        stderr: "",
+        stdout: "[]",
+      } as never);
+      await expect(call(new GitHubProvider())).resolves.toEqual(
+        name === "getIssueComments" ? [] : undefined,
+      );
     });
   }
 

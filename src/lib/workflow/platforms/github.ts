@@ -106,9 +106,9 @@ export interface RollupEntry {
 /**
  * Run `gh` and throw unless it exited 0 (#1312). `spawnSync` never throws on a
  * non-zero exit, a timeout or a failed spawn, so each of those has to be
- * checked here; the thrown message carries gh's stderr.
+ * checked here; the thrown message carries gh's stderr. Returns gh's stdout.
  */
-function runGhOrThrow(args: string[]): void {
+function runGhOrThrow(args: string[]): string {
   const result = spawnSync("gh", args, {
     stdio: "pipe",
     encoding: "utf-8",
@@ -125,6 +125,7 @@ function runGhOrThrow(args: string[]): void {
       `gh ${args.slice(0, 2).join(" ")} failed (${cause})${stderr ? `: ${stderr}` : ""}`,
     );
   }
+  return String(result.stdout ?? "");
 }
 
 /** PR mergeability as reported by `gh pr view --json mergeable`. */
@@ -1008,10 +1009,7 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async postPRComment(prId: string, body: string): Promise<void> {
-    spawnSync("gh", ["pr", "comment", prId, "--body", body], {
-      stdio: "pipe",
-      timeout: 15000,
-    });
+    runGhOrThrow(["pr", "comment", prId, "--body", body]);
   }
 
   async checkAuth(): Promise<boolean> {
@@ -1019,28 +1017,17 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async getIssueComments(issueId: string): Promise<Comment[]> {
-    try {
-      const result = spawnSync(
-        "gh",
-        [
-          "issue",
-          "view",
-          issueId,
-          "--json",
-          "comments",
-          "--jq",
-          "[.comments[] | {body: .body, createdAt: .createdAt}]",
-        ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
-      );
-      if (result.status !== 0 || !result.stdout) return [];
-      const data = JSON.parse(result.stdout) as Array<{
-        body: string;
-        createdAt: string;
-      }>;
-      return data;
-    } catch {
-      return [];
-    }
+    // #1315: rejects on failure like every other async method, instead of
+    // resolving [] — an empty list is indistinguishable from "no comments".
+    const stdout = runGhOrThrow([
+      "issue",
+      "view",
+      issueId,
+      "--json",
+      "comments",
+      "--jq",
+      "[.comments[] | {body: .body, createdAt: .createdAt}]",
+    ]);
+    return JSON.parse(stdout) as Comment[];
   }
 }

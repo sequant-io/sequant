@@ -73,7 +73,7 @@ describe("GitHubProvider", () => {
       expect(result).toEqual(mockComments);
     });
 
-    it("returns empty array on failure", async () => {
+    it("rejects on failure instead of resolving [] (#1315)", async () => {
       mockSpawnSync.mockReturnValue({
         status: 1,
         stdout: "",
@@ -82,8 +82,9 @@ describe("GitHubProvider", () => {
         output: [],
         signal: null,
       } as never);
-      const result = await provider.getIssueComments("123");
-      expect(result).toEqual([]);
+      await expect(provider.getIssueComments("123")).rejects.toThrow(
+        /gh issue view failed \(exit 1\): error/,
+      );
     });
   });
 
@@ -498,7 +499,11 @@ describe("GitHubProvider", () => {
 
       const result = provider.updatePRSync(
         7,
-        { title: "fix(#1): t", body: "line `x`\n$(not run)", base: "feature/0" },
+        {
+          title: "fix(#1): t",
+          body: "line `x`\n$(not run)",
+          base: "feature/0",
+        },
         "/wt",
       );
 

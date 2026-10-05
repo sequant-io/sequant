@@ -654,6 +654,24 @@ describe("runReadyGate — #937 AC-4 postReport", () => {
     expect(result.ready).toBe(true);
   });
 
+  it("logs a warning with the error when postReport rejects (#1315)", async () => {
+    const { runPhase } = scriptedRunner([qaResult("READY_FOR_MERGE")]);
+    const log = vi.fn();
+    const result = await runReadyGate(
+      baseOpts({
+        runPhase,
+        log,
+        postReport: async () => {
+          throw new Error("HTTP 502: bad gateway");
+        },
+      }),
+    );
+
+    expect(result.ready).toBe(true);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0][0])).toContain("HTTP 502: bad gateway");
+  });
+
   it("the persisted marker's findings match `remaining`", async () => {
     const findings: GapFinding[] = [
       {
