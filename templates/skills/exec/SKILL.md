@@ -781,7 +781,7 @@ worktree).
    - **Critical AC ❌**: Consider whether to create PR or continue implementation
 
 6. **Include in PR Description:**
-   Add the AC verification table to the PR body so reviewers can validate coverage.
+   Add the AC verification table to the PR body so reviewers can validate coverage. Under `SEQUANT_ORCHESTRATOR`, put it in the final `## Summary` instead.
 
 **Why this matters:** Catching AC gaps before PR creation:
 - Reduces review cycles
@@ -836,7 +836,7 @@ worktree).
 
 ### Recording the mutation result (gate-test ACs)
 
-When an AC is a gate test (a fixture exists, a skill section is present, a flag is wired), mutation-verify it before the PR: delete the thing it asserts, confirm exactly that test fails, restore. Then put this marker in the PR body, one per gate-test AC:
+When an AC is a gate test (a fixture exists, a skill section is present, a flag is wired), mutation-verify it before the PR: delete the thing it asserts, confirm exactly that test fails, restore. Then put this marker in the PR body (under `SEQUANT_ORCHESTRATOR`: in your final `## Summary`), one per gate-test AC:
 
 ```
 <!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"deleted the section","failedTest":"scripts/exec-skill-marker.test.ts > exec skill documents the marker > shows the file form"} -->
@@ -979,7 +979,7 @@ Not all interface fields need CLI registration. Fields are internal-only if:
 
 ### PR Creation and Verification
 
-**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - except step 1: commit and push the branch (`git push -u origin <branch>`), then report the branch and stop. Open no PR by any means: no `gh pr create`, and no GitHub MCP pull-request tool either. The orchestrator is the only PR producer (#1247). It opens the PR as soon as exec finishes, so QA reads your summary, AC table and mutation markers from the PR body, and it updates the same PR after QA with the QA verdict and the ready-gate report. The body is built from your last `## Summary` section. Put the AC verification table and every `SEQUANT_MUTATION` marker inside that final `## Summary` section so they reach the PR body. Under `--no-pr` the orchestrator opens none either.
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - except step 1: commit and push the branch (`git push -u origin <branch>`), then report the branch and stop. Open no PR by any means: no `gh pr create`, and no GitHub MCP pull-request tool either. The orchestrator is the only PR producer (#1247). It opens the PR as soon as exec finishes, so QA reads your summary, AC table and mutation markers from the PR body, and it updates the same PR after QA with the QA verdict and the ready-gate report. The body is built from your last `## Summary` section. Put the AC verification table and every `SEQUANT_MUTATION` marker inside that final `## Summary` section so they reach the PR body. Do not change the PR's body or title by any means: no `gh pr edit`, no `gh api` PATCH on `pulls/N`, no MCP tool. To add or fix content, including after a QA gap, put it in your final `## Summary`; the orchestrator carries it into the body on every exec, loop iterations included. Under `--no-pr` the orchestrator opens none either.
 
 After implementation is complete and all checks pass, create and verify the PR:
 
@@ -1351,7 +1351,8 @@ green means #1086, not your change.
 
 Then settle it against base in the same worktree, mechanically — run
 `scripts/settle-against-base.sh <test-file> [-t <name>]` for **every** red test outside the
-diff, and paste its `### Settled against base` block into the PR body. The script runs the
+diff, and paste its `### Settled against base` block into the PR body (under
+`SEQUANT_ORCHESTRATOR`: into your final `## Summary`). The script runs the
 named test at HEAD and again at the base commit with every `SEQUANT_*` var unset, and
 restores your branch and any uncommitted work on every exit path; it commits nothing. It
 also distinguishes *"the test file does not exist at base"* from *"the test failed at
@@ -1515,13 +1516,13 @@ done
 
 **Purpose:** `pre-tool.sh` is a bash/awk parser whose fixes have repeatedly broken forms an earlier fix protected. `__tests__/fixtures/hook-corpus.jsonl` records the verdict the hook gives every command form it has been asked to judge; a changed verdict is a review item, not a surprise.
 
-**When any of the three `pre-tool.sh` copies changes**, run the diff against base and list every changed verdict in the PR body:
+**When any of the three `pre-tool.sh` copies changes**, run the diff against base and list every changed verdict in the PR body (under `SEQUANT_ORCHESTRATOR`: in your final `## Summary`):
 
 ```bash
 npx tsx scripts/hook-corpus.ts --diff origin/main
 ```
 
-It prints `N verdict changes` (exit 0 only when N is 0). Put each change in the PR body under a `Hook verdicts changed:` heading, one line per command with `allow -> block` or `block -> allow`, then update the matching corpus lines so `npx vitest run __tests__/hook-corpus.integration.test.ts` passes. An intended fix that flips no verdict writes `Hook verdicts changed: none`.
+It prints `N verdict changes` (exit 0 only when N is 0). Put each change in the PR body (under `SEQUANT_ORCHESTRATOR`: your final `## Summary`) under a `Hook verdicts changed:` heading, one line per command with `allow -> block` or `block -> allow`, then update the matching corpus lines so `npx vitest run __tests__/hook-corpus.integration.test.ts` passes. An intended fix that flips no verdict writes `Hook verdicts changed: none`.
 
 ### 3d. Lint Check (REQUIRED before PR)
 
