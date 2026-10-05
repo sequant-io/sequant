@@ -18,7 +18,7 @@ gh pr merge 712          # human decides
 
 ## Why it exists
 
-Empirical analysis of `.entire` logs (2026-05-30) found the QA pass that runs *inside* `sequant run` / `/fullsolve` systematically under-catches relative to the fresh standalone `/qa` the maintainer runs afterward — **44% of fresh-session passes caught a real shipping bug or unmet AC** that had already passed an in-orchestrator QA. Two structural gaps drive this:
+A study of the maintainer's standalone `/qa` second looks found that a second pass often catches what the first QA pass accepted. The original 2026-05-30 figure is not reproducible from the surviving transcripts; the reproducible figure is **10 of 27 reviews (37%) caught a would-ship bug**. 7 of those 10 landed only after the human's "any gaps?" follow-up and 3 in the first verdict; none needed a step that orchestrated QA skips. Most of the value is therefore the follow-up pass, which `sequant ready` automates ([dataset](../investigations/qa-second-look-dataset.md)). The design also closes two structural gaps, although no catch in the reconstructed set depended on the first:
 
 1. **Orchestrated QA trusts the orchestrator's git state** and skips the branch-freshness / process-state pre-flight checks — exactly the no-implementation / divergent-branch class.
 2. **The fullsolve QA loop stops at "good enough"** (`AC_MET_BUT_NOT_A_PLUS`) and never drives toward A+.

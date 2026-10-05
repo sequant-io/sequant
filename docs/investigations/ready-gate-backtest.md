@@ -2,16 +2,18 @@
 
 **Issue:** [#683](https://github.com/sequant-io/sequant/issues/683)
 **Corpus:** 27 captured fresh-session QA passes (`.entire` log study, 2026-05-30)
-**Method:** Replay `sequant ready` against the pre-fix commit each fresh QA reviewed; measure recall vs. the 12 known would-ship defects and the false-positive / noise rate on clean cases.
+**Method:** Replay `sequant ready` against the pre-fix commit each fresh QA reviewed; measure recall vs. the real-bug cases listed under "Ground-truth corpus" and the false-positive / noise rate on clean cases.
 **Status:** ⚠️ **Methodology + corpus committed; empirical numbers pending the offline harness run.** See "Execution status" below.
 
 ## Question
 
-The in-orchestrator QA under-catches: across 27 captured fresh-session passes (24 of them *after* an in-orchestrator QA had already passed the same work), **12/27 (44%)** caught a real shipping bug or unmet AC. Does the automated `sequant ready` chain independently flag the same defect class — and at what noise cost? Per-policy numbers matter, because the `ac` default is meant to contain the noise/scope-creep that `a-plus` amplifies (the #608 risk).
+A second look catches what a first QA pass accepted: across 27 reconstructed second-look `/qa` passes, **10/27 (37%)** caught a real shipping bug (7 only after the human's "any gaps?" follow-up, 3 in the first verdict). The original study's figure is not reproducible from the surviving transcripts, and whether a prior in-orchestrator QA had run cannot be separated from them (the prior-QA counts are lower bounds). See the [dataset](qa-second-look-dataset.md). Does the automated `sequant ready` chain independently flag the same defect class — and at what noise cost? Per-policy numbers matter, because the `ac` default is meant to contain the noise/scope-creep that `a-plus` amplifies (the #608 risk).
 
 ## Ground-truth corpus
 
 The 12 real-bug cases the fresh QA caught (the recall denominator):
+
+> **Note (#1309):** this is the original 2026-05-30 study's list. Four of its cases (#421, #570, #467, #318) are not in the surviving transcripts, so they are not in the reconstructed set of 10 catches. See the [dataset](qa-second-look-dataset.md#reconciliation-with-the-original-12112). Report recall against both lists when the harness runs.
 
 | # | Defect class caught (in-run QA had missed it) |
 |---|-----------------------------------------------|
