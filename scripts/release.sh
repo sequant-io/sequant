@@ -79,15 +79,9 @@ fi
 echo "📦 Bumping version to $VERSION..."
 npm version "$VERSION" --no-git-tag-version
 
-# Update plugin.json version
-echo "📦 Updating plugin.json version..."
-if [[ -f ".claude-plugin/plugin.json" ]]; then
-  sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" .claude-plugin/plugin.json
-fi
-
 # Update plugin/.claude-plugin/plugin.json version — the shipped plugin
-# manifest marketplace.json's source (./plugin) resolves to (#1265). Kept a
-# byte-identical copy of the root file above.
+# manifest marketplace.json's source (./plugin) resolves to (#1265). It is
+# the only plugin.json; the root copy was retired in #1301.
 echo "📦 Updating plugin/.claude-plugin/plugin.json version..."
 if [[ -f "plugin/.claude-plugin/plugin.json" ]]; then
   sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" plugin/.claude-plugin/plugin.json

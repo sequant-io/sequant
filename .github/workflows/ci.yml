@@ -214,20 +214,20 @@ jobs:
           echo "Validating plugin.json..."
 
           # Check plugin.json exists
-          if [ ! -f ".claude-plugin/plugin.json" ]; then
-            echo "Error: .claude-plugin/plugin.json not found"
+          if [ ! -f "plugin/.claude-plugin/plugin.json" ]; then
+            echo "Error: plugin/.claude-plugin/plugin.json not found"
             exit 1
           fi
 
           # Validate JSON syntax
-          if ! node -e "JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json', 'utf8'))"; then
+          if ! node -e "JSON.parse(require('fs').readFileSync('plugin/.claude-plugin/plugin.json', 'utf8'))"; then
             echo "Error: plugin.json is not valid JSON"
             exit 1
           fi
 
           # Check required fields
           node -e "
-            const plugin = JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json', 'utf8'));
+            const plugin = JSON.parse(require('fs').readFileSync('plugin/.claude-plugin/plugin.json', 'utf8'));
             const required = ['name', 'description'];
             const missing = required.filter(f => !plugin[f]);
             if (missing.length > 0) {
@@ -244,7 +244,7 @@ jobs:
           echo "Checking version sync between package.json and plugin.json..."
 
           PKG_VERSION=$(node -p "require('./package.json').version")
-          PLUGIN_VERSION=$(node -p "require('./.claude-plugin/plugin.json').version")
+          PLUGIN_VERSION=$(node -p "require('./plugin/.claude-plugin/plugin.json').version")
 
           echo "package.json version: $PKG_VERSION"
           echo "plugin.json version: $PLUGIN_VERSION"
@@ -255,7 +255,7 @@ jobs:
             echo "plugin.json: $PLUGIN_VERSION"
             echo ""
             echo "Run the following to sync:"
-            echo "  node -e \"const p=require('./.claude-plugin/plugin.json');p.version='$PKG_VERSION';require('fs').writeFileSync('./.claude-plugin/plugin.json',JSON.stringify(p,null,2)+'\\n')\""
+            echo "  node -e \"const p=require('./plugin/.claude-plugin/plugin.json');p.version='$PKG_VERSION';require('fs').writeFileSync('./plugin/.claude-plugin/plugin.json',JSON.stringify(p,null,2)+'\\n')\""
             exit 1
           fi
 
@@ -300,30 +300,30 @@ jobs:
           echo "Testing that version sync check catches mismatches..."
 
           # Backup original plugin.json
-          cp .claude-plugin/plugin.json .claude-plugin/plugin.json.bak
+          cp plugin/.claude-plugin/plugin.json plugin/.claude-plugin/plugin.json.bak
 
           # Create a version mismatch
           node -e "
             const fs = require('fs');
-            const plugin = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'));
+            const plugin = JSON.parse(fs.readFileSync('plugin/.claude-plugin/plugin.json', 'utf8'));
             plugin.version = '0.0.0-test-mismatch';
-            fs.writeFileSync('.claude-plugin/plugin.json', JSON.stringify(plugin, null, 2) + '\n');
+            fs.writeFileSync('plugin/.claude-plugin/plugin.json', JSON.stringify(plugin, null, 2) + '\n');
           "
 
           # Run the sync check - it SHOULD fail
           PKG_VERSION=$(node -p "require('./package.json').version")
-          PLUGIN_VERSION=$(node -p "require('./.claude-plugin/plugin.json').version")
+          PLUGIN_VERSION=$(node -p "require('./plugin/.claude-plugin/plugin.json').version")
 
           if [ "$PKG_VERSION" = "$PLUGIN_VERSION" ]; then
             echo "ERROR: Versions should not match in this test!"
-            mv .claude-plugin/plugin.json.bak .claude-plugin/plugin.json
+            mv plugin/.claude-plugin/plugin.json.bak plugin/.claude-plugin/plugin.json
             exit 1
           fi
 
           echo "✓ Version mismatch correctly detected (package: $PKG_VERSION, plugin: $PLUGIN_VERSION)"
 
           # Restore original plugin.json
-          mv .claude-plugin/plugin.json.bak .claude-plugin/plugin.json
+          mv plugin/.claude-plugin/plugin.json.bak plugin/.claude-plugin/plugin.json
           echo "✓ Negative test passed - version sync check works correctly"
 
   # Phase A (advisory, measured) rollout of the test-tautology detector in CI

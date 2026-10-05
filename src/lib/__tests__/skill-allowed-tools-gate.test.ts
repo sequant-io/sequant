@@ -14,6 +14,9 @@
  *   a reason.
  * - AC-3: an unrendered `{{…}}` placeholder. `plugin/skills/` is copied
  *   without placeholder rendering, so such an entry never matches anything.
+ * - #1292: `Bash(<tool> *)` / `Bash(<tool>:*)` for a file-writing or API
+ *   tool in FILE_WRITE_TOOLS (`gh api`, `rm`, `sed`, …) — unless
+ *   BROAD_ALLOWLIST names it with a reason.
  *
  * Scoped to the frontmatter block (between the first two `---` lines) — the
  * skill bodies legitimately mention `Bash` and `{{PM_RUN}}`. Each case walks
@@ -86,6 +89,28 @@ const RUNNER_ALLOWLIST: Record<string, string> = {
     "read-only check; the wildcard is the path and --issue number",
 };
 
+/**
+ * With a wildcard anywhere, one of these can write or delete any file, or
+ * send any API request (`gh api -X DELETE …`). A flag before the wildcard
+ * only widens it (`rm -rf *`), so every wildcard entry for these tools is
+ * rejected unless BROAD_ALLOWLIST names it. #1292.
+ */
+const FILE_WRITE_TOOLS = ["gh api", "rm", "mv", "find", "sed", "cp"];
+
+/** Wildcard entries for FILE_WRITE_TOOLS that are kept, with the reason. */
+const BROAD_ALLOWLIST: Record<string, string> = {
+  "mv * docs/archive/*":
+    "clean archives stale docs; the target must be inside docs/archive/",
+  "mv * scripts/archive/*":
+    "clean archives stale scripts; the target must be inside scripts/archive/",
+  "cp * .claude/memory/constitution.md":
+    "setup copies the constitution template; the target file is fixed",
+  "cp -R * .claude/skills/*":
+    "setup copies skill templates; the target must be inside .claude/skills/",
+  "sed -i.bak * .claude/memory/constitution.md":
+    "setup fills {{PROJECT_NAME}}; `*` also matches extra file arguments, so this is narrower than `sed:*` but not exact",
+};
+
 /** Frontmatter `---` block. Throws so a malformed file fails loudly. */
 function frontmatter(text: string, file: string): string {
   const lines = text.split("\n");
@@ -125,6 +150,13 @@ function violation(entry: string): string | null {
   if (cmd === "*") return "Bash(*) (AC-1)";
   if (BROAD_TOOLS.some((t) => cmd === `${t} *`)) {
     return "wildcard directly after the tool (AC-1)";
+  }
+  if (
+    cmd.includes("*") &&
+    FILE_WRITE_TOOLS.some((t) => cmd.startsWith(`${t} `)) &&
+    !(cmd in BROAD_ALLOWLIST)
+  ) {
+    return "file-writing or API wildcard not in BROAD_ALLOWLIST (#1292)";
   }
   // A global option before the subcommand (`git -C <path>`, `gh -R <repo>`)
   // leaves the subcommand to the wildcard: `git -C *` is `git *`.
@@ -189,4 +221,27 @@ describe("skill allowed-tools grant no broad shell access (#1287)", () => {
       expect(found).toEqual([]);
     },
   );
+
+  it.each(["Bash(gh api:*)", "Bash(rm:*)", "Bash(curl:*)", "Bash(sed:*)"])(
+    "rejects %s (#1292)",
+    (entry) => {
+      expect(violation(entry)).not.toBeNull();
+    },
+  );
+
+  // A flag before the wildcard widens the grant, so it must not slip past
+  // the exact `<tool> *` form (#1292 QA).
+  it.each([
+    "Bash(rm -rf:*)",
+    "Bash(gh api -X:*)",
+    "Bash(find . -delete:*)",
+    "Bash(sed -i:*)",
+  ])("rejects the prefix variant %s (#1292)", (entry) => {
+    expect(violation(entry)).not.toBeNull();
+  });
+
+  it("keeps an exact, wildcard-free file-writing command (#1292)", () => {
+    expect(violation("Bash(cat package.json)")).toBeNull();
+    expect(violation("Bash(rm -f .DS_Store)")).toBeNull();
+  });
 });
