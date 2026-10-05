@@ -57,6 +57,8 @@ export interface Comment {
  * Error contract (#1315): every async method rejects on failure (non-zero
  * exit, timeout, spawn error) and never resolves on failure. Callers that
  * treat a call as best-effort catch and log the rejection themselves.
+ * The one exception is `checkAuth`, a yes/no question: it resolves `false`
+ * when the platform CLI is missing, unauthenticated or unreachable.
  */
 export interface PlatformProvider {
   /** Platform name for logging/display */
