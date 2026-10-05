@@ -4,7 +4,7 @@
 
 ## Why
 
-Session-log analysis showed that after essentially every `/qa`, the maintainer manually typed the same triple: a gap probe ("any gaps?"), a fix command ("fix all gaps"), then "merge". That probe reliably surfaced real defects the first `/qa` accepted (consistent with the recorded ~44%-of-second-looks defect rate). `sequant ready` (#683) already automates exactly that loop — but on the `run` path it required a second, manually-invoked command. `--ready-gate` makes it reachable in-line, while keeping the human merge gate deliberate.
+Session-log analysis showed that after essentially every `/qa`, the maintainer manually typed the same triple: a gap probe ("any gaps?"), a fix command ("fix all gaps"), then "merge". That probe reliably surfaced real defects the first `/qa` accepted (10 of 27 reconstructed second looks caught a would-ship bug, 7 of them only after the "any gaps?" follow-up; the original 44% is not reproducible from the surviving transcripts — see the [dataset](../investigations/qa-second-look-dataset.md)). `sequant ready` (#683) already automates exactly that loop — but on the `run` path it required a second, manually-invoked command. `--ready-gate` makes it reachable in-line, while keeping the human merge gate deliberate.
 
 It also gives the #749 `AC_MET_BUT_NOT_A_PLUS` break-to-PR outcome an automatic escalation path: with the flag, that verdict is re-driven through the gate per policy instead of dead-ending at the PR.
 

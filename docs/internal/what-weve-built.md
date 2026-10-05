@@ -779,7 +779,7 @@ Shell scripts in `templates/scripts/`:
 
 ### Recent Additions (v2.15.1)
 
-- **Fresh-Session QA** - the qa phase never resumes the implementer's session (a 27-transcript study: 44% of fresh second looks caught a would-ship bug); `--full-qa` / `run.fullQa` / MCP `fullQa` force full-weight QA on demand
+- **Fresh-Session QA** - the qa phase never resumes the implementer's session (a 27-transcript study: 10/27 second looks caught a would-ship bug, 7 only after the human's "any gaps?" follow-up; original 44% not reproducible — see [dataset](../investigations/qa-second-look-dataset.md)); `--full-qa` / `run.fullQa` / MCP `fullQa` force full-weight QA on demand
 - **User-Owned Files Survive sync** - a marker-less `AGENTS.md` is preserved, `scripts/dev` links target the project's own `node_modules/sequant`, `sync --dry-run` lists exactly what `sync` writes, and the opencode shim has one producer that refreshes only when drifted
 - **Public Trust Contract** - `SECURITY.md`, `docs/THREAT-MODEL.md` (deterministic vs model-dependent defenses, OWASP Agentic Top 10 mapping, CI-checked citations), OpenSSF Scorecard workflow + badge, three injection-eval vectors with per-vector records
 - **No Stranded Phase Work** - the pre-tool hook refuses background tasks under the orchestrator, `/exec` runs the suite once in the foreground, and an exec that still ends uncommitted gets a `chore(#N): wip checkpoint` commit before the failure is reported
