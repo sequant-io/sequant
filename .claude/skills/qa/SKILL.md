@@ -19,7 +19,6 @@ allowed-tools:
   - Bash(gh pr diff:*)
   - Bash(gh pr comment:*)
   - Bash(gh pr checks:*)
-  - Bash(gh api:*)
   - Bash(semgrep:*)
   - Bash(npx tsx scripts/semgrep-scan.ts)
   - Bash(npx tsx scripts/semgrep-scan.ts --changed-only)
