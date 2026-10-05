@@ -153,7 +153,7 @@ Contributing, not primary: 1 human follow-up catch (#529) also needed a QA-weigh
 | `formatNotes` | `primary-path-broken` | #313, #369, #529 | §3 QA vs AC (1854–1879), §6 Execution Evidence (1950–1989) |
 | `parseSinceDate` | `unwired-option` | #368 | §2g Call-Site Review (1627–1742), §2h CLI Registration (1743–1853) |
 | `readNotesFile` | `error-path` | #503 | §4 Failure Path & Edge Cases (1880–1891) |
-| `0.0.0.0` | `security-exposure` | #372, #370 | §5 Risk Assessment (1892–1939), §6f Trust-Boundary (2457–2483) |
+| `0.0.0.0` | `security-exposure` | #372, #370 | §6f Trust-Boundary (2457–2483), reported as a Code Review **Issues** item or a not-met AC-4 row. §5 Risk Assessment (1892–1939) may also raise it, but the grader does not read §5 (see Known bias) |
 | `vi.mock` | `unmet-ac` | #528 (also #336, #352) | §2d Test Quality Review (1523–1540), §6h Declared-Evidence (2484–2552) |
 
 Ground truth: [`ground-truth.json`](qa-seeded-fixture/ground-truth.json). Each identifier occurs on exactly one line of `defects.patch`. That is enforced by `scripts/analytics/qa-seeded-grade.test.ts`, which also checks that every class appears among this document's caught rows. The section column gives #1068 its leave-one-out targets.
@@ -175,7 +175,7 @@ recall 0.60 (3/5)
 precision 0.60 (3/5)
 ```
 
-**Known bias:** a verdict that describes a defect without writing its identifier is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched. The opposite bias, a neutral mention counted as a catch, is closed by reading recall from findings only. A finding that names an identifier while calling it correct would still count. AC-7's human pass is where that shows up.
+**Known bias:** a verdict that describes a defect without writing its identifier is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched. The opposite bias, a neutral mention counted as a catch, is closed by reading recall from findings only. A finding that names an identifier while calling it correct would still count. AC-7's human pass is where that shows up. **Risk Assessment is invisible to the grader.** A `/qa` run that names `0.0.0.0` (or any identifier) only in §5 Risk Assessment, or only in the Trust-Boundary `**Finding:**` line, scores a recall miss for it. That is a deliberate under-count, the price of not counting §5's routine bullets as findings, and AC-7's human pass must report it per class, `security-exposure` first.
 
 ## Calibration: ⏳ pending-runner (AC-6, AC-7, AC-8)
 
