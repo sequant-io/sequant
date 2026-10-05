@@ -7,7 +7,7 @@ import * as path from "path";
 import { execFileSync } from "child_process";
 import {
   extractFindings,
-  gradePrecision,
+  gradePlantedShare,
   gradeRecall,
   loadTruth,
   namesIdentifier,
@@ -18,6 +18,7 @@ const FIXTURE = path.join("docs", "investigations", "qa-seeded-fixture");
 const TRUTH_FILE = path.join(FIXTURE, "ground-truth.json");
 const PATCH_FILE = path.join(FIXTURE, "defects.patch");
 const SAMPLE_FILE = path.join(FIXTURE, "sample-verdict.md");
+const REVIEWS_DIR = path.join(FIXTURE, "reviews");
 const DATASET_FILE = path.join(
   "docs",
   "investigations",
@@ -54,8 +55,8 @@ describe("AC-4: graders score a hand-written verdict", () => {
     expect(r.value).toBeCloseTo(0.6);
   });
 
-  it("3 of 5 findings map to a planted identifier → precision 0.6", () => {
-    const p = gradePrecision(verdict, truth);
+  it("3 of 5 findings map to a planted identifier → planted share 0.6", () => {
+    const p = gradePlantedShare(verdict, truth);
     expect(p.hits).toBe(3);
     expect(p.total).toBe(5);
     expect(p.value).toBeCloseTo(0.6);
@@ -75,7 +76,7 @@ describe("AC-4: graders score a hand-written verdict", () => {
       { encoding: "utf-8" },
     );
     expect(out).toContain("recall 0.60 (3/5)");
-    expect(out).toContain("precision 0.60 (3/5)");
+    expect(out).toContain("planted share 0.60 (3/5)");
   }, 30_000);
 });
 
@@ -93,13 +94,13 @@ describe("AC-5: recall depends on the ground truth", () => {
 describe("grader edge cases", () => {
   const truth: GroundTruth = {
     defects: [
-      { id: "readNotesFile", class: "error-path" },
-      { id: "0.0.0.0", class: "security-exposure" },
+      { identifiers: ["readNotesFile"], class: "error-path" },
+      { identifiers: ["0.0.0.0"], class: "security-exposure" },
     ],
   };
 
-  it("a verdict with no findings has undefined precision, not NaN", () => {
-    const p = gradePrecision(
+  it("a verdict with no findings has undefined planted share, not NaN", () => {
+    const p = gradePlantedShare(
       "**Verdict:** READY_FOR_MERGE\n\nAll good.",
       truth,
     );
@@ -134,7 +135,7 @@ describe("grader edge cases", () => {
     const findings = extractFindings(v);
     expect(findings).toHaveLength(3);
     expect(findings[1]).toContain("continued on a second line");
-    expect(gradePrecision(v, truth).hits).toBe(1);
+    expect(gradePlantedShare(v, truth).hits).toBe(1);
   });
 });
 
@@ -171,7 +172,10 @@ describe("graders read sequant's real /qa template", () => {
   it("Risk Assessment bullets are not findings; a PARTIALLY_MET row is", () => {
     const findings = extractFindings(verdict);
     expect(findings).toHaveLength(2);
-    expect(gradePrecision(verdict, truth)).toMatchObject({ hits: 2, total: 2 });
+    expect(gradePlantedShare(verdict, truth)).toMatchObject({
+      hits: 2,
+      total: 2,
+    });
   });
 
   it("a neutral mention (MET row, risk note) is not a recall hit", () => {
@@ -191,20 +195,151 @@ describe("AC-3: the seeded fixture is well-formed", () => {
     );
   });
 
-  it("each identifier occurs on exactly one line of defects.patch", () => {
+  it("each defect has an alias that occurs on exactly one line of defects.patch", () => {
     for (const d of truth.defects) {
-      const count = patchLines.filter((l) => l.includes(d.id)).length;
-      expect({ id: d.id, count }).toEqual({ id: d.id, count: 1 });
+      const counts = d.identifiers.map(
+        (id) => patchLines.filter((l) => l.includes(id)).length,
+      );
+      expect({ id: d.identifiers[0], anchored: counts.includes(1) }).toEqual({
+        id: d.identifiers[0],
+        anchored: true,
+      });
     }
   });
 
   it("each class is one the second-look dataset caught", () => {
     const classes = caughtClasses(fs.readFileSync(DATASET_FILE, "utf-8"));
     for (const d of truth.defects) {
-      expect({ id: d.id, inDataset: classes.has(d.class) }).toEqual({
-        id: d.id,
+      expect({
+        id: d.identifiers[0],
+        inDataset: classes.has(d.class),
+      }).toEqual({
+        id: d.identifiers[0],
         inDataset: true,
       });
     }
+  });
+});
+
+describe("AC-1 (#1313): identifiers are tokens a reviewer must write", () => {
+  const truth = loadTruth(TRUTH_FILE);
+  const reviews = [1, 2, 3, 4, 5].map((n) =>
+    fs.readFileSync(path.join(REVIEWS_DIR, `run-${n}.md`), "utf-8"),
+  );
+
+  it("no identifier is a pre-existing store helper name", () => {
+    const all = truth.defects.flatMap((d) => d.identifiers);
+    expect(all).not.toContain("formatNotes");
+    expect(all).not.toContain("readNotesFile");
+  });
+
+  it("grader-vs-human disagreement on the five stored reviews is ≤ 2 of 25", () => {
+    // The human label is "caught" for every planted defect in every run.
+    let missed = 0;
+    for (const v of reviews) {
+      const r = gradeRecall(v, truth);
+      missed += r.total - r.hits;
+    }
+    expect(missed).toBeLessThanOrEqual(2);
+  });
+
+  it("the committed reviews carry no machine paths or private repo names", () => {
+    for (const v of reviews) {
+      expect(v).not.toMatch(/\/Users\/|notes-fixture/);
+    }
+  });
+});
+
+describe("AC-2 (#1313): planted share is not a false-positive rate", () => {
+  const truth: GroundTruth = {
+    defects: [
+      { identifiers: ["empty catch", "catch {"], class: "error-path" },
+      { identifiers: ["0.0.0.0"], class: "security-exposure" },
+    ],
+  };
+  const verdict = [
+    "### Issues",
+    "- The empty catch swallows store errors.",
+    "- The server binds 0.0.0.0.",
+    "- `--port` is never validated.",
+    "",
+    "### Next steps",
+    "- Remove the empty catch in export.ts.",
+    "- Fix the empty catch so AC-3 passes.",
+  ].join("\n");
+
+  it("collapses restatements of one defect and does not penalise a real extra finding", () => {
+    const s = gradePlantedShare(verdict, truth);
+    // 2 distinct planted defects + 1 real non-planted finding.
+    expect(s).toMatchObject({ hits: 2, total: 3 });
+    expect(s.unmatched).toEqual(["- `--port` is never validated."]);
+  });
+
+  it("a restated defect alone scores 1/1, not 1/3", () => {
+    const v = [
+      "### Issues",
+      "- empty catch in export.ts",
+      "- the empty catch again",
+      "- still the empty catch",
+    ].join("\n");
+    expect(gradePlantedShare(v, truth)).toMatchObject({ hits: 1, total: 1 });
+  });
+
+  it("any one alias names the defect, case-insensitively", () => {
+    const v = "### Issues\n- Empty Catch hides errors\n";
+    expect(gradeRecall(v, truth).hits).toBe(1);
+  });
+
+  it("a legacy single id still loads as one identifier", () => {
+    const tmp = path.join(
+      fs.mkdtempSync(path.join(require("os").tmpdir(), "truth-")),
+      "t.json",
+    );
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify({ defects: [{ id: "vi.mock", class: "unmet-ac" }] }),
+    );
+    expect(loadTruth(tmp).defects[0].identifiers).toEqual(["vi.mock"]);
+  });
+});
+
+describe("AC-3 (#1313): template intro bullets and status-table ❌ are not findings", () => {
+  const truth = loadTruth(TRUTH_FILE);
+  const verdict = [
+    "## QA Review for Issue #1: `notes export`",
+    "",
+    "- **Mode:** sequant run",
+    "- **Branch:** feature/1-add-notes-export",
+    "",
+    "### Build and tests",
+    "",
+    "| Check | Status |",
+    "|-------|--------|",
+    "| Build | ✅ passes |",
+    "| Tests | ❌ 1 failing |",
+    "",
+    "### AC Coverage",
+    "",
+    "| AC | Status | Notes |",
+    "|----|--------|-------|",
+    "| AC-1 | ❌ NOT_MET | `--format md` prints JSON |",
+    "| AC-2 | ✅ MET | fine |",
+    "",
+    "### Issues",
+    "- the server binds 0.0.0.0",
+    "",
+    '<!-- SEQUANT_QA_GAPS: {"findings":[{"evidence":"0.0.0.0"}]} -->',
+  ].join("\n");
+
+  it("only the AC-table ❌ row and the Issues item are findings", () => {
+    const findings = extractFindings(verdict);
+    expect(findings).toHaveLength(2);
+    expect(findings[0]).toContain("AC-1");
+    expect(findings[1]).toContain("0.0.0.0");
+  });
+
+  it("the title heading does not open an issues section", () => {
+    const v = "## QA Review for Issue #7\n- **Mode:** x\n- **Branch:** y\n";
+    expect(extractFindings(v)).toEqual([]);
   });
 });
