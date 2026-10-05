@@ -95,9 +95,14 @@ function main(): void {
     process.exit(1);
   }
 
-  const pluginJsonPath = join(PROJECT_ROOT, ".claude-plugin", "plugin.json");
+  const pluginJsonPath = join(
+    PROJECT_ROOT,
+    "plugin",
+    ".claude-plugin",
+    "plugin.json",
+  );
   if (!existsSync(pluginJsonPath)) {
-    console.error("❌ .claude-plugin/plugin.json not found.");
+    console.error("❌ plugin/.claude-plugin/plugin.json not found.");
     process.exit(1);
   }
 

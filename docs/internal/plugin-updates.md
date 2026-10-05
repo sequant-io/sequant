@@ -9,7 +9,7 @@ Sequant uses **synchronized versioning** across all distribution files:
 | Source | Version Location | Example |
 |--------|-----------------|---------|
 | npm package | `package.json` | `"version": "1.11.0"` |
-| Claude Code plugin | `.claude-plugin/plugin.json` | `"version": "1.11.0"` |
+| Claude Code plugin | `plugin/.claude-plugin/plugin.json` | `"version": "1.11.0"` |
 | Marketplace listing | `.claude-plugin/marketplace.json` → `plugins[0].version` | `"version": "1.11.0"` |
 
 **All versions MUST match.** The CI pipeline enforces this check on every PR via `plugin-version-sync.ts`.

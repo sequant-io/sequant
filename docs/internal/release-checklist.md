@@ -20,7 +20,7 @@ Before tagging a release, verify:
 
 **Both npm and plugin must use the same version.**
 
-- [ ] `.claude-plugin/plugin.json` version matches `package.json`
+- [ ] `plugin/.claude-plugin/plugin.json` version matches `package.json`
 - [ ] Validate plugin manifest: `/plugin validate .` (in Claude Code)
 
 To update both versions together:
@@ -30,9 +30,9 @@ npm version patch --no-git-tag-version
 # Update plugin.json to match
 node -e "
 const pkg = require('./package.json');
-const plugin = require('./.claude-plugin/plugin.json');
+const plugin = require('./plugin/.claude-plugin/plugin.json');
 plugin.version = pkg.version;
-require('fs').writeFileSync('./.claude-plugin/plugin.json', JSON.stringify(plugin, null, 2) + '\n');
+require('fs').writeFileSync('./plugin/.claude-plugin/plugin.json', JSON.stringify(plugin, null, 2) + '\n');
 "
 ```
 
