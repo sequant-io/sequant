@@ -9,10 +9,11 @@ allowed-tools:
   - Read
   - Write
   - Bash(mkdir:*)
-  - Bash(cp:*)
+  - Bash(cp * .claude/memory/constitution.md)
+  - Bash(cp -R * .claude/skills/*)
   - Bash(ls:*)
-  - Bash(cat:*)
-  - Bash(sed:*)
+  - Bash(cat package.json)
+  - Bash(sed -i.bak * .claude/memory/constitution.md)
   - Bash(git --version)
   - Bash(git remote:*)
   - Bash(gh auth status:*)
