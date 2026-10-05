@@ -2,7 +2,7 @@
 
 This is a throwaway project plus one diff. The diff claims to implement
 `fixture-issue.md` and carries **5 planted defects of distinct classes**. Each
-defect has one grep-able identifier, an ordinary code symbol and not a
+defect has a list of grep-able identifiers (aliases), ordinary code tokens and not a
 `// SEED` tag, so the defect doesn't point at itself. The classes come from the
 `caught` rows of [`../qa-second-look-dataset.md`](../qa-second-look-dataset.md).
 
@@ -11,9 +11,10 @@ defect has one grep-able identifier, an ordinary code symbol and not a
 | `base/` | The project before the change. Copy it into a new repo as the first commit on `main`. |
 | `defects.patch` | The change under review. `git apply` it on a feature branch and open a PR. |
 | `fixture-issue.md` | The issue body (title is the `#` heading). The PR claims to close it. |
-| `ground-truth.json` | Planted defects: `id`, `class`, `file`, `rationale`. **Never put this in the fixture repo.** |
+| `reviews/run-N.md` | The five stored `/qa` reviews from the #1067 calibration (#1313), for re-grading. |
+| `ground-truth.json` | Planted defects: `identifiers`, `class`, `file`, `rationale`. **Never put this in the fixture repo.** |
 
-Each identifier occurs exactly once in `defects.patch`. That's enforced by
+Each defect needs at least one alias that occurs on exactly one line of `defects.patch`. That's enforced by
 `scripts/analytics/qa-seeded-grade.test.ts`.
 
 ## Provisioning (runner, not exec)
@@ -36,9 +37,19 @@ npx tsx scripts/analytics/qa-seeded-grade.ts \
   --verdict <verdict.md> --truth docs/investigations/qa-seeded-fixture/ground-truth.json
 ```
 
+## Re-extracting the reviews
+
+Each review is the last assistant text block starting with `## QA Review` in a run's transcript:
+
+```bash
+jq -r 'select(.type=="assistant") | .message.content[]? | select(.type=="text") | .text' <run>.jsonl | awk '/^## QA Review/{p=1} p'
+```
+
+Grep the output for machine paths and the private repo name before committing it.
+
 ## Known grader bias
 
-Matching is literal: an identifier is found only if the verdict writes it.
+Matching is literal: a defect is found only if the verdict writes one of its aliases.
 Suppose a reviewer describes the `0.0.0.0` bind as "listens on all interfaces"
 and never writes the address. The grader counts that as a miss, and a human
 counts it as a catch. That gap is the grader-vs-human disagreement

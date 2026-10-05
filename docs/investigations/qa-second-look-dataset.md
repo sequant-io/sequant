@@ -15,7 +15,7 @@ The README says a study of 27 fresh second-look `/qa` reviews found that 12 (44%
 - **10 of 27 (37%) caught a would-ship bug, not 12 of 27 (44%).** 13 found only quality gaps and 4 were clean. The original split was 12/11/2.
 - **7 of the 10 catches landed only after the human's follow-up turn** ("any gaps?"). 3 were in the first verdict. None needed a step that orchestrated QA skips. **The second look's value is mostly the human-driven second pass, not the fresh session.** The docs that still cite 44% and attribute it to the fresh session are corrected in #1309. They are `docs/reference/ready-command.md`, `docs/features/run-ready-gate.md`, `docs/investigations/ready-gate-backtest.md` and `docs/internal/what-weve-built.md`; the README has no such claim.
 - Every session but one asked about gaps, usually on turn 1, the human's first reply. A reviewer that never gets that prompt is a different treatment, and that comparison is #1068's to make.
-- The fixture plants 5 defects, one per class the dataset caught. The graders reproduce the hand-written example exactly (recall 0.60, precision 0.60). Calibration (AC-6/7/8): five opus `/qa` runs each caught all 5 planted defects by human reading, at about $0.92 per run. The literal grader scored recall 0.60 and precision 0.36 mean, disagreeing with the human on 10 of 25 cases, so it needs recalibration before #1068 (#1313).
+- The fixture plants 5 defects, one per class the dataset caught. The graders reproduce the hand-written example exactly (recall 0.60, precision 0.60). Calibration (AC-6/7/8): five opus `/qa` runs each caught all 5 planted defects by human reading, at about $0.92 per run. The original literal grader scored recall 0.60 and precision 0.36 mean, disagreeing with the human on 10 of 25 cases. Recalibrated in #1313 (alias identifiers, planted share, no heading or status-table noise), it scores recall 1.00 on all five runs, 0 of 25 disagreements. That result is in-sample.
 
 ## Method
 
@@ -162,22 +162,26 @@ Ground truth: [`ground-truth.json`](qa-seeded-fixture/ground-truth.json). Each i
 
 `scripts/analytics/qa-seeded-grade.ts`:
 
-- **recall** = planted identifiers named in at least one finding ÷ planted identifiers. A mention outside a finding does not count. For example, an AC row marked `MET` that names `formatNotes`, or a Risk Assessment note naming `readNotesFile`, is not a catch.
-- **precision** = findings naming ≥1 planted identifier ÷ findings. With 0 findings it is undefined (`n/a`), not 0.
-- **finding:** every top-level list item in a section whose heading names issues (blocker, issue, gap, finding, concern, problem, defect, bug, recommendation), plus every table row marking an AC not met or partially met (`AC_NOT_MET`, `NOT_MET`, `PARTIALLY_MET`, `❌`, "not met", "partially met"). **Risk Assessment is excluded.** The `/qa` template fills it in on every review (likely failure mode, not tested, sibling sites), so its bullets are analysis, not findings. Counting them scored a template-shaped verdict at precision 0.00. A test in `qa-seeded-grade.test.ts` pins this behaviour against a verdict shaped like a real posted review.
-- **match:** a literal identifier with no word character or `.` before it and no word character after it. `readNotesFileSync` does not match `readNotesFile`, and `10.0.0.0` does not match `0.0.0.0`.
+- **identifiers:** each planted defect lists `identifiers` in `ground-truth.json`: tokens a reviewer must write to describe it (the defect site or its `file:line`), not a pre-existing helper name. The defect counts as named when **any** alias appears. Aliases are matched case-insensitively. Each defect must have at least one alias that occurs on exactly one line of `defects.patch`; a test enforces it.
+- **recall** = planted defects named in at least one finding ÷ planted defects. A mention outside a finding does not count. For example, an AC row marked `MET` that names a helper, or a Risk Assessment note naming a defect, is not a catch.
+- **planted share** (renamed from `precision` in #1313) = distinct planted defects named ÷ (distinct planted defects named + non-planted findings). It is **not a false-positive rate**. Restatements of one planted defect (AC row, Issues bullet, Next steps) collapse to one. A real finding the fixture did not plant is listed as `unmatched` and reported, not scored as a mistake. With 0 findings it is undefined (`n/a`), not 0.
+- **finding:** every top-level list item in a section whose heading names issues (blocker, issue, gap, finding, concern, problem, defect, bug, recommendation), plus every row of an **AC table** (header's first cell starts with `AC`) marking the AC not met or partially met (`AC_NOT_MET`, `NOT_MET`, `PARTIALLY_MET`, `❌`, "not met", "partially met"). `❌` in a build or test status table is not a finding, and the title `## QA Review for Issue #N` does not open an issues section, so its Mode and Branch bullets are not findings. **Risk Assessment is excluded.** The `/qa` template fills it in on every review (likely failure mode, not tested, sibling sites), so its bullets are analysis, not findings. Counting them scored a template-shaped verdict at precision 0.00. A test in `qa-seeded-grade.test.ts` pins this behaviour against a verdict shaped like a real posted review.
+- **match:** a literal identifier with no word character or `.` before it and no word character after it. `catch` inside `catchAll` does not match, and `10.0.0.0` does not match `0.0.0.0`.
 
-Worked example: [`sample-verdict.md`](qa-seeded-fixture/sample-verdict.md) names 3 of the 5 identifiers and lists 2 unrelated issues.
+Worked example: [`sample-verdict.md`](qa-seeded-fixture/sample-verdict.md) names 3 of the 5 defects and lists 2 unrelated issues.
 
 ```
 $ npx tsx scripts/analytics/qa-seeded-grade.ts --verdict docs/investigations/qa-seeded-fixture/sample-verdict.md --truth docs/investigations/qa-seeded-fixture/ground-truth.json
 recall 0.60 (3/5)
-precision 0.60 (3/5)
+planted share 0.60 (3/5)
+unmatched findings 2
 ```
 
-**Known bias:** a verdict that describes a defect without writing its identifier is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched. The opposite bias, a neutral mention counted as a catch, is closed by reading recall from findings only. A finding that names an identifier while calling it correct would still count. AC-7's human pass is where that shows up. **Risk Assessment is invisible to the grader.** A `/qa` run that names `0.0.0.0` (or any identifier) only in §5 Risk Assessment, or only in the Trust-Boundary `**Finding:**` line, scores a recall miss for it. That is a deliberate under-count, the price of not counting §5's routine bullets as findings, and AC-7's human pass must report it per class, `security-exposure` first.
+**Known bias:** a verdict that describes a defect without writing any alias is a miss (for example, "listens on every interface" without `0.0.0.0`). That under-counts recall relative to a human reader, and AC-7 measures it. It is deliberately not fuzzy-matched. The opposite bias, a neutral mention counted as a catch, is closed by reading recall from findings only. A finding that names an identifier while calling it correct would still count. AC-7's human pass is where that shows up. **Risk Assessment is invisible to the grader.** A `/qa` run that names `0.0.0.0` (or any identifier) only in §5 Risk Assessment, or only in the Trust-Boundary `**Finding:**` line, scores a recall miss for it. That is a deliberate under-count, the price of not counting §5's routine bullets as findings, and AC-7's human pass must report it per class, `security-exposure` first.
 
 ## Calibration (AC-6, AC-7, AC-8)
+
+The tables below record the **original** (#1067) grader's scores. The recalibrated grader's re-grade of the same five reviews is in [Re-grade (#1313)](#re-grade-1313).
 
 **Setup (2026-10-04).** A private throwaway repo got the fixture's `base/` on `main`, plus five identical issues (#1–#5, the `fixture-issue.md` body). Each issue has its own PR carrying `defects.patch`; the five diffs hash identically. One issue per run means no run sees an earlier run's comment, and §0a's prior-QA short-circuit can't fire.
 
@@ -231,3 +235,29 @@ npx vitest run scripts/analytics/qa-seeded-grade.test.ts scripts/analytics/qa-se
 ```
 
 ⚠️ `entire/checkpoints/v1` exists only on the maintainer's machine. It must never be pushed: this repository is public, and the transcripts are private. Preserve it locally (do not prune it). The Source column cites each transcript by path and content hash, so a preserved copy can be verified against this table.
+
+### Re-grade (#1313)
+
+The five full QA reviews are committed as [`qa-seeded-fixture/reviews/run-N.md`](qa-seeded-fixture/reviews/) (extraction command in that README), so the grader can be re-run without new `/qa` runs. Aliases changed as follows:
+
+| Defect | Was | Now |
+|--------|-----|-----|
+| format | `formatNotes` | `"markdown"`, `export.ts:25` |
+| since | `parseSinceDate` | `parseSinceDate` (unchanged) |
+| swallowed error | `readNotesFile` | `empty catch`, ``empty `catch` ``, `catch {` |
+| bind | `0.0.0.0` | `0.0.0.0` (unchanged) |
+| mock test | `vi.mock` | `vi.mock`, `export.test.ts` |
+
+A bare `catch` was tried and dropped: it also matches "no try/catch" in the unrelated serve-handler finding.
+
+| Run | Recall (was) | Planted share | Unmatched findings |
+|-----|--------------|---------------|--------------------|
+| 1 | 1.00 (0.40) | 0.71 (5/7) | 2 |
+| 2 | 1.00 (0.80) | 0.63 (5/8) | 3 |
+| 3 | 1.00 (0.80) | 0.63 (5/8) | 3 |
+| 4 | 1.00 (0.40) | 0.63 (5/8) | 3 |
+| 5 | 1.00 (0.60) | 0.63 (5/8) | 3 |
+
+**Grader vs human: 0 disagreements of 25** (was 10 of 25; AC-1 allows ≤ 2). The unmatched findings are the real non-planted ones (serve handler without try/catch, unvalidated `--port`, the PR-body claim) plus restated AC rows whose text names no alias.
+
+**Caveat: in-sample.** The aliases were chosen with these five reviews in view, so 25/25 is a fit, not a validation. #1068 should grade new runs it has not seen. The final alias set came from trying a bare `catch` first and reading what each alias matched, which is the tuning the caveat is about.
