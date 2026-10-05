@@ -13,7 +13,6 @@ export interface VersionSyncResult {
   packageVersion: string | null;
   pluginVersion: string | null;
   marketplaceVersion?: string | null;
-  pluginFolderVersion?: string | null;
   error?: string;
 }
 
@@ -27,7 +26,14 @@ export function checkVersionSync(
   projectRoot: string = process.cwd(),
 ): VersionSyncResult {
   const packageJsonPath = join(projectRoot, "package.json");
-  const pluginJsonPath = join(projectRoot, ".claude-plugin", "plugin.json");
+  // The shipped manifest marketplace.json's `./plugin` source resolves to
+  // (#1265); the only plugin.json since the root copy was retired (#1301).
+  const pluginJsonPath = join(
+    projectRoot,
+    "plugin",
+    ".claude-plugin",
+    "plugin.json",
+  );
 
   // Check package.json exists
   if (!existsSync(packageJsonPath)) {
@@ -98,41 +104,11 @@ export function checkVersionSync(
       }
     }
 
-    // Also check plugin/.claude-plugin/plugin.json if it exists — the
-    // manifest marketplace.json's `./plugin` source actually resolves to
-    // (#1265). It's a copy of the root plugin.json kept in sync by
-    // scripts/release.sh's version stamp.
-    const pluginFolderJsonPath = join(
-      projectRoot,
-      "plugin",
-      ".claude-plugin",
-      "plugin.json",
-    );
-    let pluginFolderVersion: string | null = null;
-    if (existsSync(pluginFolderJsonPath)) {
-      const pluginFolderJson = JSON.parse(
-        readFileSync(pluginFolderJsonPath, "utf8"),
-      );
-      pluginFolderVersion = pluginFolderJson.version || null;
-
-      if (pluginFolderVersion && pluginFolderVersion !== packageVersion) {
-        return {
-          inSync: false,
-          packageVersion,
-          pluginVersion,
-          marketplaceVersion,
-          pluginFolderVersion,
-          error: `plugin/.claude-plugin/plugin.json version (${pluginFolderVersion}) does not match package.json (${packageVersion})`,
-        };
-      }
-    }
-
     return {
       inSync: packageVersion === pluginVersion,
       packageVersion,
       pluginVersion,
       marketplaceVersion,
-      pluginFolderVersion,
     };
   } catch (e) {
     return {
@@ -167,10 +143,6 @@ export function getVersionMismatchMessage(result: VersionSyncResult): string {
 
   if (result.marketplaceVersion) {
     lines.push(`  marketplace.json:  ${result.marketplaceVersion}`);
-  }
-
-  if (result.pluginFolderVersion) {
-    lines.push(`  plugin/plugin.json: ${result.pluginFolderVersion}`);
   }
 
   lines.push(

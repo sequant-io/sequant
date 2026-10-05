@@ -33,7 +33,7 @@ const REPO_ROOT = path.resolve(
   "../../..",
 );
 
-const PLUGIN_MANIFEST = ".claude-plugin/plugin.json";
+const PLUGIN_MANIFEST = "plugin/.claude-plugin/plugin.json";
 const MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json";
 
 /**

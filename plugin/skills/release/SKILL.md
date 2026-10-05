@@ -123,7 +123,7 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 # 11. Plugin manifest is valid (#1135). Name each manifest explicitly:
 #     `claude plugin validate .` checks only marketplace.json and skips plugin.json.
 #     Warnings pass (non-strict); errors, or no `claude` on PATH, stop the release.
-claude plugin validate .claude-plugin/plugin.json || { echo "Plugin manifest invalid - fix .claude-plugin/plugin.json"; exit 1; }
+claude plugin validate plugin/.claude-plugin/plugin.json || { echo "Plugin manifest invalid - fix plugin/.claude-plugin/plugin.json"; exit 1; }
 
 # 12. Marketplace manifest is valid
 claude plugin validate .claude-plugin/marketplace.json || { echo "Marketplace manifest invalid - fix .claude-plugin/marketplace.json"; exit 1; }
@@ -282,17 +282,17 @@ npm version prerelease --preid=beta --no-git-tag-version
 
 **IMPORTANT:** Keep plugin.json in sync with package.json.
 
-Use the **Read tool** to read `.claude-plugin/plugin.json`, then use the **Edit tool** to update the version field:
+Use the **Read tool** to read `plugin/.claude-plugin/plugin.json`, then use the **Edit tool** to update the version field:
 
 ```
-Read(file_path=".claude-plugin/plugin.json")
+Read(file_path="plugin/.claude-plugin/plugin.json")
 
-Edit(file_path=".claude-plugin/plugin.json",
+Edit(file_path="plugin/.claude-plugin/plugin.json",
      old_string="\"version\": \"<old_version>\"",
      new_string="\"version\": \"<new_version>\"")
 ```
 
-If `.claude-plugin/plugin.json` does not exist, skip this step.
+If `plugin/.claude-plugin/plugin.json` does not exist, skip this step.
 
 **Why sync?** Sequant is distributed as both npm package and Claude Code plugin. Both must have matching versions to avoid user confusion and ensure compatibility.
 
@@ -534,7 +534,7 @@ passes the same checks (#1131). Do not push `main`; do not add a bypass.
 ```bash
 new_version=$(node -p "require('./package.json').version")
 git switch -c "chore/release-v${new_version}"
-git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
+git add package.json package-lock.json CHANGELOG.md plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
 # The shipped MCP config is gitignored-but-tracked; Step 4.7 re-pinned it to this version (#988), so force-add it into the release commit.
 git add -f .mcp.json
 git commit -m "chore: release v${new_version}"
@@ -680,7 +680,7 @@ Release v{version} Complete
 
   GitHub:   https://github.com/sequant-io/sequant/releases/tag/v{new}
   npm:      https://www.npmjs.com/package/sequant/v/{new}
-  Plugin:   Version synced in .claude-plugin/plugin.json
+  Plugin:   Version synced in plugin/.claude-plugin/plugin.json
   Docs:     Version synced in docs/internal/what-weve-built.md
 
   Install (npm):
