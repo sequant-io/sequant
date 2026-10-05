@@ -1,0 +1,36 @@
+{
+  "fixture": "notes-cli export/serve (#1067)",
+  "patch": "defects.patch",
+  "defects": [
+    {
+      "id": "formatNotes",
+      "class": "primary-path-broken",
+      "file": "src/export.ts",
+      "rationale": "The format switch compares against \"markdown\", but the flag value is \"md\" (AC-1). So `notes export --format md` prints JSON, and the Markdown preview never renders Markdown."
+    },
+    {
+      "id": "parseSinceDate",
+      "class": "unwired-option",
+      "file": "src/export.ts",
+      "rationale": "`--since` is registered and typed, but runExport never reads it, and its parser is never called (AC-2). Every note is exported."
+    },
+    {
+      "id": "readNotesFile",
+      "class": "error-path",
+      "file": "src/export.ts",
+      "rationale": "A missing or corrupt store is swallowed into an empty list, so the export prints `[]` and exits 0 (AC-3 requires an error and exit 1)."
+    },
+    {
+      "id": "0.0.0.0",
+      "class": "security-exposure",
+      "file": "src/serve.ts",
+      "rationale": "The unauthenticated preview server binds every interface, not localhost (AC-4), which exposes the whole note store to the network."
+    },
+    {
+      "id": "vi.mock",
+      "class": "unmet-ac",
+      "file": "src/export.test.ts",
+      "rationale": "AC-5 asks for an integration test that runs the built CLI. The only test auto-mocks the store, calls runExport in-process, and asserts only that it returns a string."
+    }
+  ]
+}

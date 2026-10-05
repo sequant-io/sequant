@@ -1,0 +1,13 @@
+{
+  "name": "notes-cli-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "notes": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": { "commander": "^12.0.0" },
+  "devDependencies": { "typescript": "^5.4.0", "vitest": "^2.0.0", "@types/node": "^20.0.0" }
+}
