@@ -398,7 +398,7 @@ export function generateBatchedSummaryReport(
   for (const assessment of batched.assessments) {
     const actionable =
       assessment.summary.breakingChanges +
-      (assessment.summary.nameCollisions) +
+      assessment.summary.nameCollisions +
       assessment.summary.deprecations +
       assessment.summary.newTools +
       assessment.summary.hookChanges +
