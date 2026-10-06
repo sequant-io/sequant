@@ -280,7 +280,7 @@ Most work goes through a handful of top-level commands. The rest are either pipe
 | `/merger` | Multi-issue merge coordination. |
 | `/improve` | Codebase analysis and improvement discovery. |
 | `/security-review` | Deep security analysis. |
-| `/verify` | CLI/script execution verification. |
+| `/verify` | CLI/script execution verification. Needs an issue number; a bare `/verify` (such as Claude Code's pre-commit nudge) is a no-op. |
 | `/docs` · `/clean` · `/reflect` | Feature docs, repo cleanup, workflow reflection. |
 
 ### CLI utilities
