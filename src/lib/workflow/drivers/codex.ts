@@ -60,6 +60,7 @@
 import { spawn, execFileSync } from "child_process";
 import { isAbsolute, resolve as resolvePath } from "path";
 import { RingBuffer } from "../ring-buffer.js";
+import { joinAgentTexts } from "./agent-text.js";
 import {
   BillingError,
   RateLimitError,
@@ -185,7 +186,8 @@ export class CodexStreamParser {
       this.consumeLine(this.buffer);
       this.buffer = "";
     }
-    this.state.output = this.texts.join("");
+    // #1311: each agent message starts on its own line.
+    this.state.output = joinAgentTexts(this.texts);
     this.state.commandExecutions = [...this.commandIds];
     return this.state;
   }

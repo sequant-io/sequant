@@ -2428,7 +2428,11 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
 
   describe("#1297 AC-3: placeholder fallback is visible", () => {
     const WARNING = "using placeholder";
-    const runExec = async (output: string, stored?: string) => {
+    const runExec = async (
+      output: string,
+      stored?: string,
+      parallel = false,
+    ) => {
       const stateManager = makeMemoryStateManager();
       if (stored) stateManager.issues.set(1297, { execSummary: stored });
       mockExecutePhase.mockImplementation(async (_i, phase) =>
@@ -2443,7 +2447,7 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
       );
       const ctx = makeCtx({
         issueNumber: 1297,
-        config: { phases: ["exec", "qa"], qualityLoop: false },
+        config: { phases: ["exec", "qa"], qualityLoop: false, parallel },
         options: { autoDetectPhases: false },
       });
       ctx.services.stateManager = stateManager as never;
@@ -2461,6 +2465,14 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
 
     it("warns when exec output has no Summary and no markers", async () => {
       expect(await runExec("did some work, no headings")).toContain(WARNING);
+    });
+
+    it("#1311 AC-3: warns in parallel mode too, naming the exec output length", async () => {
+      // Every MCP run is parallel, where the per-issue `log` is a no-op; the
+      // warning used to vanish there.
+      const out = await runExec("did some work, no headings", undefined, true);
+      expect(out).toContain(WARNING);
+      expect(out).toContain("PR body for #1297: exec output (26 chars)");
     });
 
     it("does not warn when exec wrote a Summary", async () => {
