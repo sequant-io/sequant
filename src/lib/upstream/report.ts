@@ -371,7 +371,7 @@ export function generateBatchedSummaryReport(
 
   for (const assessment of batched.assessments) {
     totals.breakingChanges += assessment.summary.breakingChanges;
-    totals.nameCollisions += assessment.summary.nameCollisions ?? 0;
+    totals.nameCollisions += assessment.summary.nameCollisions;
     totals.deprecations += assessment.summary.deprecations;
     totals.newTools += assessment.summary.newTools;
     totals.hookChanges += assessment.summary.hookChanges;
@@ -398,7 +398,7 @@ export function generateBatchedSummaryReport(
   for (const assessment of batched.assessments) {
     const actionable =
       assessment.summary.breakingChanges +
-      (assessment.summary.nameCollisions ?? 0) +
+      (assessment.summary.nameCollisions) +
       assessment.summary.deprecations +
       assessment.summary.newTools +
       assessment.summary.hookChanges +
