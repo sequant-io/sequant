@@ -396,6 +396,7 @@ export async function runUpstream(
  */
 function getDefaultBaseline(): Baseline {
   return {
+    shippedNames: listShippedSkillNames(),
     lastAssessedVersion: null,
     schemaVersion: "1.0.0",
     tools: {

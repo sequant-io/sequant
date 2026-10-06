@@ -66,4 +66,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0006](0006-slim-plugin-folder.md) | Ship a slim `plugin/` folder as the marketplace source | Accepted |
 | [0007](0007-followup-resolution-as-description-suffix.md) | A deferred QA finding carries its resolution as a description suffix | Accepted |
 | [0008](0008-retire-root-plugin-mirrors.md) | Retire the root `skills/` and `hooks/` copies; one owner for the skill mirror list | Accepted |
-| [0009](0009-verify-skill-guards-bare-invocation.md) | Keep the `verify` skill name; make a bare `/verify` a no-op | Accepted |
+| [0009](0009-verify-skill-guards-bare-invocation.md) | Keep the `verify` skill name; make pre-commit invocations a no-op | Proposed |

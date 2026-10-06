@@ -12,14 +12,29 @@ allowed-tools:
   - AskUserQuestion
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
+  - Bash(printenv SEQUANT_PHASE)
 ---
 
 <!-- sequant:local-override -->
 > **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/verify/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/verify` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
 
-## No issue number: return immediately
+## Pre-commit invocations: return immediately
 
-Claude Code ≥ 2.1.286 tells Claude to run a project skill named `verify` before committing. `/verify` is not a pre-commit check: it is an issue-scoped human-review step. If the invocation has **no issue number** (a bare `/verify`, or one with only free text), do nothing else: run no command, read no file, post no comment, ask no question. Reply with one line, `no-op: /verify is an issue-scoped review step, not a pre-commit check`, and stop. Do not wait for an argument.
+Claude Code ≥ 2.1.286 tells Claude to run a project skill named `verify` right before committing. `/verify` is not a pre-commit check. It is an issue-scoped human-review step that posts to GitHub. Before anything else, check whether this invocation was asked for. Return the no-op below if any of these is true:
+
+1. **You are a Sequant phase agent other than verify.** Run:
+
+   ```bash
+   printenv SEQUANT_PHASE
+   ```
+
+   If it prints a value other than `verify` (for example `exec` or `qa`), the invocation came from the commit guidance. Return the no-op whatever the arguments, including an issue number.
+2. **There is no issue number.** The invocation is a bare `/verify`, or carries only free text.
+3. **You are calling it yourself before a commit.** You are invoking `/verify` because you are about to commit, and neither the user nor a phase prompt asked for `/verify` in this conversation. Return the no-op even if you know the issue number.
+
+**The no-op:** run no other command, read no other file, post no comment, ask no question. Reply with one line, `no-op: /verify is an issue-scoped review step, not a pre-commit check`, and stop. Do not wait for an argument.
+
+If none of the three is true, continue with the skill below.
 
 # Execution Verification
 

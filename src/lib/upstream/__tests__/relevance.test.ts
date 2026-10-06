@@ -2,7 +2,10 @@
  * Tests for relevance detection in upstream assessments
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   extractChanges,
   matchKeywords,
@@ -455,7 +458,9 @@ describe("1345 changes naming a shipped skill are not no-action", () => {
 
   it("files the v2.1.286 line as issue-worthy", () => {
     const finding = analyzeChange(LINE, shipped);
-    expect(finding.category).not.toBe("no-action");
+    expect(finding.category).toBe("name-collision");
+    expect(finding.impact).toBe("high");
+    expect(finding.title.startsWith("Name collision: ")).toBe(true);
     expect(selectIssueWorthy([finding], shipped)).toHaveLength(1);
   });
 
@@ -468,7 +473,21 @@ describe("1345 changes naming a shipped skill are not no-action", () => {
     );
   });
 
-  it("derives the shipped names from templates/skills", () => {
+  it("derives the shipped names from the bundled templates, not the cwd", () => {
     expect(listShippedSkillNames()).toContain("verify");
+  });
+
+  it("warns instead of going quiet when no shipped names are found", () => {
+    const empty = mkdtempSync(join(tmpdir(), "sequant-no-skills-"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(listShippedSkillNames(empty)).toEqual([]);
+      expect(listShippedSkillNames(join(empty, "missing"))).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(String(warn.mock.calls[0][0])).toContain("will not be flagged");
+    } finally {
+      warn.mockRestore();
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 });

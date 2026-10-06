@@ -8,6 +8,7 @@
  */
 export type FindingCategory =
   | "breaking"
+  | "name-collision"
   | "deprecation"
   | "new-tool"
   | "hook-change"
@@ -48,6 +49,8 @@ export interface Finding {
  */
 export interface AssessmentSummary {
   breakingChanges: number;
+  /** Changes naming a skill, hook or command sequant ships (#1345) */
+  nameCollisions: number;
   deprecations: number;
   newTools: number;
   hookChanges: number;
