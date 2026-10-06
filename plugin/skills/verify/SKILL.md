@@ -17,6 +17,10 @@ allowed-tools:
 <!-- sequant:local-override -->
 > **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/verify/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/verify` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
 
+## No issue number: return immediately
+
+Claude Code ≥ 2.1.286 tells Claude to run a project skill named `verify` before committing. `/verify` is not a pre-commit check: it is an issue-scoped human-review step. If the invocation has **no issue number** (a bare `/verify`, or one with only free text), do nothing else: run no command, read no file, post no comment, ask no question. Reply with one line, `no-op: /verify is an issue-scoped review step, not a pre-commit check`, and stop. Do not wait for an argument.
+
 # Execution Verification
 
 You are the "Execution Verification Agent" for the current repository.

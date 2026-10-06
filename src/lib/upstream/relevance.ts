@@ -3,7 +3,7 @@
  * Matches changes against sequant's baseline to identify relevant items
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import type {
   Baseline,
   DetectionPatterns,
@@ -227,6 +227,40 @@ export function isOutOfScope(
 }
 
 /**
+ * Skill names sequant copies into projects: the directories of
+ * `templates/skills` (minus shared/reference dirs), so the list tracks what
+ * ships without a hand-kept copy (#1345).
+ */
+export function listShippedSkillNames(dir = "templates/skills"): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter(
+        (e) =>
+          e.isDirectory() && !e.name.startsWith("_") && e.name !== "references",
+      )
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Shipped names a change singles out as a skill, hook or command: the name in
+ * backticks, or after "named". Bare words ("verify", "test") are not matched,
+ * since most shipped skill names are common English (#1345).
+ */
+export function namesShippedItem(change: string, baseline: Baseline): string[] {
+  if (!/\b(skills?|hooks?|commands?)\b/i.test(change)) {
+    return [];
+  }
+  return (baseline.shippedNames ?? []).filter((name) =>
+    new RegExp(
+      `(\`${escapeRegex(name)}\`|\\bnamed\\s+["'\`]?${escapeRegex(name)}\\b)`,
+    ).test(change),
+  );
+}
+
+/**
  * Analyze a single change against the baseline
  */
 export function analyzeChange(change: string, baseline: Baseline): Finding {
@@ -253,8 +287,12 @@ export function analyzeChange(change: string, baseline: Baseline): Finding {
     ...(matchedKeywords.length > 0 ? ["keywords"] : []),
   ];
 
-  // Categorize
-  const category = categorizeChange(allMatches);
+  // A change naming a skill/hook/command sequant ships can collide with it
+  // (#1345: Claude Code ≥2.1.286 runs any project skill named `verify` before
+  // commits), so it is issue-worthy whatever else it matches.
+  const category = namesShippedItem(change, baseline).length
+    ? "breaking"
+    : categorizeChange(allMatches);
 
   // Determine impact
   const impact = determineImpact(category, matchedKeywords);

@@ -153,6 +153,8 @@ export interface Baseline {
   dependencyMap: Record<string, string[]>;
   /** Claude Code commands sequant's docs and skills tell users to run */
   commands?: string[];
+  /** Skill names sequant ships into projects (derived from templates/skills when absent) */
+  shippedNames?: string[];
   /** Patterns for changes that are out of scope for sequant (skipped during analysis) */
   outOfScope?: string[];
 }

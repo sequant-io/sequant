@@ -13,6 +13,9 @@ import {
   generateTitle,
   isOutOfScope,
   analyzeChange,
+  namesShippedItem,
+  listShippedSkillNames,
+  selectIssueWorthy,
   analyzeRelease,
   getActionableFindings,
   DEFAULT_PATTERNS,
@@ -439,5 +442,33 @@ describe("1179 fix notes are not deprecations", () => {
     "Windows: no longer supports Node 18",
   ])("still deprecation: %s", (note) => {
     expect(matchPatterns(note)).toContain("deprecation");
+  });
+});
+
+describe("1345 changes naming a shipped skill are not no-action", () => {
+  const LINE =
+    "Commit guidance: when your project or user skills include one named `verify`, Claude is now told to run it right before committing, except for docs-only and tests-only commits";
+  const shipped: Baseline = {
+    ...testBaseline,
+    shippedNames: ["verify", "spec", "test"],
+  };
+
+  it("files the v2.1.286 line as issue-worthy", () => {
+    const finding = analyzeChange(LINE, shipped);
+    expect(finding.category).not.toBe("no-action");
+    expect(selectIssueWorthy([finding], shipped)).toHaveLength(1);
+  });
+
+  it("does not match a bare common word or a non-shipped name", () => {
+    expect(
+      namesShippedItem("Fixed a skill that could verify twice", shipped),
+    ).toEqual([]);
+    expect(namesShippedItem("skills named `deploy` now load", shipped)).toEqual(
+      [],
+    );
+  });
+
+  it("derives the shipped names from templates/skills", () => {
+    expect(listShippedSkillNames()).toContain("verify");
   });
 });
