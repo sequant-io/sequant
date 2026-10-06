@@ -81,8 +81,10 @@ describe("verify skill pre-commit guard (#1345)", () => {
     const run = (phase?: string) => {
       const env: NodeJS.ProcessEnv = { PATH: process.env.PATH };
       if (phase !== undefined) env.SEQUANT_PHASE = phase;
-      return spawnSync("sh", ["-c", command], { env, encoding: "utf-8" })
-        .stdout.trim();
+      return spawnSync("sh", ["-c", command], {
+        env,
+        encoding: "utf-8",
+      }).stdout.trim();
     };
     expect(run("exec")).toBe("exec");
     expect(run("verify")).toBe("verify");
