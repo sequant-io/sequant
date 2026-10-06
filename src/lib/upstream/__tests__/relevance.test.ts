@@ -2,7 +2,10 @@
  * Tests for relevance detection in upstream assessments
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   extractChanges,
   matchKeywords,
@@ -13,6 +16,9 @@ import {
   generateTitle,
   isOutOfScope,
   analyzeChange,
+  namesShippedItem,
+  listShippedSkillNames,
+  selectIssueWorthy,
   analyzeRelease,
   getActionableFindings,
   DEFAULT_PATTERNS,
@@ -439,5 +445,49 @@ describe("1179 fix notes are not deprecations", () => {
     "Windows: no longer supports Node 18",
   ])("still deprecation: %s", (note) => {
     expect(matchPatterns(note)).toContain("deprecation");
+  });
+});
+
+describe("1345 changes naming a shipped skill are not no-action", () => {
+  const LINE =
+    "Commit guidance: when your project or user skills include one named `verify`, Claude is now told to run it right before committing, except for docs-only and tests-only commits";
+  const shipped: Baseline = {
+    ...testBaseline,
+    shippedNames: ["verify", "spec", "test"],
+  };
+
+  it("files the v2.1.286 line as issue-worthy", () => {
+    const finding = analyzeChange(LINE, shipped);
+    expect(finding.category).toBe("name-collision");
+    expect(finding.impact).toBe("high");
+    expect(finding.title.startsWith("Name collision: ")).toBe(true);
+    expect(selectIssueWorthy([finding], shipped)).toHaveLength(1);
+  });
+
+  it("does not match a bare common word or a non-shipped name", () => {
+    expect(
+      namesShippedItem("Fixed a skill that could verify twice", shipped),
+    ).toEqual([]);
+    expect(namesShippedItem("skills named `deploy` now load", shipped)).toEqual(
+      [],
+    );
+  });
+
+  it("derives the shipped names from the bundled templates, not the cwd", () => {
+    expect(listShippedSkillNames()).toContain("verify");
+  });
+
+  it("warns instead of going quiet when no shipped names are found", () => {
+    const empty = mkdtempSync(join(tmpdir(), "sequant-no-skills-"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(listShippedSkillNames(empty)).toEqual([]);
+      expect(listShippedSkillNames(join(empty, "missing"))).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(String(warn.mock.calls[0][0])).toContain("will not be flagged");
+    } finally {
+      warn.mockRestore();
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 });
