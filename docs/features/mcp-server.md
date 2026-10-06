@@ -242,7 +242,7 @@ Execute workflow phases for GitHub issues.
 | Parameter     | Type       | Required | Default            | Description              |
 | ------------- | ---------- | -------- | ------------------ | ------------------------ |
 | `issues`      | `number[]` | Yes      | —                  | GitHub issue numbers     |
-| `phases`      | `string`   | No       | `spec,exec,qa`     | Comma-separated phases   |
+| `phases`      | `string`   | No       | `spec,exec,qa`     | Comma-separated phases. A run without `qa` (e.g. `spec,exec`) still opens a PR, and the PR says QA has not run (#1246). |
 | `qualityLoop` | `boolean`  | No       | `false`            | Auto-retry on QA failure |
 | `agent`       | `string`   | No       | configured default | Agent backend to use     |
 
@@ -273,13 +273,16 @@ Each item in `issues`:
 | `issueNumber`     | `number`                                    | GitHub issue number                   |
 | `status`          | `"success" \| "failure" \| "partial"`       | Issue result                          |
 | `phases`          | `Array<{ phase, status, durationSeconds }>` | Phase-level detail                    |
-| `verdict`         | `string`                                    | QA verdict (only present when QA ran) |
+| `verdict`         | `string`                                    | The latest QA verdict, after any quality-loop re-runs (only present when QA ran, #1245) |
 | `durationSeconds` | `number`                                    | Total time for this issue             |
 | `acMet`           | `number`                                    | ACs QA marked met (only when QA ran, #1200) |
 | `acTotal`         | `number`                                    | ACs QA evaluated (only when QA ran, #1200) |
 | `gaps`            | `string[]`                                  | QA's gap descriptions, at most 10, each capped at 300 characters (#1200) |
 | `findings`        | `Array<{ category, description, evidence, recommendedAction, affectedAcs? }>` | QA's structured findings, at most 10, with `description`/`evidence` capped at 300 characters (#1200) |
 | `truncated`       | `boolean`                                   | `true` when any cap applied, or when findings and then gaps were dropped to fit the 64 KB limit (#1200) |
+| `abortReason`     | `string`                                    | Why the issue stopped outside a phase, e.g. `ladder halt: SPEC_DIVERGENCE in exec (AC-2)` or a rebase-conflict abort (#1254) |
+| `haltReason`      | `"SPEC_DIVERGENCE" \| "DIVERGENCE_SUSPECT" \| "TOP_OF_LADDER"` | Present when the run halted on the [model ladder](../reference/model-ladder.md) (#1254) |
+| `declaredAcs`     | `string`                                    | ACs the agent declared impossible, with `haltReason: "SPEC_DIVERGENCE"` (#1254) |
 
 When the structured run log is unavailable (e.g., process crashed before writing it), a fallback response is returned with an empty `issues` array and the raw output preserved.
 

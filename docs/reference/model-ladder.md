@@ -103,6 +103,12 @@ Ladder halt: SPEC_DIVERGENCE — issue #995, phase 'exec'
 
 The load-bearing line is **Escalation history**. Empty is the proof that a `SPEC_DIVERGENCE` or `DIVERGENCE_SUSPECT` halt spent no rung; non-empty and ending at the last rung is what `TOP_OF_LADDER` means. It is always printed, so "no escalation happened" is a fact in the record rather than something you infer from an absent section.
 
+The halt is also recorded, not only printed (#1254):
+
+- **Issue result and run log:** failure category `ladder_halt`, an `abortReason` such as `ladder halt: SPEC_DIVERGENCE in exec (AC-2)`, and the evidence bundle.
+- **State:** a phase that declared `SPEC_DIVERGENCE` reads `failed`, with `outcome` and `divergenceAcs`, even when the agent exited cleanly.
+- **MCP:** the `sequant_run` result names `haltReason`, `declaredAcs` and `abortReason` for the issue (see [MCP Server → `sequant_run`](../features/mcp-server.md#sequant_run)).
+
 Under `sequant ready`, the same bundle is embedded in the gap report under **Ladder halt evidence**, and the gate terminates with the matching stop reason (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, or `TOP_OF_LADDER`) and issue status `blocked`.
 
 ## Cost

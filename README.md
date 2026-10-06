@@ -91,11 +91,12 @@ SEQUANT WORKFLOW · #683
 
 QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
 
-### What's new in 2.19
+### What's new in 2.20
 
-- **One PR producer** — under `sequant run`, the run itself opens the PR right after exec (so QA reads its body) and updates it after QA with the QA note, ready-gate report and exec's summary. An existing PR for the branch is updated, not skipped.
-- **Spec stops on recurrence** — `/spec`'s Design Review treats a pattern fixed twice before as a stop, lists every producer of the artifact it changes, and can halt the run before exec when the issue prescribes the wrong lever.
-- **Easier adoption** — `sequant init --manifest-only` and `sequant sync --only skills`; `run.worktreeRoot` sets where worktrees go; `run.prIssueLink: "refs"` keeps a PR from auto-closing its issue.
+- **The PR says what QA did and didn't do** — until QA has reviewed the latest exec, the PR body says `QA has not run`. After QA it shows the latest verdict, exec's `## Summary` with its mutation records, and a `## Follow-ups` checklist of everything QA deferred. See [What the PR body carries](docs/features/run-pr-creation.md#what-the-pr-body-carries).
+- **QA closes its own loose ends** — every deferred item must end `filed #N`, `fixed in this PR` or `dropped: <reason>`. An unresolved item keeps the verdict below `READY_FOR_MERGE`.
+- **Failures are recorded, not just printed** — a model-ladder halt is recorded in the run log, the state and the MCP result. A failed `gh` comment or label post is now an error, not a silent success.
+- **Narrower skill permissions** — skills no longer pre-approve broad shell, `gh api`, `rm` or `find` access. When you run a skill by hand, those commands now ask first; `sequant run` is unaffected.
 
 Since 2.17, every release soaks on the `next` tag against a downstream canary — a real install of the previous minor, driven through `sync`, `init`, `update` and `doctor` by the new build — before it is promoted to `latest`.
 
