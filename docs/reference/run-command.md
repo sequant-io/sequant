@@ -48,7 +48,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--phases <list>` | Comma-separated phases to run. Validated against the phase registry — unknown names exit with `error: option '--phases <list>' argument 'X' is invalid. Unknown phase 'X'. Available: spec, security-review, exec, testgen, test, verify, qa, loop, merger` | `spec,exec,qa` |
+| `--phases <list>` | Comma-separated phases to run. Validated against the phase registry — unknown names exit with `error: option '--phases <list>' argument 'X' is invalid. Unknown phase 'X'. Available: spec, security-review, exec, testgen, test, verify, qa, loop, merger`. A list without `qa` still opens a PR, and its body says QA has not run (#1246) | `spec,exec,qa` |
 | `--sequential` | Run issues in order, stop on first failure (see [Execution Model](#execution-model)) | `false` |
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | `false` |
 | `--stacked` | Stack PRs: non-first PRs target predecessor branch (implies `--chain`) | `false` |
