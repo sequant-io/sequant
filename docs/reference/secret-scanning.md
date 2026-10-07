@@ -16,6 +16,10 @@ This repository is public. Three layers stop private material before it lands:
 
 Placeholder names (`user`, `you`, `dev`, `test`, `YourName`, …) are allowlisted by name in `.gitleaks.toml`. Test input that needs a session id uses a `FAKE` prefix. Add a new placeholder name there with a reason; never allowlist a file.
 
+## A fake fixture in an earlier commit
+
+The PR scan checks every commit in the branch, so a fake fixture that one commit added and a later commit removed still fails it. Record that one finding in `.gitleaksignore` by its fingerprint (`commit:file:rule:line`, printed in the job log). A fingerprint names one commit, so it can't hide a new leak. Build leak-shaped test input at run time (`["", "Users", "alice", ""].join("/")`) so it never reaches the committed source.
+
 ## Sensitive literals
 
 Never write a project name or gated flag into `.gitleaks.toml`. Put such literals in `.gitleaks.local.toml` (gitignored); the local gate loads it when present.
