@@ -30,12 +30,12 @@ Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, 
 
 ### Prerequisites
 
-- **An AI coding agent:** [Claude Code](https://claude.ai/code) (recommended ≥ 2.1.208) or [Aider](https://aider.chat/) via `--agent aider`. Experimental: [Codex](docs/features/codex-agent-backend.md) via `--agent codex`, [opencode](docs/troubleshooting.md#opencode-issues) via `--agent opencode` — read their notes before relying on either.
+- **An AI coding agent:** [Claude Code](https://claude.ai/code) (recommended ≥ 2.1.288) or [Aider](https://aider.chat/) via `--agent aider`. Experimental: [Codex](docs/features/codex-agent-backend.md) via `--agent codex`, [opencode](docs/troubleshooting.md#opencode-issues) via `--agent opencode` — read their notes before relying on either.
 - **[GitHub CLI](https://cli.github.com/)** (`gh auth login`) and **Git**.
 - **Node.js 22.13+** — for the npm/CLI install path only.
 - Optional MCP servers: `chrome-devtools` (browser tests via `/test`), `sequential-thinking`, `context7`.
 
-> **Why Claude Code ≥ 2.1.208?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`; its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
+> **Why Claude Code ≥ 2.1.288?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`. Its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208, and its coverage of `bash -c` / `sh -c` scripts (e.g. `bash -c "rm -rf ~"`) landed in 2.1.288. On an older version, a phase agent running `bash -c "rm -rf ~"` is not stopped by either side. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
 
 ### Install
 
@@ -281,7 +281,7 @@ Most work goes through a handful of top-level commands. The rest are either pipe
 | `/merger` | Multi-issue merge coordination. |
 | `/improve` | Codebase analysis and improvement discovery. |
 | `/security-review` | Deep security analysis. |
-| `/verify` | CLI/script execution verification. |
+| `/verify` | CLI/script execution verification. Needs an issue number; a bare `/verify` (such as Claude Code's pre-commit nudge) is a no-op. |
 | `/docs` · `/clean` · `/reflect` | Feature docs, repo cleanup, workflow reflection. |
 
 ### CLI utilities

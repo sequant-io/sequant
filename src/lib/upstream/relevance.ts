@@ -3,7 +3,9 @@
  * Matches changes against sequant's baseline to identify relevant items
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { getTemplatesDir } from "../templates.js";
 import type {
   Baseline,
   DetectionPatterns,
@@ -128,8 +130,8 @@ export function determineImpact(
   category: FindingCategory,
   matchedKeywords: string[],
 ): ImpactLevel {
-  // Breaking changes are always high impact
-  if (category === "breaking") {
+  // Breaking changes and name collisions are always high impact
+  if (category === "breaking" || category === "name-collision") {
     return "high";
   }
 
@@ -197,6 +199,8 @@ export function generateTitle(
   switch (category) {
     case "breaking":
       return `BREAKING: ${title}`;
+    case "name-collision":
+      return `Name collision: ${title}`;
     case "deprecation":
       return `Deprecated: ${title}`;
     case "new-tool":
@@ -227,6 +231,51 @@ export function isOutOfScope(
 }
 
 /**
+ * Skill names sequant copies into projects: the directories of the bundled
+ * `templates/skills` (minus shared/reference dirs), so the list tracks what
+ * ships without a hand-kept copy (#1345). Resolved from the package, not the
+ * cwd, so /upstream sees the same list wherever it runs. An empty result turns
+ * the name-collision rule off, so it is reported rather than swallowed.
+ */
+export function listShippedSkillNames(
+  dir = join(getTemplatesDir(), "skills"),
+): string[] {
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir, { withFileTypes: true })
+      .filter(
+        (e) =>
+          e.isDirectory() && !e.name.startsWith("_") && e.name !== "references",
+      )
+      .map((e) => e.name);
+  } catch {
+    // reported below
+  }
+  if (names.length === 0) {
+    console.warn(
+      `No shipped skill names found in ${dir}; changelog lines naming a sequant skill will not be flagged`,
+    );
+  }
+  return names;
+}
+
+/**
+ * Shipped names a change singles out as a skill, hook or command: the name in
+ * backticks, or after "named". Bare words ("verify", "test") are not matched,
+ * since most shipped skill names are common English (#1345).
+ */
+export function namesShippedItem(change: string, baseline: Baseline): string[] {
+  if (!/\b(skills?|hooks?|commands?)\b/i.test(change)) {
+    return [];
+  }
+  return (baseline.shippedNames ?? []).filter((name) =>
+    new RegExp(
+      `(\`${escapeRegex(name)}\`|\\bnamed\\s+["'\`]?${escapeRegex(name)}\\b)`,
+    ).test(change),
+  );
+}
+
+/**
  * Analyze a single change against the baseline
  */
 export function analyzeChange(change: string, baseline: Baseline): Finding {
@@ -253,8 +302,12 @@ export function analyzeChange(change: string, baseline: Baseline): Finding {
     ...(matchedKeywords.length > 0 ? ["keywords"] : []),
   ];
 
-  // Categorize
-  const category = categorizeChange(allMatches);
+  // A change naming a skill/hook/command sequant ships can collide with it
+  // (#1345: Claude Code ≥2.1.286 runs any project skill named `verify` before
+  // commits), so it is issue-worthy whatever else it matches.
+  const category: FindingCategory = namesShippedItem(change, baseline).length
+    ? "name-collision"
+    : categorizeChange(allMatches);
 
   // Determine impact
   const impact = determineImpact(category, matchedKeywords);
@@ -367,6 +420,7 @@ export function selectIssueWorthy(
   return findings.filter(
     (f) =>
       f.category === "breaking" ||
+      f.category === "name-collision" ||
       (f.category !== "no-action" &&
         f.category !== "opportunity" &&
         isRelevant(f, baseline, exists)),
