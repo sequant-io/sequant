@@ -31,12 +31,17 @@ jobs:
           sudo install gitleaks /usr/local/bin/gitleaks
 
       - name: Scan the commits in this change
+        # Event values reach the script through env, never ${{ }} inside run:.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
           if [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
-            RANGE="${{ github.event.merge_group.base_sha }}..${{ github.event.merge_group.head_sha }}"
+            RANGE="${MG_BASE_SHA}..${MG_HEAD_SHA}"
           else
-            RANGE="origin/${{ github.base_ref }}..HEAD"
+            RANGE="origin/${BASE_REF}..HEAD"
           fi
           gitleaks detect --config .gitleaks.toml --redact --verbose --log-opts="${RANGE}"
 

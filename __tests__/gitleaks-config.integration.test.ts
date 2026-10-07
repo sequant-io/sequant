@@ -78,6 +78,16 @@ describe("gitleaks project rules (#1352)", () => {
     }
   });
 
+  run("flags a Claude cloud session id but allows a FAKE one", () => {
+    const real = "cse_" + "01W6MSXo6CpVP1Wm";
+    const sub = fixture(`session ${real}\nsession cse_FAKE0000000000000000\n`);
+    try {
+      expect(scan(sub).rules).toEqual(["claude-cse-id"]);
+    } finally {
+      rmSync(dirname(sub), { recursive: true, force: true });
+    }
+  });
+
   run(
     "flags a real user's home path but allows the /Users/user/ placeholder",
     () => {
@@ -146,6 +156,12 @@ describe("gitleaks workflow shape (#1352 AC-2)", () => {
     const step = wf.slice(wf.indexOf("- name: Test the project rules"));
     expect(step).toContain('SEQUANT_REQUIRE_GITLEAKS: "1"');
     expect(step).toContain("vitest run __tests__/gitleaks-config.integration.test.ts");
+  });
+
+  it("passes event values to run: scripts through env, not ${{ }}", () => {
+    const runs = [...wf.matchAll(/run: \|\n((?: {10}.*\n?)+)/g)].map((m) => m[1]);
+    expect(runs.length).toBeGreaterThan(0);
+    for (const body of runs) expect(body).not.toContain("${{");
   });
 
   it("pins every uses: to a commit SHA", () => {
