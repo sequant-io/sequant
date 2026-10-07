@@ -1,0 +1,54 @@
+name: Gitleaks
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Gitleaks scan
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks (pinned, checksum verified)
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+
+      - name: Scan the commits in this change
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
+            RANGE="${{ github.event.merge_group.base_sha }}..${{ github.event.merge_group.head_sha }}"
+          else
+            RANGE="origin/${{ github.base_ref }}..HEAD"
+          fi
+          gitleaks detect --config .gitleaks.toml --redact --verbose --log-opts="${RANGE}"
+
+      - name: Scan the working tree
+        run: gitleaks dir --config .gitleaks.toml --redact --verbose .
+
+      - name: Fail if an entire/ ref exists on origin
+        run: |
+          set -euo pipefail
+          refs="$(git ls-remote --heads origin 'entire/*')"
+          if [ -n "${refs}" ]; then
+            echo "entire/ refs hold session transcripts and must never be pushed:"
+            echo "${refs}"
+            exit 1
+          fi
