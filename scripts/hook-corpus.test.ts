@@ -17,6 +17,8 @@ import {
 } from "./hook-corpus.ts";
 
 const FAKE_GHP = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
+// A real-shaped home dir, assembled so the committed file passes gitleaks (#1352).
+const ALICE_HOME = ["", "Users", "alice", ""].join("/");
 
 describe("hook-corpus redaction", () => {
   it("redacts a ghp_ token", () => {
@@ -37,7 +39,7 @@ describe("hook-corpus redaction", () => {
 
   it("redacts emails and the home directory of a public repo", () => {
     const out = redactCommand(
-      "git log --author=someone@example.com /Users/user/proj",
+      `git log --author=someone@example.com ${ALICE_HOME}proj`,
     );
     expect(out).not.toContain("someone@example.com");
     expect(out).not.toContain("alice");
@@ -172,11 +174,11 @@ describe("redaction of session ids and foreign project paths (#1094)", () => {
     expect(redactCommand("open https://claude.ai/code/session_FAKEFAKEFAKE0000 now")).toBe(
       "open <redacted-session> now",
     );
-    expect(redactCommand("cd /Users/user/Projects/other-app && ls")).toBe(
+    expect(redactCommand(`cd ${ALICE_HOME}Projects/other-app && ls`)).toBe(
       "cd /Users/user/Projects/<project> && ls",
     );
-    expect(redactCommand("cd /Users/user/Projects/sequant && ls")).toContain("/Projects/sequant");
-    expect(redactCommand("S=/private/tmp/claude-502/-Users-user-Projects-other-app/abc/scratchpad")).toBe(
+    expect(redactCommand(`cd ${ALICE_HOME}Projects/sequant && ls`)).toContain("/Projects/sequant");
+    expect(redactCommand("S=/private/tmp/claude-502/-Users-alice-Projects-other-app/abc/scratchpad")).toBe(
       "S=/private/tmp/claude-502/-Users-user-Projects-<project>/abc/scratchpad",
     );
     expect(redactCommand("gh issue view 225 --repo admarble/ad-motion --json comments")).toBe(

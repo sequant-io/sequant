@@ -46,6 +46,11 @@ function scan(
   return { status: r.status, rules };
 }
 
+// Leak-shaped fixtures are assembled at run time so this file never holds a
+// string the scanner (or the AC-5 grep) would flag in the committed tree.
+const home = (name: string) => ["", "Users", name, ""].join("/");
+const SESSION_URL = "https://claude.ai/code/" + "session_" + "012abcDEF345ghiJKL678mno";
+
 function fixture(content: string): string {
   const dir = mkdtempSync(join(tmpdir(), "gitleaks-fixture-"));
   const sub = join(dir, "tree");
@@ -56,7 +61,7 @@ function fixture(content: string): string {
 
 describe("gitleaks project rules (#1352)", () => {
   run("flags a real-shaped home path", () => {
-    const sub = fixture("cwd was /Users/bartholomew/Projects/thing\n");
+    const sub = fixture(`cwd was ${home("bartholomew")}Projects/thing\n`);
     try {
       expect(scan(sub).rules).toContain("home-path");
     } finally {
@@ -65,9 +70,7 @@ describe("gitleaks project rules (#1352)", () => {
   });
 
   run("flags a Claude session URL", () => {
-    const sub = fixture(
-      "see https://claude.ai/code/session_012abcDEF345ghiJKL678mno\n",
-    );
+    const sub = fixture(`see ${SESSION_URL}\n`);
     try {
       expect(scan(sub).rules).toContain("claude-session-url");
     } finally {
@@ -76,9 +79,9 @@ describe("gitleaks project rules (#1352)", () => {
   });
 
   run(
-    "flags a /Users/alice/ path but allows the /Users/user/ placeholder",
+    "flags a real user's home path but allows the /Users/user/ placeholder",
     () => {
-      const sub = fixture("cd /Users/alice/proj\ncd /Users/user/proj\n");
+      const sub = fixture(`cd ${home("alice")}proj\ncd ${home("user")}proj\n`);
       try {
         expect(scan(sub).rules).toEqual(["home-path"]);
       } finally {
@@ -137,6 +140,12 @@ describe("gitleaks workflow shape (#1352 AC-2)", () => {
   it("runs gitleaks detect with the project config and verifies the checksum", () => {
     expect(wf).toContain("gitleaks detect --config .gitleaks.toml");
     expect(wf).toContain("sha256sum -c -");
+  });
+
+  it("runs the rule tests with gitleaks required, so they cannot skip in CI", () => {
+    const step = wf.slice(wf.indexOf("- name: Test the project rules"));
+    expect(step).toContain('SEQUANT_REQUIRE_GITLEAKS: "1"');
+    expect(step).toContain("vitest run __tests__/gitleaks-config.integration.test.ts");
   });
 
   it("pins every uses: to a commit SHA", () => {
