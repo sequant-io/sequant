@@ -52,6 +52,12 @@ describe("exec and qa run affected tests, not the full suite", () => {
     expect(hits).toContain("./scripts/exec-skill-marker.test.ts");
   });
 
+  it("exec: counts a large affected set and shards it under the Bash cap", () => {
+    const text = region("exec");
+    expect(text).toContain("vitest list --changed origin/main --filesOnly");
+    expect(text).toContain("--shard=1/3");
+  });
+
   it("exec: names the whole-tree tautology scanner, which no path rule selects", () => {
     expect(region("exec")).toContain("scripts/qa/tautology-detector-cli.test.ts");
   });

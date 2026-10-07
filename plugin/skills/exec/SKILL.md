@@ -1398,6 +1398,13 @@ fixture through `fs`. Add three more sets and run them in the same foreground ca
    `scripts/qa/tautology-detector-cli.test.ts`: a new tautological test fails it, not
    itself (#1104, #1136).
 
+**Large affected sets.** A module many files import can select a big share of the suite:
+a one-line change to `src/lib/workflow/mutation-marker.ts` selects 60 of 373 test files
+and ran past 300 s. Count first (about 3 s):
+`npx vitest list --changed origin/main --filesOnly | wc -l`. Above ~40 files, run the set
+as three foreground calls, `--shard=1/3`, `--shard=2/3`, `--shard=3/3`, each under
+`timeout 590`, so no single call meets the 600 s Bash cap.
+
 Do not run the bare `npm test` in a phase. If the issue's runner note already forbids the
 full suite, this section is how you still cover the branch. Record the command and the
 file list in the Summary.
