@@ -9,8 +9,6 @@ allowed-tools:
   - Bash(npx sequant worktree resolve:*)
   - Bash(npx sequant worktree verify:*)
   - Bash(npm test:*)
-  - Bash(npx vitest:*)
-  - Bash(npx jest:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
   - Bash(git status:*)

@@ -62,6 +62,13 @@ describe("exec and qa run affected tests, not the full suite", () => {
     expect(region("exec")).toContain("scripts/qa/tautology-detector-cli.test.ts");
   });
 
+  it("exec: the documented skill-tree lookup selects the allowed-tools gate", () => {
+    const match = region("exec").match(/grep -rlw SKILL_ROOTS[^`]*/);
+    expect(match).not.toBeNull();
+    const hits = execSync(match![0], { cwd: ROOT, encoding: "utf-8" }).split("\n");
+    expect(hits).toContain("./src/lib/__tests__/skill-allowed-tools-gate.test.ts");
+  });
+
   // An instruction to run the full suite anywhere else in the skill would
   // contradict the region (QA round 1 found four in exec).
   for (const skill of ["exec", "qa"] as const) {

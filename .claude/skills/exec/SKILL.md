@@ -14,8 +14,6 @@ allowed-tools:
   - Write
   # Build, lint, and test
   - Bash(npm test:*)
-  - Bash(npx vitest:*)
-  - Bash(npx jest:*)
   - Bash(npm run build:*)
   - Bash(npm run lint:*)
   # Git operations
@@ -1393,10 +1391,13 @@ fixture through `fs`. Add three more sets and run them in the same foreground ca
 3. **Tests that read a changed non-test file.** For each changed path, list the tests that
    mention it: `grep -rlF "<changed path>" --include='*.test.ts' --exclude-dir=node_modules .`
    (a gate test names the file it reads, e.g. `.claude/skills/exec/SKILL.md`).
-4. **Whole-tree scanners, when any test file changed.** Some tests read every test file
-   rather than one path, so no rule above selects them. In this repo that is
-   `scripts/qa/tautology-detector-cli.test.ts`: a new tautological test fails it, not
-   itself (#1104, #1136).
+4. **Whole-tree scanners.** Some tests read every file of a kind rather than one path,
+   so no rule above selects them. In this repo:
+   - any test file changed → `scripts/qa/tautology-detector-cli.test.ts` (a new
+     tautological test fails it, not itself; #1104, #1136);
+   - any skill file changed → every test that iterates the skill trees:
+     `grep -rlw SKILL_ROOTS --include='*.test.ts' --exclude-dir=node_modules .` (e.g.
+     the allowed-tools gate, which rejects a new `Bash(npx …:*)` grant in any skill).
 
 **Large affected sets.** A module many files import can select a big share of the suite:
 a one-line change to `src/lib/workflow/mutation-marker.ts` selects 60 of 373 test files
