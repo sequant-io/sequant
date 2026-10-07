@@ -52,22 +52,24 @@ describe("exec and qa run affected tests, not the full suite", () => {
     expect(hits).toContain("./scripts/exec-skill-marker.test.ts");
   });
 
-  it("exec: counts a large affected set and shards it under the Bash cap", () => {
-    const text = region("exec");
-    expect(text).toContain("vitest list --changed origin/main --filesOnly");
-    expect(text).toContain("--shard=1/3");
-  });
+  for (const skill of ["exec", "qa"] as const) {
+    it(`${skill}: counts a large affected set and shards it under the Bash cap`, () => {
+      const text = region(skill);
+      expect(text).toContain("vitest list --changed origin/main --filesOnly");
+      expect(text).toContain("--shard=1/3");
+    });
 
-  it("exec: names the whole-tree tautology scanner, which no path rule selects", () => {
-    expect(region("exec")).toContain("scripts/qa/tautology-detector-cli.test.ts");
-  });
+    it(`${skill}: names the whole-tree tautology scanner, which no path rule selects`, () => {
+      expect(region(skill)).toContain("scripts/qa/tautology-detector-cli.test.ts");
+    });
 
-  it("exec: the documented skill-tree lookup selects the allowed-tools gate", () => {
-    const match = region("exec").match(/grep -rlw SKILL_ROOTS[^`]*/);
-    expect(match).not.toBeNull();
-    const hits = execSync(match![0], { cwd: ROOT, encoding: "utf-8" }).split("\n");
-    expect(hits).toContain("./src/lib/__tests__/skill-allowed-tools-gate.test.ts");
-  });
+    it(`${skill}: the documented skill-tree lookup selects the allowed-tools gate`, () => {
+      const match = region(skill).match(/grep -rlw SKILL_ROOTS[^`]*/);
+      expect(match).not.toBeNull();
+      const hits = execSync(match![0], { cwd: ROOT, encoding: "utf-8" }).split("\n");
+      expect(hits).toContain("./src/lib/__tests__/skill-allowed-tools-gate.test.ts");
+    });
+  }
 
   // An instruction to run the full suite anywhere else in the skill would
   // contradict the region (QA round 1 found four in exec).

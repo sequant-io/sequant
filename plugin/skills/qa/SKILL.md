@@ -486,7 +486,13 @@ Once verify passes, skip step 1 below (worktree location provided by orchestrato
      test command), plus the test files named in each AC's `Evidence:` command and every
      changed test file. `--changed` misses tests that read a file through `fs`: add
      `grep -rlF "<changed path>" --include='*.test.ts' --exclude-dir=node_modules .`
-     hits for each changed non-test file. Verify each AC by its own command either way.
+     hits for each changed non-test file. Add the whole-tree scanners no path rule
+     selects: `scripts/qa/tautology-detector-cli.test.ts` when a test file changed, and
+     `grep -rlw SKILL_ROOTS --include='*.test.ts' --exclude-dir=node_modules .` when a
+     skill file changed. Count first with
+     `npx vitest list --changed origin/main --filesOnly | wc -l`; above ~40 files, run
+     three foreground calls, `--shard=1/3` to `--shard=3/3`, each under `timeout 590`.
+     Verify each AC by its own command either way.
    <!-- END: affected-tests (#1349) -->
    - Review the code changes against the AC checklist
 
