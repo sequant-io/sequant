@@ -51,4 +51,26 @@ describe("exec and qa run affected tests, not the full suite", () => {
     const hits = execSync(cmd, { cwd: ROOT, encoding: "utf-8" }).split("\n");
     expect(hits).toContain("./scripts/exec-skill-marker.test.ts");
   });
+
+  it("exec: names the whole-tree tautology scanner, which no path rule selects", () => {
+    expect(region("exec")).toContain("scripts/qa/tautology-detector-cli.test.ts");
+  });
+
+  // An instruction to run the full suite anywhere else in the skill would
+  // contradict the region (QA round 1 found four in exec).
+  for (const skill of ["exec", "qa"] as const) {
+    it(`${skill}: no other step tells the agent to run the bare npm test`, () => {
+      const content = readFileSync(join(ROOT, SKILLS[skill]), "utf-8");
+      const outside = content.replace(region(skill), "");
+      const steps = outside
+        .split("\n")
+        .filter((l) =>
+          // The instruction forms round 1 left behind: "Run `npm test`",
+          // "After running …", "continue to …", "before …", a "- `npm test` -"
+          // checklist item, and "… and `npm test`" in the results checklist.
+          /\b(re-)?run(ning)? `npm test`|\b(to|before) `npm test`|^\s*-\s*`npm test`\s+-|and `npm test`\s*$/i.test(l),
+        );
+      expect(steps).toEqual([]);
+    });
+  }
 });

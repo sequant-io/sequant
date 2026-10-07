@@ -248,7 +248,7 @@ fi
   block never calls `gh` itself, so it runs the same way in both places.
 - **Already on a non-base branch:** keep it. Do not create a second branch.
 - **The current clone is the worktree.** Everywhere below that says "the
-  worktree" or "the worktree path", read `$PWD`. Run `npm test`, `npm run build`,
+  worktree" or "the worktree path", read `$PWD`. Run the affected tests, `npm run build`,
   commits and `git push -u origin <branch>` from here, and `gh pr create` too
   when standalone.
 - **Never** run `./scripts/new-feature.sh` or `./scripts/dev/new-feature.sh`,
@@ -714,7 +714,7 @@ worktree).
 
 3. **Work in the worktree:**
    - All implementation work happens in the worktree directory
-   - Run `npm test` and `npm run build` from the worktree
+   - Run the affected tests (Section 3, "Affected tests") and `npm run build` from the worktree
    - Make commits in the worktree (they'll be on the feature branch)
 
 4. **After implementation is complete:**
@@ -1329,7 +1329,7 @@ If your project uses a database MCP (e.g., Supabase, Postgres):
 - Before and after meaningful changes, plan to run:
   - `npm run build` - TypeScript compilation
   - `npm run lint` - ESLint validation (catches unused imports, formatting issues)
-  - `npm test` - Run relevant tests
+  - The affected-tests run (below) - Run relevant tests
 - For larger changes or anything that might impact build/runtime:
   - Suggest running `npm run build` and interpret any errors.
 
@@ -1393,6 +1393,10 @@ fixture through `fs`. Add three more sets and run them in the same foreground ca
 3. **Tests that read a changed non-test file.** For each changed path, list the tests that
    mention it: `grep -rlF "<changed path>" --include='*.test.ts' --exclude-dir=node_modules .`
    (a gate test names the file it reads, e.g. `.claude/skills/exec/SKILL.md`).
+4. **Whole-tree scanners, when any test file changed.** Some tests read every test file
+   rather than one path, so no rule above selects them. In this repo that is
+   `scripts/qa/tautology-detector-cli.test.ts`: a new tautological test fails it, not
+   itself (#1104, #1136).
 
 Do not run the bare `npm test` in a phase. If the issue's runner note already forbids the
 full suite, this section is how you still cover the branch. Record the command and the
@@ -1404,7 +1408,7 @@ foreground with a `timeout`, after committing a WIP:
 
 ```bash
 git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the test run"
-timeout 600 npx vitest run --changed origin/main 2>&1 | tail -80   # vitest; see the next block for others
+timeout 600 npx vitest run --changed origin/main 2>&1 | tail -80   # vitest; other stacks: the command from "Affected tests" above
 ```
 
 `timeout` is GNU coreutils and stock macOS does not ship it (`brew install coreutils`); the
@@ -1428,7 +1432,7 @@ form above is the only supported way to run the suite in a phase.
 
 **Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
 
-**After running `npm test`, you MUST analyze test coverage for changed files:**
+**After the affected-tests run, you MUST analyze test coverage for changed files:**
 
 Use the Glob tool to check for corresponding test files:
 ```
@@ -1559,7 +1563,7 @@ It prints `N verdict changes` (exit 0 only when N is 0). Put each change in the 
 
 **Purpose:** Catch ESLint errors locally before they fail CI. This prevents wasted quality loop iterations from lint failures.
 
-**When to run:** Before every PR creation. Run after `npm run build` succeeds, before `npm test`.
+**When to run:** Before every PR creation. Run after `npm run build` succeeds, before the affected-tests run.
 
 **Execution:**
 
@@ -1612,7 +1616,7 @@ fi
    - Formatting issues → Run auto-fix if available
 3. **Fix the issues** - make minimal changes
 4. **Re-run lint** - verify all errors are resolved
-5. **Then continue** - to `npm test`
+5. **Then continue** - to the affected-tests run
 
 **Scope formatting to your own diff (#1165).** Run formatters only on files in `git diff --name-only origin/main...HEAD` (plus new files you created), never on a directory glob. Before any `git add -A`, including the WIP checkpoint above, read `git status --short` and check that every path listed is one you meant to change. A glob-wide `prettier --write` reformats files you never touched, and `git add -A` then commits them into your PR.
 
@@ -1812,7 +1816,7 @@ function internalHelper(): void {
 - After each meaningful change:
   1. Run `npm run build` (if TypeScript changes)
   2. Run `npm run lint` (catches unused imports early)
-  3. Run `npm test`
+  3. Run the affected tests (Section 3, "Affected tests")
   4. If checks fail:
      - Inspect the failure output.
      - Identify the root cause.
@@ -2200,7 +2204,7 @@ Grep(pattern="filename", path="__tests__/")
 **If tests are found:**
 1. Review what the tests are checking (file existence vs. content)
 2. Update tests to check the new location if content moved
-3. Run `npm test` after ALL file conversions are complete
+3. Run the affected tests after ALL file conversions are complete
 
 **Why this matters:** Tests may pass during implementation but fail after final changes if they depend on content that was converted to a stub or moved elsewhere.
 
@@ -2238,7 +2242,7 @@ The goal is to satisfy AC with the smallest, safest change possible.
 - **Coverage gaps:** [Which changed files lack corresponding tests, and why is that acceptable?]
 ```
 
-**If either field reveals concerns**, address them before creating the PR. Re-run `npm test` and `npm run build` after fixes.
+**If either field reveals concerns**, address them before creating the PR. Re-run the affected tests and `npm run build` after fixes.
 
 ---
 
@@ -2256,7 +2260,7 @@ At the end of a session:
 1. Summarize:
    - Which AC items appear satisfied (AC-1, AC-2, ...).
    - Which AC items are partially or not yet satisfied.
-   - Which checks were run and their outcomes (`npm test`, `npm run build`, etc.).
+   - Which checks were run and their outcomes (the affected-tests run, `npm run build`, etc.).
    - Any remaining TODOs or recommended follow-ups.
 
 2. Draft a Markdown snippet as a **progress update** for the GitHub issue:
@@ -2319,7 +2323,7 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 - [ ] **Pre-PR Confidence Check** - Weakest part and coverage gaps stated
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
-- [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and `npm test`
+- [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and the affected-tests run (command + file list)
 - [ ] **CLI Wiring Check** - If option interfaces modified, verified CLI flags are registered (Section 3g)
 - [ ] **Quality Plan Alignment** - Included if quality plan was available (or marked N/A if no quality plan)
 - [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions); under `SEQUANT_ORCHESTRATOR`, "left to the orchestrator" with the pushed branch name (#1247)

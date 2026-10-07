@@ -1457,7 +1457,7 @@ belongs to this diff.
 
 **Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
 
-**After running `npm test`, you MUST analyze test coverage for changed files:**
+**After the affected-tests run, you MUST analyze test coverage for changed files:**
 
 Use the Glob tool to check for corresponding test files:
 ```
