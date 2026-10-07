@@ -14,6 +14,8 @@ allowed-tools:
   - Write
   # Build, lint, and test
   - Bash(npm test:*)
+  - Bash(npx vitest:*)
+  - Bash(npx jest:*)
   - Bash(npm run build:*)
   - Bash(npm run lint:*)
   # Git operations
@@ -54,7 +56,7 @@ When invoked as `/exec`, your job is to:
 1. Take an existing, agreed plan and AC (often created by `/spec`).
 2. Create a feature worktree for the issue.
 3. Implement the changes in small, safe steps.
-4. Run checks via `npm test` and, when appropriate, `npm run build`.
+4. Run the affected tests (`npx vitest run --changed origin/main`, plus AC-named test files) and, when appropriate, `npm run build`.
 5. Iterate until the AC appear satisfied or clear blockers are reached.
 6. Draft a progress update for the GitHub issue.
 
@@ -1336,7 +1338,7 @@ If your project uses a database MCP (e.g., Supabase, Postgres):
 Before creating a PR, run ALL checks in this order:
 1. `npm run build` - Must pass (no TypeScript errors)
 2. `npm run lint` - Must pass (no ESLint errors)
-3. `npm test` - Must pass (all tests green)
+3. The affected-tests run (next section) - Must pass (all green). The full `npm test` is CI's job.
 
 If any check fails, fix the issues before creating the PR.
 
@@ -1368,20 +1370,49 @@ none filed an issue, and the same failures stopped a gate run a week later.
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
-**Foreground only (#1032).** Run every check — the full `npm test` above all — in the
+<!-- BEGIN: affected-tests (#1349) -->
+**Affected tests, not the full suite (#1349).** A phase runs the tests this branch
+affects; CI (`ci.yml` job `test`, a required check) runs the full suite on the PR, so a
+phase-level full run duplicates it and risks the 600 s Bash cap and the 30-minute
+no-progress wall. The command comes from the stack (`resolveAffectedTestCommand` in
+`src/lib/stacks.ts`): vitest `npx vitest run --changed origin/main`, jest
+`npx jest --changedSince=origin/main`. A stack with no affected mode (pytest, cargo, go,
+or an unknown JS runner) runs its full test command instead.
+
+```bash
+git fetch origin main -q                                # --changed diffs against origin/main
+timeout 600 npx vitest run --changed origin/main 2>&1 | tail -80
+```
+
+`--changed` follows the static import graph, so it misses tests that read a `SKILL.md` or
+fixture through `fs`. Add three more sets and run them in the same foreground call
+(`timeout 600 npx vitest run <files…>`; a vitest run takes the union of file filters):
+
+1. **Test files named in an AC's `Evidence:` command.**
+2. **Every changed test file** (`git diff --name-only origin/main...HEAD | grep -E '\.(test|spec)\.'`).
+3. **Tests that read a changed non-test file.** For each changed path, list the tests that
+   mention it: `grep -rlF "<changed path>" --include='*.test.ts' --exclude-dir=node_modules .`
+   (a gate test names the file it reads, e.g. `.claude/skills/exec/SKILL.md`).
+
+Do not run the bare `npm test` in a phase. If the issue's runner note already forbids the
+full suite, this section is how you still cover the branch. Record the command and the
+file list in the Summary.
+<!-- END: affected-tests (#1349) -->
+
+**Foreground only (#1032).** Run every check — the affected-tests run above all — in the
 foreground with a `timeout`, after committing a WIP:
 
 ```bash
-git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the full suite"
-timeout 600 npm test 2>&1 | tail -80
+git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the test run"
+timeout 600 npx vitest run --changed origin/main 2>&1 | tail -80   # vitest; see the next block for others
 ```
 
 `timeout` is GNU coreutils and stock macOS does not ship it (`brew install coreutils`); the
-portable equivalent is `perl -e 'alarm shift; exec @ARGV' 600 npm test 2>&1 | tail -80`
+portable equivalent is `perl -e 'alarm shift; exec @ARGV' 600 <command> 2>&1 | tail -80`
 (`alarm` survives `exec`; perl is on every macOS and Linux box). Never drop the limit.
 
-Run the full suite **exactly once per phase**, as the last check before the PR — not
-once before the mutation probes and again after them. Two full runs in one exec phase
+Run the affected set **exactly once per phase**, as the last check before the PR — not
+once before the mutation probes and again after them. Two long runs in one exec phase
 is how #1024's first attempt hit the orchestrator's 30-minute wall with everything else
 already done; targeted `npx vitest run <file>` is the right tool while iterating.
 

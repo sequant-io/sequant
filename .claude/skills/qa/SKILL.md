@@ -9,6 +9,8 @@ allowed-tools:
   - Bash(npx sequant worktree resolve:*)
   - Bash(npx sequant worktree verify:*)
   - Bash(npm test:*)
+  - Bash(npx vitest:*)
+  - Bash(npx jest:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
   - Bash(git status:*)
@@ -476,12 +478,18 @@ Once verify passes, skip step 1 below (worktree location provided by orchestrato
 3. **Review in the worktree:**
    - Navigate to the worktree directory to review the implementation
    - Use `git diff origin/main...HEAD` to see all changes made in the feature branch
-   - Run `npm test` and `npm run build` in the worktree to verify everything works.
-     Under `sequant run` (`SEQUANT_ORCHESTRATOR` set) wrap the suite in a hard cap —
-     `timeout 600 npm test` — and skip it when the issue's runner note says the runner
-     owns the full suite: an uncapped suite on a loaded machine exceeds the phase's
-     30-minute no-progress wall and the whole qa phase is killed (three phases died
-     this way on 2026-09-20). Verify each AC by its own command either way.
+   <!-- BEGIN: affected-tests (#1349) -->
+   - Run `npm run build` and the affected tests in the worktree. Do not run the full
+     `npm test` in a phase: CI runs it on the PR as a required check, and an uncapped
+     suite on a loaded machine exceeds the phase's 30-minute no-progress wall (three
+     phases died this way on 2026-09-20). Use `git fetch origin main -q`, then
+     `timeout 600 npx vitest run --changed origin/main` (jest:
+     `npx jest --changedSince=origin/main`; stacks with no affected mode run their full
+     test command), plus the test files named in each AC's `Evidence:` command and every
+     changed test file. `--changed` misses tests that read a file through `fs`: add
+     `grep -rlF "<changed path>" --include='*.test.ts' --exclude-dir=node_modules .`
+     hits for each changed non-test file. Verify each AC by its own command either way.
+   <!-- END: affected-tests (#1349) -->
    - Review the code changes against the AC checklist
 
 4. **Pre-merge cleanup check:**
