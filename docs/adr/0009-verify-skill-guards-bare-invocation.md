@@ -1,6 +1,6 @@
 # ADR-0009: Keep the `verify` skill name; make pre-commit invocations a no-op
 
-**Status:** Proposed (awaiting owner acceptance)
+**Status:** Accepted (owner, 2026-10-06)
 **Date:** 2026-10-06
 **Issue:** #1345
 

@@ -66,6 +66,7 @@ drift (`src/lib/__tests__/security-docs.test.ts`, AC-4).
 
 | Defense | Enforcer | Class | Residual risk |
 |---------|----------|-------|---------------|
+| Dangerous `rm` refusal | Claude Code's native dangerous-rm analyzer, not Sequant code: the duplicate guard was removed from `templates/hooks/pre-tool.sh` (see its comment above the sudo guard) | deterministic | Version-dependent and outside Sequant's control. Command substitution is covered from Claude Code 2.1.208, and `bash -c` / `sh -c` scripts under `bypassPermissions` only from 2.1.288; on an older version a phase agent running `bash -c "rm -rf ~"` gets no prompt. Sequant recommends ≥ 2.1.288 but cannot enforce it (#1346) |
 | Privilege-escalation and deploy blocks | `templates/hooks/pre-tool.sh` (`HOOK_BLOCKED: sudo command`, `HOOK_BLOCKED: Deployment command`, `HOOK_BLOCKED: Workflow trigger`) | deterministic | Matches on command shape; an unrecognised spelling of the same intent is not refused |
 | Worktree containment | `templates/hooks/pre-tool.sh` (`HOOK_BLOCKED: File operation must be within worktree`) | deterministic | Covers file operations routed through the hook; a process that writes without a tool call is outside its reach |
 | Secret and credential read blocks | `templates/hooks/pre-tool.sh` (`HOOK_BLOCKED: Reading secret file`, `HOOK_BLOCKED: Reading credential directory`, `HOOK_BLOCKED: Environment dump`) | deterministic | Path- and pattern-based; a secret stored somewhere the patterns do not name is readable |
