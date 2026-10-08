@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The `main` ruleset payload uses a merge queue instead of strict up-to-date (#1350).** `scripts/ruleset-main.sh --print` now drops `strict_required_status_checks_policy`, adds a squash `merge_queue` rule and lists `canary` beside `test` (the live ruleset already required both). `ci.yml` runs on `merge_group` so queued PRs get their checks. The live ruleset is unchanged: applying the queue waits on #1368, where `/release` learns to wait for a queued merge before tagging.
+
 - **`/exec` and `/qa` run the tests a branch affects instead of the full suite (#1349).** `npx vitest run --changed origin/main` (jest: `--changedSince`), plus AC `Evidence:` test files, changed test files and tests that mention a changed file. Stacks with no affected mode keep the full command (`resolveAffectedTestCommand`). CI still runs everything.
 
 - **gitleaks scans every PR for the leak classes generic scanners miss (#1352).** `.github/workflows/gitleaks.yml` runs a pinned, checksum-verified gitleaks with `.gitleaks.toml` on `pull_request` and `merge_group`, and fails when an `entire/*` ref exists on `origin`. Project rules flag real home paths (`/Users/<name>/`, `/home/<name>/`) and Claude session links and ids; placeholder names are allowlisted by name. `scripts/gitleaks-precommit.sh` is an optional local gate that also loads an untracked `.gitleaks.local.toml`. GitHub secret scanning, push protection and Dependabot security updates are now enabled on the repo. The committed eval results and two test files no longer carry a real home path or session id. See `docs/reference/secret-scanning.md`.

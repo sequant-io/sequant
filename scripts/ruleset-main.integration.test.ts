@@ -80,7 +80,7 @@ describe("ruleset-main.sh --print merge queue (AC-2, AC-2b)", () => {
       .split("\n")
       .filter((l) => !l.trim().startsWith("#"))
       .join("\n");
-    expect(execFileSync("bash", ["-n", SCRIPT])).toBeDefined();
+    expect(() => execFileSync("bash", ["-n", SCRIPT])).not.toThrow();
     expect(script).not.toMatch(/gh api|--method PUT|-X PUT/);
   });
 });
