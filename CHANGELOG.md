@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The run dashboard shows phases in the order they run (#1356).** When label detection adds a phase to `--phases` (e.g. `exec,qa` gains `test`), the dashboard's issue card listed it last, after `qa`, because the orchestrator never applied the resolved phase plan the plain-text renderer already used. It now does, so `exec ▸ test ▸ qa` reads correctly from the start, and a configured phase the plan dropped no longer lingers as pending.
 - Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
 
 ### Added
