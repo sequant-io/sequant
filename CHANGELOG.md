@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
+
 ### Added
 
 - **`/exec` and `/qa` run the tests a branch affects instead of the full suite (#1349).** `npx vitest run --changed origin/main` (jest: `--changedSince`), plus AC `Evidence:` test files, changed test files and tests that mention a changed file. Stacks with no affected mode keep the full command (`resolveAffectedTestCommand`). CI still runs everything.

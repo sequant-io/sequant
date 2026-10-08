@@ -4,7 +4,13 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { execFileSync } from "child_process";
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -203,7 +209,23 @@ describe("installWorktreeDeps skips install with no manifest (#1196 AC-1)", () =
     expect(result).toBe(true);
     const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(output).toContain("Skipping dependency install");
-    expect(output).toContain("no manifest found");
+    expect(output).toContain("no package.json at the worktree root");
+
+    logSpy.mockRestore();
+  });
+
+  it("no root package.json: skips with a root-naming message (package in a subdirectory)", () => {
+    mkdirSync(join(dir, "agent"));
+    writeFileSync(join(dir, "agent", "package.json"), "{}");
+    writeFileSync(join(dir, "agent", "package-lock.json"), "{}");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = installWorktreeDeps(dir, undefined, false);
+
+    expect(result).toBe(true);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("no package.json at the worktree root");
+    expect(output).not.toContain("Dependency install failed");
 
     logSpy.mockRestore();
   });
