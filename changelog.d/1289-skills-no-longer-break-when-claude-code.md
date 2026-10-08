@@ -1,0 +1,3 @@
+kind: Fixed
+
+**Skills no longer break when Claude Code substitutes `$0`/`$1` in their text (#1289).** Claude Code replaces positional `$N` in a skill's body when the skill gets arguments, and fenced code blocks are not exempt: `/qa 1249` turned `substr($0, 2)` into `substr(1249, 2)`, silently breaking §6c's added-line extraction and the manual-AC attribution program. Awk fields in the shipped skills are now written `$(N)`, which Claude Code leaves alone and which also works for drivers that read the files untemplated (codex, opencode). The §6c extraction moved to `qa/scripts/added-lines.sh`. A new CI lint, `npm run lint:skill-argument-substitution`, rejects any `$N` in a SKILL.md body, escaped or not.

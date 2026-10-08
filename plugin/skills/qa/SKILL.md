@@ -2722,7 +2722,7 @@ Provide an overall verdict:
    - settle_evidence_status = status from Section 2a (Backed/Unbacked/N/A) — REQUIRED whenever the PR body describes any test failure as pre-existing or unrelated to the diff, `N/A` otherwise
    - script_verification_status = status from Section 11 (Verified/Overridden/Not Verified/Not Required) — REQUIRED when `scripts/` or `templates/scripts/` files are modified, `Not Required` otherwise
    - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
-   - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
+   - changelog_missing = true IFF `changelog_required` AND Section 10a's changelog entry check (a `changelog.d/` fragment, or an `[Unreleased]` bullet) finds no entry for the issue/PR; false otherwise
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff origin/main...HEAD --name-only | grep '\.tsx$' || true
@@ -3030,8 +3030,10 @@ if [ ! -f "CHANGELOG.md" ]; then
   exit 0
 fi
 
-# Check if [Unreleased] section has entries
-unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep -E '^\s*-' | wc -l | xargs || true)
+# The entry is a fragment added by this branch: changelog.d/<issue>-<slug>.md (#1351).
+# A bullet added under [Unreleased] (a PR opened before the switch) also counts.
+fragment_entries=$(git diff origin/main...HEAD --name-only --diff-filter=A -- 'changelog.d/*.md' | grep -v README || true)
+unreleased_entries=$(git diff origin/main...HEAD -U0 -- CHANGELOG.md | grep -cE '^\+- ' || true)
 
 # Determine if change is user-facing (new features, bug fixes, etc.)
 # Look at commit messages or file changes
@@ -3042,7 +3044,7 @@ user_facing=$(git log origin/main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|f
 
 | Condition | CHANGELOG Entry Required? | Action |
 |-----------|---------------------------|--------|
-| User-facing changes detected + CHANGELOG exists | ✅ Yes | Check for `[Unreleased]` entry |
+| User-facing changes detected + CHANGELOG exists | ✅ Yes | Check for a `changelog.d/` fragment (or an added `[Unreleased]` bullet) |
 | User-facing changes + no entry | ⚠️ Block | Flag as missing CHANGELOG |
 | Non-user-facing changes (test, ci, chore) | ❌ No | Skip check |
 | No CHANGELOG.md in repo | ❌ No | Skip check |
@@ -3052,7 +3054,7 @@ user_facing=$(git log origin/main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|f
 1. Do NOT give `READY_FOR_MERGE` verdict
 2. Set verdict to `AC_MET_BUT_NOT_A_PLUS` with note:
    ```markdown
-   **CHANGELOG:** Missing entry for user-facing changes. Add entry to `## [Unreleased]` section before merging.
+   **CHANGELOG:** Missing entry for user-facing changes. Add a fragment `changelog.d/<issue>-<slug>.md` (see `changelog.d/README.md`) before merging.
    ```
 3. Include this in the draft review comment
 
@@ -3072,7 +3074,7 @@ When an entry exists, verify it follows the format:
 |-------|--------|
 | CHANGELOG.md exists | ✅ Found |
 | User-facing changes | ✅ Yes (feat: commit detected) |
-| [Unreleased] entry | ✅ Present |
+| Changelog fragment | ✅ Present |
 | Entry format | ✅ Valid (includes issue number) |
 
 **Result:** CHANGELOG requirements met
@@ -3225,7 +3227,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Behavior-Rule Survival Check** - Required in simple fix mode too (see Section 6e): a #533-class stale-rule survival is very plausibly a sub-threshold diff. Cheap short-circuit — mark "N/A" when no AC triggers the behavior-rule heuristic
 - [ ] **Declared-Evidence Execution** - Required in simple fix mode too (see Section 6h): a declared-evidence AC marked MET without running its command is exactly the #853 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC declares evidence naming a runnable command
 - [ ] **Mutation Verification** - Required in simple fix mode too (see Section 6i): a gate-test AC merged without a recorded mutation result is exactly the #830 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC is a gate-test AC
-- [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs an `[Unreleased]` entry (or marked N/A)
+- [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs a `changelog.d/` fragment (or marked N/A)
 - [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated
 - [ ] **Follow-up Ledger** - Required in simple fix mode too (see Section 7): every deferred item filed, fixed or dropped, or the status is Unresolved
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
@@ -3261,7 +3263,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
-- [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
+- [ ] **CHANGELOG Verification** - User-facing changes have a `changelog.d/` fragment (or marked N/A)
 - [ ] **Trust-Boundary Check** - Required section: "Finding:" and "Status:" lines populated (see Section 6f); `Injection Acted On` floors the verdict at `AC_NOT_MET` via §7
 - [ ] **Follow-up Ledger** - Every deferred item filed, fixed or dropped (see Section 7); `Unresolved` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7
 - [ ] **Adversarial Re-Read** - Required structured section: all 5 sub-prompts answered with concrete content; "Findings:" and "Status:" lines populated; bare "No gaps" without specific reasoning fails verification (see Section 6d)
@@ -3802,7 +3804,7 @@ You MUST include these sections:
 |-------|--------|
 | CHANGELOG.md exists | ✅ Found / ⏭️ Absent |
 | User-facing changes | ✅ Yes / ❌ No |
-| [Unreleased] entry | ✅ Present / ⚠️ Missing |
+| Changelog fragment | ✅ Present / ⚠️ Missing |
 | Entry format | ✅ Valid (includes issue number) / ⚠️ Needs work |
 
 **Result:** [CHANGELOG requirements met / Missing entry for user-facing changes / N/A (non-user-facing changes only)]

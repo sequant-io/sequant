@@ -864,50 +864,27 @@ When an AC is a gate test (a fixture exists, a skill section is present, a flag 
 | Test-only changes | ❌ No | - |
 | CI/workflow changes | ❌ No | - |
 
-**How to update:**
+**How to update:** write a fragment, never an edit to `CHANGELOG.md` (#1351). Every PR that edits the shared `## [Unreleased]` block makes the next squash-merge conflict, so each PR adds its own file under `changelog.d/` and `/release` collates them.
 
-1. **Check if CHANGELOG.md exists:**
-   ```bash
-   if [ -f "CHANGELOG.md" ]; then
-     echo "CHANGELOG.md found - update required for user-facing changes"
-   else
-     echo "No CHANGELOG.md - skip CHANGELOG update"
-   fi
-   ```
+1. **Check if CHANGELOG.md exists** (`[ -f CHANGELOG.md ]`). If not, skip this step.
 
-2. **If CHANGELOG.md exists and change is user-facing**, use the Edit tool to add an entry under `## [Unreleased]`:
+2. **If it exists and the change is user-facing**, create `changelog.d/<issue-number>-<slug>.md` (lowercase slug) with the Write tool. First line `kind: <Kind>` (`Added`, `Changed`, `Fixed`, `Removed` or `Security`, from the table above), then the entry text without a leading `- `:
 
    ```markdown
-   ## [Unreleased]
+   kind: Added
 
-   ### Added
-
-   - Brief description of new feature (#<issue-number>)
+   Brief description of new feature (#<issue-number>)
    ```
 
 3. **Entry format:**
    - Start with a verb: "Add", "Fix", "Update", "Remove", "Improve"
    - Keep it concise (1-2 lines)
    - Include issue number as `(#123)`
-   - Group related changes in a single bullet with sub-bullets if needed
+   - Do not edit `CHANGELOG.md` or `## [Unreleased]`; see `changelog.d/README.md`
 
-**Example entries:**
+**If CHANGELOG.md doesn't exist:** Skip this step. Not all projects use CHANGELOG.md.
 
-```markdown
-### Added
-
-- CHANGELOG update step in /exec skill (#320)
-  - Instructs /exec to add [Unreleased] entries during feature commits
-  - Includes change type classification table
-
-### Fixed
-
-- Race condition in parallel agent spawning (#315)
-```
-
-**If CHANGELOG doesn't exist:** Skip this step. Not all projects use CHANGELOG.md.
-
-**If change is not user-facing:** Skip this step but note in progress summary: "CHANGELOG: N/A (internal change)"
+**If change is not user-facing:** Add no fragment but note in progress summary: "CHANGELOG: N/A (internal change)"
 
 ---
 

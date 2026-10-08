@@ -1,0 +1,3 @@
+kind: Fixed
+
+**`/release` bumps the plugin manifest users install (#1301).** Step 4.5 edited and staged the root `.claude-plugin/plugin.json`, which nothing installs; the shipped `plugin/.claude-plugin/plugin.json` was bumped only by `scripts/release.sh`. The root manifest is retired: `/release` (validate, bump, `git add`, summary), `scripts/release.sh`, `scripts/prepare-marketplace.ts`, `plugin-version-sync.ts` and the CI plugin checks now read `plugin/.claude-plugin/plugin.json`, the one manifest. `plugin-install-test.yml` now triggers on `templates/memory/**`, the source of the shipped `plugin/memory/`, instead of the repo's own root `memory/`.

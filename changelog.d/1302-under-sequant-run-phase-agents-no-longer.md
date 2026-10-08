@@ -1,0 +1,3 @@
+kind: Fixed
+
+**Under `sequant run`, phase agents no longer edit the PR body (#1302).** A quality-loop exec had rewritten a PR's body itself (`gh api` PATCH), because QA's missing-marker gap pointed at the PR body. That body then read as hand-edited, and every later sequant update (QA verdict note, follow-ups) was dropped. The exec skill now forbids changing the PR's body or title by any means under the orchestrator, and routes the AC table, mutation markers, settle-against-base blocks and hook-verdict changes into its final `## Summary`, which the orchestrator carries into the body. QA's §6i `Missing` gap names exec's final Summary, not the PR body.

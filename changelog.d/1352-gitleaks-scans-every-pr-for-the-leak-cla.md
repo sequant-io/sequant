@@ -1,0 +1,3 @@
+kind: Added
+
+**gitleaks scans every PR for the leak classes generic scanners miss (#1352).** `.github/workflows/gitleaks.yml` runs a pinned, checksum-verified gitleaks with `.gitleaks.toml` on `pull_request` and `merge_group`, and fails when an `entire/*` ref exists on `origin`. Project rules flag real home paths (`/Users/<name>/`, `/home/<name>/`) and Claude session links and ids; placeholder names are allowlisted by name. `scripts/gitleaks-precommit.sh` is an optional local gate that also loads an untracked `.gitleaks.local.toml`. GitHub secret scanning, push protection and Dependabot security updates are now enabled on the repo. The committed eval results and two test files no longer carry a real home path or session id. See `docs/reference/secret-scanning.md`.

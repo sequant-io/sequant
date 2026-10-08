@@ -1,0 +1,3 @@
+kind: Fixed
+
+Skills no longer pre-approve broad shell access in `allowed-tools` (#1287). Bare `Bash` (`/fullsolve`, `/loop`, `/test`), `Bash(*)` (`/verify`), tool wildcards such as `Bash(git *)` and `Bash(gh *)` (`/assess`, `/solve`, `/improve`, `/upstream`, `/merger`), and runner wildcards such as `Bash(npx tsc:*)` and `Bash(node -e:*)` are replaced by the subcommands each skill runs, or removed. `/test`'s unrendered `Bash({{PM_RUN}} dev:*)` becomes literal `npm`/`pnpm`/`yarn`/`bun` dev entries. When you run these skills by hand, commands outside their list now ask for permission; `sequant run` phases are unaffected. A new gate test rejects these forms in all four skill copies.
