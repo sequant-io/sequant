@@ -68,23 +68,38 @@ export function readFragments(dir: string): Fragment[] {
   return out.sort((a, b) => a.issue - b.issue || a.file.localeCompare(b.file));
 }
 
-/** Split the `[Unreleased]` block into leftover bullets per kind (rollover). */
-function unreleasedBullets(block: string): Map<string, string[]> {
+/**
+ * Split the `[Unreleased]` block into leftover bullets per kind (rollover).
+ * Throws on any line it cannot place: a bullet before the first `### Kind`
+ * heading, or text that is neither a heading, a bullet nor a bullet's
+ * continuation. Dropping it would delete an entry from the changelog.
+ */
+export function unreleasedBullets(block: string): Map<string, string[]> {
   const by = new Map<string, string[]>();
+  const stray: string[] = [];
   let kind = "";
-  let cur: string[] | null = null; // non-null while inside a bullet
+  let inBullet = false;
   for (const line of block.split("\n")) {
     const h = /^### (.+)$/.exec(line);
     if (h) {
       kind = h[1].trim();
-      cur = null;
+      inBullet = false;
     } else if (/^- /.test(line) && kind) {
-      cur = [];
+      inBullet = true;
       by.set(kind, [...(by.get(kind) ?? []), line.slice(2)]);
-    } else if (cur && /^\s+\S/.test(line)) {
+    } else if (inBullet && /^\s+\S/.test(line)) {
       const arr = by.get(kind)!;
       arr[arr.length - 1] += "\n" + line;
+    } else if (line.trim() !== "") {
+      stray.push(line);
     }
+  }
+  if (stray.length) {
+    throw new Error(
+      "CHANGELOG.md [Unreleased] has lines collate cannot place (a bullet " +
+        "needs a ### Kind heading above it; move them into fragments):\n" +
+        stray.map((l) => `  ${l}`).join("\n"),
+    );
   }
   return by;
 }

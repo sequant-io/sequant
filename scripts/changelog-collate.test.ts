@@ -12,7 +12,12 @@ import {
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { collate, parseFragment } from "./changelog-collate.js";
+import {
+  collate,
+  parseFragment,
+  readFragments,
+  unreleasedBullets,
+} from "./changelog-collate.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(here, "changelog-collate.ts");
@@ -108,6 +113,33 @@ describe("changelog collate", { timeout: 30_000 }, () => {
     expect(log.slice(0, log.indexOf("## [2.20.0]"))).toMatch(
       /## \[Unreleased\]\n\n$/,
     );
+  });
+
+  it("refuses an [Unreleased] bullet with no ### Kind heading, writing nothing", () => {
+    const log = BASE.replace("## [Unreleased]\n", "## [Unreleased]\n\n- orphan bullet (#9)\n");
+    const d = repo(log);
+    frag(d, "1351-new.md", "kind: Changed\n\nNew entry (#1351)\n");
+    expect(() => collate(d, "2.20.0", "2026-10-08")).toThrow(/orphan bullet/);
+    expect(readFileSync(join(d, "CHANGELOG.md"), "utf-8")).toBe(log);
+    expect(existsSync(join(d, "changelog.d", "1351-new.md"))).toBe(true);
+    expect(() => unreleasedBullets("\nsome prose\n")).toThrow(/some prose/);
+  });
+
+  it("every pre-switch [Unreleased] bullet lives in a migrated fragment or CHANGELOG.md (AC-5)", () => {
+    const fixture = readFileSync(FIXTURE, "utf-8");
+    const before = bullets(fixture.slice(fixture.indexOf("## [Unreleased]"))).map(
+      (b) => b.slice(2),
+    );
+    expect(before.length).toBeGreaterThan(10);
+    const root = join(here, "..");
+    const bodies = readFragments(join(root, "changelog.d")).map((f) => f.body);
+    // After a release collates and deletes the fragments, the bullets live on
+    // in a released section of CHANGELOG.md.
+    const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf-8");
+    const missing = before.filter(
+      (b) => !bodies.some((x) => x.startsWith(b)) && !changelog.includes(b),
+    );
+    expect(missing).toEqual([]);
   });
 
   it("two branches that each add a fragment merge without conflict (AC-4)", () => {
