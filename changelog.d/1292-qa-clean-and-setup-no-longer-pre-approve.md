@@ -1,0 +1,3 @@
+kind: Fixed
+
+**`/qa`, `/clean` and `/setup` no longer pre-approve file-deleting or API wildcards (#1292).** `/qa` drops `Bash(gh api:*)`, which also allowed `gh api -X DELETE`. `/clean` drops `Bash(rm:*)` and `Bash(find:*)`, and narrows `Bash(mv:*)` to moves into `docs/archive/` and `scripts/archive/`. `/setup` narrows `Bash(cp:*)`, `Bash(cat:*)` and `Bash(sed:*)` to the files it writes or reads. When you run these skills by hand, the removed commands now ask for permission; `sequant run` phases are unaffected. The #1287 gate test now also rejects `Bash(<tool>:*)` for `gh api`, `rm`, `mv`, `find`, `sed` and `cp`, unless an allowlist entry gives a reason.

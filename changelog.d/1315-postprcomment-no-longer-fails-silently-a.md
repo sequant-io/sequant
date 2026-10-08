@@ -1,0 +1,3 @@
+kind: Fixed
+
+**`postPRComment` no longer fails silently, and the ready gate no longer swallows a failed report post (#1315).** `GitHubProvider.postPRComment` had the same unchecked `spawnSync` as #1312 and now throws with `gh`'s stderr. The ready gate's `postReport` catch was empty; it now logs `Failed to post ready-gate report for #N: <error>` (through the new optional `log` option, default `console.warn`) and stays non-fatal. `PlatformProvider`'s doc comment now states the contract: every async method rejects on failure, except `checkAuth`, which answers `false`. `getIssueComments` now follows it and rejects instead of resolving `[]` when `gh` fails.

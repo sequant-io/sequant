@@ -1,0 +1,3 @@
+kind: Added
+
+**A PR from a `sequant run` that QA has not reviewed says so (#1246).** The automated PR body carries one line, `> **QA has not run** — phases run: spec, exec. …`, until QA has reviewed the latest exec: a qa pass after the run's last exec, or, in a run with no exec, a qa an earlier run completed (`--resume` past qa). The post-QA update replaces it with the verdict note, or drops it for `READY_FOR_MERGE`, and a later qa-only run on the same PR removes it too. A run that skips qa (`--phases exec`, MCP `phases: "spec,exec"`) or stops before it keeps the line. No draft PRs; the PR-creation gate is unchanged. The MCP `sequant_run` `phases` description no longer offers `'spec,exec'` as a way to "skip QA".

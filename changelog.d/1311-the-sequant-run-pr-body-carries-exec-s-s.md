@@ -1,0 +1,3 @@
+kind: Fixed
+
+**The `sequant run` PR body carries exec's `## Summary` again (#1311).** The Claude Code, Codex and opencode drivers joined the agent's text messages with no separator, so a message ending mid-line ("Now the edits.") glued onto exec's final `## Summary` and the line-anchored heading was never found; the PR got the placeholder body even though exec wrote a full summary (4 of 4 runs on 2026-10-05). Messages now start on their own line. The placeholder warning also printed nowhere under the MCP server, because per-issue logging is off in parallel mode; it now prints there and names the exec output's length, so "exec wrote nothing" and "exec's summary was missed" read differently.
