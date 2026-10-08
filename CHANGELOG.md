@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
+
 ### Added
 
 - **The `main` ruleset payload uses a merge queue instead of strict up-to-date (#1350).** `scripts/ruleset-main.sh --print` now drops `strict_required_status_checks_policy`, adds a squash `merge_queue` rule and lists `canary` beside `test` (the live ruleset already required both). `ci.yml` runs on `merge_group` so queued PRs get their checks. The live ruleset is unchanged: applying the queue waits on #1368, where `/release` learns to wait for a queued merge before tagging.

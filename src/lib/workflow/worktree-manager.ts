@@ -732,9 +732,14 @@ export function installWorktreeDeps(
   // check `pm` falls back to `"npm"` (JS-only detection) and always attempts
   // `npm ci` against a tree with no package.json to install from (#1196).
   if (!hasManifestForPackageManager(pm, worktreePath)) {
+    // JS managers key off package.json alone; naming it (and the root) tells a
+    // subdirectory-package repo (`agent/package.json`) why nothing installed.
+    const isPython = pm === "pip" || pm === "poetry" || pm === "uv";
     console.log(
       chalk.gray(
-        `    Skipping dependency install — no manifest found for ${pm}`,
+        isPython
+          ? `    Skipping dependency install — no manifest found for ${pm}`
+          : `    Skipping dependency install — no package.json at the worktree root`,
       ),
     );
     return true;
