@@ -4,9 +4,11 @@ Thank you for your interest in contributing to Sequant! This document provides g
 
 ## Getting Started
 
+**Looking for something to work on?** Issues labelled [`good first issue`](https://github.com/sequant-io/sequant/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are scoped to a file or two and carry a "Start here" comment with the files to read and the commands to run. Comment on the issue when you pick one up.
+
 ### Prerequisites
 
-- Node.js 22.12.0 or higher
+- Node.js 22.13.0 or higher (the `engines` floor in `package.json`)
 - Git
 - GitHub CLI (`gh`) for testing issue integration
 
