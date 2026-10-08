@@ -27,6 +27,7 @@ export const ASSESSMENT_LABELS = ["upstream", "assessment"] as const;
 export function calculateSummary(findings: Finding[]): AssessmentSummary {
   const summary: AssessmentSummary = {
     breakingChanges: 0,
+    nameCollisions: 0,
     deprecations: 0,
     newTools: 0,
     hookChanges: 0,
@@ -38,6 +39,9 @@ export function calculateSummary(findings: Finding[]): AssessmentSummary {
     switch (finding.category) {
       case "breaking":
         summary.breakingChanges++;
+        break;
+      case "name-collision":
+        summary.nameCollisions++;
         break;
       case "deprecation":
         summary.deprecations++;
@@ -70,6 +74,7 @@ function getActionStatus(count: number, category: FindingCategory): string {
 
   switch (category) {
     case "breaking":
+    case "name-collision":
       return "Review required";
     case "deprecation":
       return "Review needed";
@@ -156,6 +161,9 @@ export function generateAssessmentReport(
     `| Breaking Changes | ${summary.breakingChanges} | ${getActionStatus(summary.breakingChanges, "breaking")} |`,
   );
   lines.push(
+    `| Name Collisions | ${summary.nameCollisions} | ${getActionStatus(summary.nameCollisions, "name-collision")} |`,
+  );
+  lines.push(
     `| Deprecations | ${summary.deprecations} | ${getActionStatus(summary.deprecations, "deprecation")} |`,
   );
   lines.push(
@@ -173,6 +181,7 @@ export function generateAssessmentReport(
   // Actionable section — breaking changes, deprecations, new tools, hook changes
   const actionableCategories: FindingCategory[] = [
     "breaking",
+    "name-collision",
     "deprecation",
     "new-tool",
     "hook-change",
@@ -249,6 +258,7 @@ export function generateFindingIssue(
   let prefix: string;
   switch (finding.category) {
     case "breaking":
+    case "name-collision":
       prefix = "fix";
       break;
     case "deprecation":
@@ -314,6 +324,9 @@ export function generateFindingIssue(
     case "breaking":
       labels.push("bug", "priority:high");
       break;
+    case "name-collision":
+      labels.push("bug");
+      break;
     case "deprecation":
       labels.push("bug");
       break;
@@ -348,6 +361,7 @@ export function generateBatchedSummaryReport(
   // Summary across all versions
   const totals: AssessmentSummary = {
     breakingChanges: 0,
+    nameCollisions: 0,
     deprecations: 0,
     newTools: 0,
     hookChanges: 0,
@@ -357,6 +371,7 @@ export function generateBatchedSummaryReport(
 
   for (const assessment of batched.assessments) {
     totals.breakingChanges += assessment.summary.breakingChanges;
+    totals.nameCollisions += assessment.summary.nameCollisions;
     totals.deprecations += assessment.summary.deprecations;
     totals.newTools += assessment.summary.newTools;
     totals.hookChanges += assessment.summary.hookChanges;
@@ -369,6 +384,7 @@ export function generateBatchedSummaryReport(
   lines.push("| Category | Total |");
   lines.push("|----------|-------|");
   lines.push(`| Breaking Changes | ${totals.breakingChanges} |`);
+  lines.push(`| Name Collisions | ${totals.nameCollisions} |`);
   lines.push(`| Deprecations | ${totals.deprecations} |`);
   lines.push(`| New Tools | ${totals.newTools} |`);
   lines.push(`| Hook Changes | ${totals.hookChanges} |`);
@@ -382,6 +398,7 @@ export function generateBatchedSummaryReport(
   for (const assessment of batched.assessments) {
     const actionable =
       assessment.summary.breakingChanges +
+      assessment.summary.nameCollisions +
       assessment.summary.deprecations +
       assessment.summary.newTools +
       assessment.summary.hookChanges +
@@ -455,6 +472,8 @@ function formatCategory(category: FindingCategory): string {
   switch (category) {
     case "breaking":
       return "Breaking Change";
+    case "name-collision":
+      return "Name Collision";
     case "deprecation":
       return "Deprecation";
     case "new-tool":

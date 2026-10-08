@@ -83,7 +83,7 @@ sequant doctor              # Verify installation health
 | Command | Purpose |
 |---------|---------|
 | `/testgen <issue>` | Generate test stubs from spec verification criteria |
-| `/verify` | CLI/script execution verification with captured output |
+| `/verify` | CLI/script execution verification with captured output (needs an issue number; bare `/verify` is a no-op) |
 | `/docs <issue>` | Generate admin-facing feature documentation |
 
 **Analysis & Utilities**

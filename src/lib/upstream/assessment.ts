@@ -13,7 +13,11 @@ import type {
   ReleaseData,
   UpstreamAssessment,
 } from "./types.js";
-import { analyzeRelease, selectIssueWorthy } from "./relevance.js";
+import {
+  analyzeRelease,
+  listShippedSkillNames,
+  selectIssueWorthy,
+} from "./relevance.js";
 import {
   calculateSummary,
   generateAssessmentReport,
@@ -152,7 +156,9 @@ export async function loadBaseline(
 ): Promise<Baseline> {
   try {
     const content = await readFile(path, "utf-8");
-    return JSON.parse(content) as Baseline;
+    const baseline = JSON.parse(content) as Baseline;
+    baseline.shippedNames ??= listShippedSkillNames();
+    return baseline;
   } catch {
     // Return default baseline if file doesn't exist
     console.warn("Baseline not found, using defaults");
@@ -180,6 +186,7 @@ export async function updateBaseline(
 ): Promise<void> {
   const baseline = await loadBaseline(path);
   baseline.lastAssessedVersion = version;
+  delete baseline.shippedNames; // derived on load; never persist a stale copy
   await saveBaseline(baseline, path);
 }
 
@@ -389,6 +396,7 @@ export async function runUpstream(
  */
 function getDefaultBaseline(): Baseline {
   return {
+    shippedNames: listShippedSkillNames(),
     lastAssessedVersion: null,
     schemaVersion: "1.0.0",
     tools: {

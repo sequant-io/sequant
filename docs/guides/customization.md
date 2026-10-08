@@ -160,6 +160,8 @@ When invoked as `/deploy`, deploy the application.
 
 > **Note:** Skill `allowed-tools` do not override project or user-level `deny` rules. See [Permission Precedence](../reference/permissions.md) for how layers interact.
 
+> **Warning:** Do not write `$0`, `$1` and so on in a skill's body. When a skill gets arguments, Claude Code replaces positional `$N` with them, also inside fenced code blocks. For example, `/qa 1249` turned `awk '{print substr($0, 2)}'` into `substr(1249, 2)`. Write awk fields as `$(0)`, `$(1)`, which Claude Code leaves alone and awk reads the same way. Sequant's own skills follow this rule, and `npm run lint:skill-argument-substitution` checks it in this repository (#1289).
+
 ## Customizing Hooks
 
 Hooks run before and after tool executions. Claude Code fires hooks from the `hooks` block of your settings files — it does **not** auto-discover scripts under `.claude/.local/hooks/`. Dropping a script there alone runs nothing; you must register it.

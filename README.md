@@ -30,12 +30,12 @@ Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, 
 
 ### Prerequisites
 
-- **An AI coding agent:** [Claude Code](https://claude.ai/code) (recommended ≥ 2.1.208) or [Aider](https://aider.chat/) via `--agent aider`. Experimental: [Codex](docs/features/codex-agent-backend.md) via `--agent codex`, [opencode](docs/troubleshooting.md#opencode-issues) via `--agent opencode` — read their notes before relying on either.
+- **An AI coding agent:** [Claude Code](https://claude.ai/code) (recommended ≥ 2.1.288) or [Aider](https://aider.chat/) via `--agent aider`. Experimental: [Codex](docs/features/codex-agent-backend.md) via `--agent codex`, [opencode](docs/troubleshooting.md#opencode-issues) via `--agent opencode` — read their notes before relying on either.
 - **[GitHub CLI](https://cli.github.com/)** (`gh auth login`) and **Git**.
 - **Node.js 22.13+** — for the npm/CLI install path only.
 - Optional MCP servers: `chrome-devtools` (browser tests via `/test`), `sequential-thinking`, `context7`.
 
-> **Why Claude Code ≥ 2.1.208?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`; its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
+> **Why Claude Code ≥ 2.1.288?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`. Its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208, and its coverage of `bash -c` / `sh -c` scripts (e.g. `bash -c "rm -rf ~"`) landed in 2.1.288. On an older version, a phase agent running `bash -c "rm -rf ~"` is not stopped by either side. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
 
 ### Install
 
@@ -91,11 +91,13 @@ SEQUANT WORKFLOW · #683
 
 QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
 
-### What's new in 2.19
+### What's new in 2.20
 
-- **One PR producer** — under `sequant run`, the run itself opens the PR right after exec (so QA reads its body) and updates it after QA with the QA note, ready-gate report and exec's summary. An existing PR for the branch is updated, not skipped.
-- **Spec stops on recurrence** — `/spec`'s Design Review treats a pattern fixed twice before as a stop, lists every producer of the artifact it changes, and can halt the run before exec when the issue prescribes the wrong lever.
-- **Easier adoption** — `sequant init --manifest-only` and `sequant sync --only skills`; `run.worktreeRoot` sets where worktrees go; `run.prIssueLink: "refs"` keeps a PR from auto-closing its issue.
+- **The PR says what QA did and didn't do** — until QA has reviewed the latest exec, the PR body says `QA has not run`. After QA it shows the latest verdict, exec's `## Summary` with its mutation records, and a `## Follow-ups` checklist of everything QA deferred. See [What the PR body carries](docs/features/run-pr-creation.md#what-the-pr-body-carries).
+- **QA closes its own loose ends** — every deferred item must end `filed #N`, `fixed in this PR` or `dropped: <reason>`. An unresolved item keeps the verdict below `READY_FOR_MERGE`.
+- **Failures are recorded, not just printed** — a model-ladder halt is recorded in the run log, the state and the MCP result. A failed `gh` comment or label post is now an error, not a silent success.
+- **Recommended Claude Code is now ≥ 2.1.288** — older versions don't stop a phase agent running `bash -c "rm -rf ~"`. See [Prerequisites](#prerequisites).
+- **Narrower skill permissions** — skills no longer pre-approve broad shell, `gh api`, `rm` or `find` access. When you run a skill by hand, those commands now ask first; `sequant run` is unaffected.
 
 Since 2.17, every release soaks on the `next` tag against a downstream canary — a real install of the previous minor, driven through `sync`, `init`, `update` and `doctor` by the new build — before it is promoted to `latest`.
 
@@ -280,7 +282,7 @@ Most work goes through a handful of top-level commands. The rest are either pipe
 | `/merger` | Multi-issue merge coordination. |
 | `/improve` | Codebase analysis and improvement discovery. |
 | `/security-review` | Deep security analysis. |
-| `/verify` | CLI/script execution verification. |
+| `/verify` | CLI/script execution verification. Needs an issue number; a bare `/verify` (such as Claude Code's pre-commit nudge) is a no-op. |
 | `/docs` · `/clean` · `/reflect` | Feature docs, repo cleanup, workflow reflection. |
 
 ### CLI utilities

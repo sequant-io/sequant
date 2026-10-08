@@ -1258,10 +1258,15 @@ export async function runIssueWithLogging(
             ],
           };
     // #1297 AC-3: say so when the body will be the placeholder.
+    // #1311 AC-3: name the length of the exec output used, so "exec wrote
+    // nothing" and "exec wrote a summary the extractor missed" read
+    // differently. console.log, not `log`: `log` is a no-op in parallel mode
+    // (every MCP run), which hid this warning; createPR's own warnings print
+    // the same way.
     if (!composeExecSummary(execOutput) && !execSummary?.trim()) {
-      log(
+      console.log(
         chalk.yellow(
-          "    !  PR body: exec output has no Summary or mutation markers; using placeholder",
+          `    !  PR body for #${issueNumber}: exec output (${execOutput?.length ?? 0} chars) has no Summary or mutation markers; using placeholder`,
         ),
       );
     }

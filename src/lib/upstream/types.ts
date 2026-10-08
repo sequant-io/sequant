@@ -8,6 +8,7 @@
  */
 export type FindingCategory =
   | "breaking"
+  | "name-collision"
   | "deprecation"
   | "new-tool"
   | "hook-change"
@@ -48,6 +49,8 @@ export interface Finding {
  */
 export interface AssessmentSummary {
   breakingChanges: number;
+  /** Changes naming a skill, hook or command sequant ships (#1345) */
+  nameCollisions: number;
   deprecations: number;
   newTools: number;
   hookChanges: number;
@@ -153,6 +156,8 @@ export interface Baseline {
   dependencyMap: Record<string, string[]>;
   /** Claude Code commands sequant's docs and skills tell users to run */
   commands?: string[];
+  /** Skill names sequant ships into projects (derived from templates/skills when absent) */
+  shippedNames?: string[];
   /** Patterns for changes that are out of scope for sequant (skipped during analysis) */
   outOfScope?: string[];
 }

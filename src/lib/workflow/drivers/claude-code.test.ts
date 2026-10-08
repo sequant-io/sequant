@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Mock } from "vitest";
 import { ClaudeCodeDriver } from "./claude-code.js";
+import { extractExecSummary } from "../worktree-manager.js";
 import {
   ApiError,
   RateLimitError,
@@ -688,6 +689,39 @@ describe("ClaudeCodeDriver", () => {
       expect(result.success).toBe(true);
       expect(result.structuredError).toBeUndefined();
       expect(result.output).toBe("done");
+    });
+  });
+
+  describe("#1311: assistant messages are joined so a final ## Summary starts a line", () => {
+    it("keeps exec's final ## Summary extractable after a message that ends mid-line", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "Now the edits." }] },
+          },
+          {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "text", text: "## Summary\n\nAll four docs fixed." },
+              ],
+            },
+          },
+          { type: "result", subtype: "success" },
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.output).toBe(
+        "Now the edits.\n## Summary\n\nAll four docs fixed.",
+      );
+      expect(extractExecSummary(result.output)).toContain(
+        "All four docs fixed.",
+      );
     });
   });
 

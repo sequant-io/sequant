@@ -62,6 +62,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { RingBuffer } from "../ring-buffer.js";
+import { joinAgentTexts } from "./agent-text.js";
 import { SequantError, SubprocessError } from "../../errors.js";
 import type {
   AgentDriver,
@@ -254,7 +255,8 @@ export class OpencodeStreamParser {
       this.consumeLine(this.buffer);
       this.buffer = "";
     }
-    this.state.output = this.texts.join("");
+    // #1311: each text part starts on its own line.
+    this.state.output = joinAgentTexts(this.texts);
     return this.state;
   }
 

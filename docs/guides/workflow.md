@@ -59,7 +59,7 @@ This guide covers the full Sequant workflow, including post-QA patterns used by 
 
 **When to use:**
 - `/test` for UI changes
-- `/verify` for CLI tools, scripts, commands
+- `/verify <issue>` for CLI tools, scripts, commands (a bare `/verify` is a no-op, so Claude Code's pre-commit nudge costs nothing)
 
 ## Phase 4: QA
 

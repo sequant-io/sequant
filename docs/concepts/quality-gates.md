@@ -302,10 +302,16 @@ Verdicts are determined by AC status counts:
 
 1. **If any AC is `NOT_MET` or `PARTIALLY_MET`:** → `AC_NOT_MET`
 2. **If any AC is `PENDING`:** → `NEEDS_VERIFICATION`
-3. **If improvements are suggested:** → `AC_MET_BUT_NOT_A_PLUS`
+3. **If improvements are suggested, or a deferred follow-up is unresolved:** → `AC_MET_BUT_NOT_A_PLUS`
 4. **Otherwise:** → `READY_FOR_MERGE`
 
 > **Important:** `PARTIALLY_MET` is treated as `NOT_MET` for verdict purposes. Partial implementations block merge.
+
+### Follow-up Ledger
+
+Every item an earlier phase deferred — spec's open questions and out-of-scope notes, exec's follow-ups, and QA's own `document` findings — must end in one of three states: `filed #N`, `fixed in this PR`, or `dropped: <reason>`. "Consider filing" and "out of scope" do not count. QA records the state but never files an issue itself. If any item is unresolved, the verdict is at most `AC_MET_BUT_NOT_A_PLUS`, in both Standard and Simple Fix mode (#1249). Under `sequant run`, the PR body lists these items as a `## Follow-ups` checklist (see [Automatic PR Creation](../features/run-pr-creation.md#what-the-pr-body-carries)).
+
+An AC that promises end-to-end delivery, such as "surfaces in the PR body", cannot be marked `MET` with that path listed under "Not tested". QA runs the path or marks the AC `PENDING`.
 
 ### Example
 

@@ -1020,6 +1020,48 @@ export function getStackConfig(stack: string): StackConfig {
   return STACKS[stack] || STACKS.generic;
 }
 
+/** Test runners that have a built-in "tests affected by changed files" mode. */
+export type AffectedTestRunner = "vitest" | "jest";
+
+/**
+ * Affected-tests command per runner. The JS stacks all share `npm test`, so
+ * the stack name cannot pick the flag; the runner decides.
+ */
+export const AFFECTED_TEST_COMMANDS: Record<AffectedTestRunner, string> = {
+  vitest: "npx vitest run --changed origin/main",
+  jest: "npx jest --changedSince=origin/main",
+};
+
+/** Detect vitest/jest from a package.json's dependencies; null when neither. */
+export function detectTestRunner(
+  root: string = process.cwd(),
+): AffectedTestRunner | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    if (deps.vitest) return "vitest";
+    if (deps.jest) return "jest";
+  } catch {
+    // no package.json, or unreadable: not a JS project
+  }
+  return null;
+}
+
+/**
+ * Command phases run instead of the full suite. Falls back to the stack's full
+ * `commands.test` when the runner is unknown or has no affected mode (pytest,
+ * cargo and go have none). CI keeps the full suite as the merge gate.
+ */
+export function resolveAffectedTestCommand(
+  stack: string,
+  runner: AffectedTestRunner | null = null,
+): string {
+  return (
+    (runner && AFFECTED_TEST_COMMANDS[runner]) ||
+    getStackConfig(stack).commands.test
+  );
+}
+
 /**
  * Stack-specific notes for constitution templates
  *
