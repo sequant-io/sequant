@@ -388,7 +388,11 @@ export class RunOrchestrator {
         );
       },
     });
-    this.cfg = { ...config, onProgress: this.wrapProgress(config.onProgress) };
+    this.cfg = {
+      ...config,
+      onProgress: this.wrapProgress(config.onProgress),
+      onPhasePlan: this.wrapPhasePlan(config.onPhasePlan),
+    };
     this.initIssueStates();
   }
 
@@ -415,6 +419,14 @@ export class RunOrchestrator {
    */
   getProgressCallback(): ProgressCallback {
     return this.cfg.onProgress!;
+  }
+
+  /**
+   * The wrapped phase-plan callback `batch-executor` fires once per issue
+   * when its phase pipeline resolves (#672, #1356).
+   */
+  getPhasePlanCallback(): PhasePlanCallback {
+    return this.cfg.onPhasePlan!;
   }
 
   /**
@@ -481,6 +493,38 @@ export class RunOrchestrator {
         status: "queued",
         phases,
       });
+    }
+  }
+
+  /**
+   * #1356: apply the resolved per-issue phase plan to `issueStates`, which the
+   * TUI draws from, before forwarding it. Without this the TUI kept
+   * `config.phases` and appended a label-inserted phase (e.g. `test`) when it
+   * started, so it showed after `qa` though it ran before it.
+   */
+  private wrapPhasePlan(external?: PhasePlanCallback): PhasePlanCallback {
+    return (issue, phases) => {
+      this.applyPhasePlan(issue, phases);
+      external?.(issue, phases);
+    };
+  }
+
+  /**
+   * Same merge as `RunRenderer.setPhasePlan`: phases already seen keep their
+   * state, planned phases enter as `pending`, and a seen phase outside the
+   * plan is kept at the end.
+   */
+  private applyPhasePlan(issue: number, phases: string[]): void {
+    const state = this.issueStates.get(issue);
+    if (!state) return;
+    const existing = new Map(state.phases.map((p) => [p.name, p]));
+    state.phases = phases.map(
+      (name) => existing.get(name) ?? { name, status: "pending" },
+    );
+    for (const prev of existing.values()) {
+      if (!phases.includes(prev.name) && prev.status !== "pending") {
+        state.phases.push(prev);
+      }
     }
   }
 
