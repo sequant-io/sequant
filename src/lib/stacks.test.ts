@@ -7,6 +7,8 @@ import {
   detectStackInDirectory,
   detectAllStacks,
   getStackConfig,
+  resolveAffectedTestCommand,
+  detectTestRunner,
   STACKS,
   detectPackageManager,
   detectPackageManagerSync,
@@ -1651,5 +1653,48 @@ describe("hasManifestForPackageManager (#1196 AC-1)", () => {
     // resolvePackageManager's fallback for an unrecognized directory is
     // "npm" — this is the exact tree that used to run a failing `npm ci`.
     expect(hasManifestForPackageManager("npm", root)).toBe(false);
+  });
+});
+
+describe("affectedTest command resolution", () => {
+  it("affectedTest: vitest and jest get their own flag", () => {
+    expect(resolveAffectedTestCommand("nextjs", "vitest")).toBe(
+      "npx vitest run --changed origin/main",
+    );
+    expect(resolveAffectedTestCommand("nextjs", "jest")).toBe(
+      "npx jest --changedSince=origin/main",
+    );
+  });
+
+  it("affectedTest: falls back to the full-suite command without a runner", () => {
+    expect(resolveAffectedTestCommand("nextjs", null)).toBe(
+      STACKS.nextjs.commands.test,
+    );
+    expect(resolveAffectedTestCommand("python")).toBe("pytest");
+    expect(resolveAffectedTestCommand("rust", null)).toBe("cargo test");
+    expect(resolveAffectedTestCommand("unknown-stack")).toBe(
+      STACKS.generic.commands.test,
+    );
+  });
+
+  it("affectedTest: detectTestRunner reads package.json deps", () => {
+    const dir = mkdtempSync(join(tmpdir(), "runner-"));
+    try {
+      expect(detectTestRunner(dir)).toBeNull();
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ devDependencies: { vitest: "^1" } }),
+      );
+      expect(detectTestRunner(dir)).toBe("vitest");
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ devDependencies: { jest: "^29" } }),
+      );
+      expect(detectTestRunner(dir)).toBe("jest");
+      writeFileSync(join(dir, "package.json"), "{}");
+      expect(detectTestRunner(dir)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

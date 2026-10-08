@@ -54,7 +54,7 @@ When invoked as `/exec`, your job is to:
 1. Take an existing, agreed plan and AC (often created by `/spec`).
 2. Create a feature worktree for the issue.
 3. Implement the changes in small, safe steps.
-4. Run checks via `npm test` and, when appropriate, `npm run build`.
+4. Run the affected tests (`npx vitest run --changed origin/main`, plus AC-named test files) and, when appropriate, `npm run build`.
 5. Iterate until the AC appear satisfied or clear blockers are reached.
 6. Draft a progress update for the GitHub issue.
 
@@ -246,7 +246,7 @@ fi
   block never calls `gh` itself, so it runs the same way in both places.
 - **Already on a non-base branch:** keep it. Do not create a second branch.
 - **The current clone is the worktree.** Everywhere below that says "the
-  worktree" or "the worktree path", read `$PWD`. Run `npm test`, `npm run build`,
+  worktree" or "the worktree path", read `$PWD`. Run the affected tests, `npm run build`,
   commits and `git push -u origin <branch>` from here, and `gh pr create` too
   when standalone.
 - **Never** run `./scripts/new-feature.sh` or `./scripts/dev/new-feature.sh`,
@@ -712,7 +712,7 @@ worktree).
 
 3. **Work in the worktree:**
    - All implementation work happens in the worktree directory
-   - Run `npm test` and `npm run build` from the worktree
+   - Run the affected tests (Section 3, "Affected tests") and `npm run build` from the worktree
    - Make commits in the worktree (they'll be on the feature branch)
 
 4. **After implementation is complete:**
@@ -1327,7 +1327,7 @@ If your project uses a database MCP (e.g., Supabase, Postgres):
 - Before and after meaningful changes, plan to run:
   - `npm run build` - TypeScript compilation
   - `npm run lint` - ESLint validation (catches unused imports, formatting issues)
-  - `npm test` - Run relevant tests
+  - The affected-tests run (below) - Run relevant tests
 - For larger changes or anything that might impact build/runtime:
   - Suggest running `npm run build` and interpret any errors.
 
@@ -1336,7 +1336,7 @@ If your project uses a database MCP (e.g., Supabase, Postgres):
 Before creating a PR, run ALL checks in this order:
 1. `npm run build` - Must pass (no TypeScript errors)
 2. `npm run lint` - Must pass (no ESLint errors)
-3. `npm test` - Must pass (all tests green)
+3. The affected-tests run (next section) - Must pass (all green). The full `npm test` is CI's job.
 
 If any check fails, fix the issues before creating the PR.
 
@@ -1368,20 +1368,63 @@ none filed an issue, and the same failures stopped a gate run a week later.
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
-**Foreground only (#1032).** Run every check — the full `npm test` above all — in the
+<!-- BEGIN: affected-tests (#1349) -->
+**Affected tests, not the full suite (#1349).** A phase runs the tests this branch
+affects; CI (`ci.yml` job `test`, a required check) runs the full suite on the PR, so a
+phase-level full run duplicates it and risks the 600 s Bash cap and the 30-minute
+no-progress wall. The command comes from the stack (`resolveAffectedTestCommand` in
+`src/lib/stacks.ts`): vitest `npx vitest run --changed origin/main`, jest
+`npx jest --changedSince=origin/main`. A stack with no affected mode (pytest, cargo, go,
+or an unknown JS runner) runs its full test command instead.
+
+```bash
+git fetch origin main -q                                # --changed diffs against origin/main
+timeout 600 npx vitest run --changed origin/main 2>&1 | tail -80
+```
+
+`--changed` follows the static import graph, so it misses tests that read a `SKILL.md` or
+fixture through `fs`. Add three more sets and run them in the same foreground call
+(`timeout 600 npx vitest run <files…>`; a vitest run takes the union of file filters):
+
+1. **Test files named in an AC's `Evidence:` command.**
+2. **Every changed test file** (`git diff --name-only origin/main...HEAD | grep -E '\.(test|spec)\.'`).
+3. **Tests that read a changed non-test file.** For each changed path, list the tests that
+   mention it: `grep -rlF "<changed path>" --include='*.test.ts' --exclude-dir=node_modules .`
+   (a gate test names the file it reads, e.g. `.claude/skills/exec/SKILL.md`).
+4. **Whole-tree scanners.** Some tests read every file of a kind rather than one path,
+   so no rule above selects them. In this repo:
+   - any test file changed → `scripts/qa/tautology-detector-cli.test.ts` (a new
+     tautological test fails it, not itself; #1104, #1136);
+   - any skill file changed → every test that iterates the skill trees:
+     `grep -rlw SKILL_ROOTS --include='*.test.ts' --exclude-dir=node_modules .` (e.g.
+     the allowed-tools gate, which rejects a new `Bash(npx …:*)` grant in any skill).
+
+**Large affected sets.** A module many files import can select a big share of the suite:
+a one-line change to `src/lib/workflow/mutation-marker.ts` selects 60 of 373 test files
+and ran past 300 s. Count first (about 3 s):
+`npx vitest list --changed origin/main --filesOnly | wc -l`. Above ~40 files, run the set
+as three foreground calls, `--shard=1/3`, `--shard=2/3`, `--shard=3/3`, each under
+`timeout 590`, so no single call meets the 600 s Bash cap.
+
+Do not run the bare `npm test` in a phase. If the issue's runner note already forbids the
+full suite, this section is how you still cover the branch. Record the command and the
+file list in the Summary.
+<!-- END: affected-tests (#1349) -->
+
+**Foreground only (#1032).** Run every check — the affected-tests run above all — in the
 foreground with a `timeout`, after committing a WIP:
 
 ```bash
-git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the full suite"
-timeout 600 npm test 2>&1 | tail -80
+git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the test run"
+timeout 600 npx vitest run --changed origin/main 2>&1 | tail -80   # vitest; other stacks: the command from "Affected tests" above
 ```
 
 `timeout` is GNU coreutils and stock macOS does not ship it (`brew install coreutils`); the
-portable equivalent is `perl -e 'alarm shift; exec @ARGV' 600 npm test 2>&1 | tail -80`
+portable equivalent is `perl -e 'alarm shift; exec @ARGV' 600 <command> 2>&1 | tail -80`
 (`alarm` survives `exec`; perl is on every macOS and Linux box). Never drop the limit.
 
-Run the full suite **exactly once per phase**, as the last check before the PR — not
-once before the mutation probes and again after them. Two full runs in one exec phase
+Run the affected set **exactly once per phase**, as the last check before the PR — not
+once before the mutation probes and again after them. Two long runs in one exec phase
 is how #1024's first attempt hit the orchestrator's 30-minute wall with everything else
 already done; targeted `npx vitest run <file>` is the right tool while iterating.
 
@@ -1397,7 +1440,7 @@ form above is the only supported way to run the suite in a phase.
 
 **Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
 
-**After running `npm test`, you MUST analyze test coverage for changed files:**
+**After the affected-tests run, you MUST analyze test coverage for changed files:**
 
 Use the Glob tool to check for corresponding test files:
 ```
@@ -1528,7 +1571,7 @@ It prints `N verdict changes` (exit 0 only when N is 0). Put each change in the 
 
 **Purpose:** Catch ESLint errors locally before they fail CI. This prevents wasted quality loop iterations from lint failures.
 
-**When to run:** Before every PR creation. Run after `npm run build` succeeds, before `npm test`.
+**When to run:** Before every PR creation. Run after `npm run build` succeeds, before the affected-tests run.
 
 **Execution:**
 
@@ -1581,7 +1624,7 @@ fi
    - Formatting issues → Run auto-fix if available
 3. **Fix the issues** - make minimal changes
 4. **Re-run lint** - verify all errors are resolved
-5. **Then continue** - to `npm test`
+5. **Then continue** - to the affected-tests run
 
 **Scope formatting to your own diff (#1165).** Run formatters only on files in `git diff --name-only origin/main...HEAD` (plus new files you created), never on a directory glob. Before any `git add -A`, including the WIP checkpoint above, read `git status --short` and check that every path listed is one you meant to change. A glob-wide `prettier --write` reformats files you never touched, and `git add -A` then commits them into your PR.
 
@@ -1781,7 +1824,7 @@ function internalHelper(): void {
 - After each meaningful change:
   1. Run `npm run build` (if TypeScript changes)
   2. Run `npm run lint` (catches unused imports early)
-  3. Run `npm test`
+  3. Run the affected tests (Section 3, "Affected tests")
   4. If checks fail:
      - Inspect the failure output.
      - Identify the root cause.
@@ -2169,7 +2212,7 @@ Grep(pattern="filename", path="__tests__/")
 **If tests are found:**
 1. Review what the tests are checking (file existence vs. content)
 2. Update tests to check the new location if content moved
-3. Run `npm test` after ALL file conversions are complete
+3. Run the affected tests after ALL file conversions are complete
 
 **Why this matters:** Tests may pass during implementation but fail after final changes if they depend on content that was converted to a stub or moved elsewhere.
 
@@ -2207,7 +2250,7 @@ The goal is to satisfy AC with the smallest, safest change possible.
 - **Coverage gaps:** [Which changed files lack corresponding tests, and why is that acceptable?]
 ```
 
-**If either field reveals concerns**, address them before creating the PR. Re-run `npm test` and `npm run build` after fixes.
+**If either field reveals concerns**, address them before creating the PR. Re-run the affected tests and `npm run build` after fixes.
 
 ---
 
@@ -2225,7 +2268,7 @@ At the end of a session:
 1. Summarize:
    - Which AC items appear satisfied (AC-1, AC-2, ...).
    - Which AC items are partially or not yet satisfied.
-   - Which checks were run and their outcomes (`npm test`, `npm run build`, etc.).
+   - Which checks were run and their outcomes (the affected-tests run, `npm run build`, etc.).
    - Any remaining TODOs or recommended follow-ups.
 
 2. Draft a Markdown snippet as a **progress update** for the GitHub issue:
@@ -2288,7 +2331,7 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 - [ ] **Pre-PR Confidence Check** - Weakest part and coverage gaps stated
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
-- [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and `npm test`
+- [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and the affected-tests run (command + file list)
 - [ ] **CLI Wiring Check** - If option interfaces modified, verified CLI flags are registered (Section 3g)
 - [ ] **Quality Plan Alignment** - Included if quality plan was available (or marked N/A if no quality plan)
 - [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions); under `SEQUANT_ORCHESTRATOR`, "left to the orchestrator" with the pushed branch name (#1247)
