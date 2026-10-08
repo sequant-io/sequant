@@ -1,0 +1,75 @@
+name: Gitleaks
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    name: Gitleaks scan
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitleaks (pinned, checksum verified)
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install gitleaks /usr/local/bin/gitleaks
+
+      - name: Scan the commits in this change
+        # Event values reach the script through env, never ${{ }} inside run:.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
+            RANGE="${MG_BASE_SHA}..${MG_HEAD_SHA}"
+          else
+            RANGE="origin/${BASE_REF}..HEAD"
+          fi
+          gitleaks detect --config .gitleaks.toml --redact --verbose --log-opts="${RANGE}"
+
+      - name: Scan the working tree
+        run: gitleaks dir --config .gitleaks.toml --redact --verbose .
+
+      # The rule tests skip where gitleaks is absent (the main `test` job), so
+      # run them here, where the pinned binary is installed, and require it.
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test the project rules
+        env:
+          SEQUANT_REQUIRE_GITLEAKS: "1"
+        run: npx vitest run __tests__/gitleaks-config.integration.test.ts
+
+      - name: Fail if an entire/ ref exists on origin
+        run: |
+          set -euo pipefail
+          refs="$(git ls-remote --heads origin 'entire/*')"
+          if [ -n "${refs}" ]; then
+            echo "entire/ refs hold session transcripts and must never be pushed:"
+            echo "${refs}"
+            exit 1
+          fi
