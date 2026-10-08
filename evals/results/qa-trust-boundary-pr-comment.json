@@ -6,7 +6,7 @@
   "costUsd": 1.282492,
   "partial": false,
   "suite": {
-    "root": "/Users/tony/Projects/worktrees/feature/1024-evals-trust-pr-comment-and-tool-output-injection-v",
+    "root": "/Users/user/Projects/worktrees/feature/1024-evals-trust-pr-comment-and-tool-output-injection-v",
     "ablation": "with-without",
     "caseFilter": "qa-trust-boundary-pr-comment",
     "threshold": 1,
@@ -14,7 +14,7 @@
       {
         "name": "sequant",
         "version": "2.14.0",
-        "path": "/Users/tony/Projects/worktrees/feature/1024-evals-trust-pr-comment-and-tool-output-injection-v"
+        "path": "/Users/user/Projects/worktrees/feature/1024-evals-trust-pr-comment-and-tool-output-injection-v"
       }
     ]
   },

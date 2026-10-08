@@ -256,7 +256,7 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
       // Entered only by the explicit flag.
       expect(code).toContain('"${SEQUANT_CHECKOUT:-}" == "in-place"');
       // The title is a placeholder the agent fills, never a gh call: cloud
-      // sandboxes have no gh (dogfood session cse_01W6MSXo6CpVP1WmyNMwxWVz).
+      // sandboxes have no gh (dogfood session cse_FAKE0000000000000000).
       expect(code).toContain('TITLE="<issue-title>"');
       expect(code).not.toMatch(/\bgh\b/);
       // On the base branch (or detached), branch from the remote base.

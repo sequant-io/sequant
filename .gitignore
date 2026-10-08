@@ -68,3 +68,6 @@ scripts/dev/
 
 # Test projects
 sequant/
+
+# Local gitleaks rules with literals too sensitive for the public config
+.gitleaks.local.toml

@@ -1,0 +1,59 @@
+# gitleaks config for this PUBLIC repository (#1352).
+# Extends the default credential rules with rules for leaks generic scanners
+# miss: the maintainer's home path and Claude Code session links.
+# Never write a sensitive literal (project name, gated flag) into this file;
+# match by shape only. Local-only literals belong in .gitleaks.local.toml
+# (untracked, loaded by scripts/gitleaks-precommit.sh).
+
+title = "sequant"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "home-path"
+description = "Absolute home directory path of a real user"
+regex = '''(?:/Users|/home)/[A-Za-z0-9._-]+/'''
+keywords = ["/users/", "/home/"]
+
+[[rules.allowlists]]
+description = "Documentation and test placeholder names, not real accounts"
+regexTarget = "match"
+regexes = [
+  '''(?i)/(?:Users|home)/(?:user|you|dev|test|yourname|username|runner|me|cwd|u|x|foo|name|example|node_modules)/''',
+]
+
+[[rules]]
+id = "claude-session-url"
+description = "Claude Code session link"
+regex = '''claude\.ai/code/session_[A-Za-z0-9]+'''
+keywords = ["claude.ai/code/session_"]
+
+[[rules.allowlists]]
+description = "Obviously fake ids used as test input"
+regexTarget = "match"
+regexes = ['''session_FAKE[A-Za-z0-9]*''']
+
+[[rules]]
+id = "claude-cse-id"
+description = "Claude cloud session id"
+regex = '''\bcse_[A-Za-z0-9]{16,}'''
+keywords = ["cse_"]
+
+[[rules.allowlists]]
+description = "Obviously fake ids used as test input"
+regexTarget = "match"
+regexes = ['''cse_FAKE[A-Za-z0-9]*''']
+
+[allowlist]
+description = "Files that quote the patterns on purpose, and fake test credentials"
+regexes = [
+  # Fake credentials in driver and redaction tests (synthetic ids, not secrets).
+  '''01a09759-a395-71f1-8082-2877a06a36fc''',
+  '''ses_f85b1aea3ffenqNLD1eXrjMF34''',
+  '''abcdef123456SECRETVALUE''',
+]
+paths = [
+  '''^\.gitleaks\.toml$''',
+  '''^docs/reference/secret-scanning\.md$''',
+]

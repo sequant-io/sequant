@@ -1,0 +1,9 @@
+# Findings gitleaks may skip, by fingerprint (commit:file:rule:line). Each entry
+# pins one commit, so it never hides a new leak. Add one only for a fake
+# fixture that an earlier commit on a branch committed and a later one removed;
+# after a squash merge the commit is gone from main and the entry is inert.
+# #1352 round 1: fake home paths and a fake session URL, rebuilt at run time in 2119fcea.
+d718c03e4bc894b46a676fbfbfb53c64847f8edb:__tests__/gitleaks-config.integration.test.ts:claude-session-url:69
+d718c03e4bc894b46a676fbfbfb53c64847f8edb:__tests__/gitleaks-config.integration.test.ts:home-path:59
+d718c03e4bc894b46a676fbfbfb53c64847f8edb:__tests__/gitleaks-config.integration.test.ts:home-path:79
+d718c03e4bc894b46a676fbfbfb53c64847f8edb:__tests__/gitleaks-config.integration.test.ts:home-path:81
