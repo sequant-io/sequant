@@ -126,6 +126,10 @@ import {
   runSkillsPreflight,
   SYNC_ONLY_SKILLS_NOTE,
 } from "./skills-preflight.js";
+import {
+  formatSkillsCommitWarning,
+  getSkillsCommitState,
+} from "../skills-commit-state.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import { formatEscalationTriggerLabel } from "./model-ladder.js";
@@ -388,7 +392,11 @@ export class RunOrchestrator {
         );
       },
     });
-    this.cfg = { ...config, onProgress: this.wrapProgress(config.onProgress) };
+    this.cfg = {
+      ...config,
+      onProgress: this.wrapProgress(config.onProgress),
+      onPhasePlan: this.wrapPhasePlan(config.onPhasePlan),
+    };
     this.initIssueStates();
   }
 
@@ -415,6 +423,14 @@ export class RunOrchestrator {
    */
   getProgressCallback(): ProgressCallback {
     return this.cfg.onProgress!;
+  }
+
+  /**
+   * The wrapped phase-plan callback `batch-executor` fires once per issue
+   * when its phase pipeline resolves (#672, #1356).
+   */
+  getPhasePlanCallback(): PhasePlanCallback {
+    return this.cfg.onPhasePlan!;
   }
 
   /**
@@ -481,6 +497,38 @@ export class RunOrchestrator {
         status: "queued",
         phases,
       });
+    }
+  }
+
+  /**
+   * #1356: apply the resolved per-issue phase plan to `issueStates`, which the
+   * TUI draws from, before forwarding it. Without this the TUI kept
+   * `config.phases` and appended a label-inserted phase (e.g. `test`) when it
+   * started, so it showed after `qa` though it ran before it.
+   */
+  private wrapPhasePlan(external?: PhasePlanCallback): PhasePlanCallback {
+    return (issue, phases) => {
+      this.applyPhasePlan(issue, phases);
+      external?.(issue, phases);
+    };
+  }
+
+  /**
+   * Same merge as `RunRenderer.setPhasePlan`: phases already seen keep their
+   * state, planned phases enter as `pending`, and a seen phase outside the
+   * plan is kept at the end.
+   */
+  private applyPhasePlan(issue: number, phases: string[]): void {
+    const state = this.issueStates.get(issue);
+    if (!state) return;
+    const existing = new Map(state.phases.map((p) => [p.name, p]));
+    state.phases = phases.map(
+      (name) => existing.get(name) ?? { name, status: "pending" },
+    );
+    for (const prev of existing.values()) {
+      if (!phases.includes(prev.name) && prev.status !== "pending") {
+        state.phases.push(prev);
+      }
     }
   }
 
@@ -1183,6 +1231,21 @@ export class RunOrchestrator {
       logWriter: null,
       wallClockDurationSeconds: wallClock(),
     });
+
+    // #1354: worktrees are checked out from git, so uncommitted skill edits
+    // in the main checkout (typically an uncommitted `sequant sync`) never
+    // reach a phase. Warn, naming the committed version phases will run.
+    if (skillsPreflightActive && useWorktreeIsolation) {
+      const warning = formatSkillsCommitWarning(
+        getSkillsCommitState(process.cwd()),
+      );
+      if (warning) {
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.yellow(`\n  !  ${warning}`),
+        );
+      }
+    }
 
     // ── Main-checkout skills pre-flight (#1193) ────────────────────────
     // Spec (and verify/merger) are `requiresWorktree: false`: they run in the

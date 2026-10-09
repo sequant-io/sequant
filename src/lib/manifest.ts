@@ -72,6 +72,14 @@ export async function readManifestStrict(): Promise<Manifest | null> {
   return JSON.parse(content) as Manifest;
 }
 
+/**
+ * Serialize the manifest as written to disk. Ends with a newline so the file
+ * passes Prettier / `insert_final_newline` checks in the user's repo (#1355).
+ */
+function serializeManifest(manifest: Manifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
 export async function createManifest(
   stack: string,
   packageManager?: PackageManager,
@@ -84,7 +92,7 @@ export async function createManifest(
     files: {},
   };
 
-  await writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+  await writeFile(MANIFEST_PATH, serializeManifest(manifest));
 }
 
 export async function updateManifest(): Promise<void> {
@@ -101,5 +109,5 @@ export async function updateManifest(): Promise<void> {
   }
   manifest.updatedAt = new Date().toISOString();
 
-  await writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+  await writeFile(MANIFEST_PATH, serializeManifest(manifest));
 }

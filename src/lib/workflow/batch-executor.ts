@@ -104,6 +104,7 @@ import {
   type ReadyPhaseRunner,
 } from "./ready-gate.js";
 import { isCompletedIssueStatus } from "./completed-status.js";
+import { bracketedConsoleLog } from "./notice.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -948,7 +949,7 @@ export async function postQaVerdictComment(
     const body = buildQaVerdictComment(verdict, summary, commitHash, iteration);
     await postComment(issueNumber, body);
   } catch (err) {
-    log(chalk.yellow(`    !  Failed to post QA verdict comment: ${err}`));
+    log(`    !  Failed to post QA verdict comment: ${err}`);
   }
 }
 
@@ -970,6 +971,8 @@ interface ReadyGateForIssueArgs {
   phasePauseHandle?: PhasePauseHandle;
   onProgress?: ProgressCallback;
   log: (message: string) => void;
+  /** Warning channel (#1342); survives parallel mode. Defaults to `log`. */
+  warn?: (message: string) => void;
   /** @internal Injected for testing — defaults to the real engine. */
   runGate?: typeof runReadyGate;
   /** @internal Injected for testing — defaults to on-disk settings. */
@@ -1016,6 +1019,7 @@ async function runReadyGateForIssue(
     onProgress,
     log,
   } = args;
+  const warn = args.warn ?? log;
   const runGate = args.runGate ?? runReadyGate;
   const getSettingsFn = args.getSettingsFn ?? getSettings;
   const fetchBody =
@@ -1074,25 +1078,23 @@ async function runReadyGateForIssue(
       log,
     });
 
-    log(
-      result.ready
-        ? chalk.green(
-            `  ✓ Ready gate: ${result.reason} — awaiting human merge (never merged)`,
-          )
-        : chalk.yellow(
-            `  ⚠️  Ready gate halted: ${result.reason} — needs human review`,
-          ),
-    );
+    if (result.ready) {
+      log(
+        chalk.green(
+          `  ✓ Ready gate: ${result.reason} — awaiting human merge (never merged)`,
+        ),
+      );
+    } else {
+      warn(`  ⚠️  Ready gate halted: ${result.reason} — needs human review`);
+    }
 
     return { result };
   } catch (err) {
     // Non-fatal: keep the run going to PR with the standard status, but hand
     // the reason back so the summary can say the gate did NOT run.
     const error = err instanceof Error ? err.message : String(err);
-    log(
-      chalk.yellow(
-        `  ⚠️  Ready gate failed for #${issueNumber}: ${error} — continuing to PR without the gate.`,
-      ),
+    warn(
+      `  ⚠️  Ready gate failed for #${issueNumber}: ${error} — continuing to PR without the gate.`,
     );
     return { error };
   }
@@ -1136,6 +1138,11 @@ export async function runIssueWithLogging(
   // In parallel mode, suppress per-issue terminal output to prevent interleaving.
   // The caller (run.ts) handles progress display via updateProgress().
   const log = config.parallel ? () => {} : console.log.bind(console);
+  // Warnings are not progress (#1342): they must survive parallel mode, which
+  // is every MCP run. Routed through the renderer's notice channel so a live
+  // TUI zone is not corrupted by a raw stdout write (#655, #647).
+  const warn = (message: string): void =>
+    bracketedConsoleLog(phasePauseHandle, chalk.yellow(message));
 
   log(chalk.blue(`\n  Issue #${issueNumber}`));
   if (worktreePath) {
@@ -1166,7 +1173,7 @@ export async function runIssueWithLogging(
     } catch (error) {
       // State tracking errors shouldn't stop execution
       if (config.verbose) {
-        log(chalk.yellow(`    !  State tracking error: ${error}`));
+        warn(`    !  State tracking error: ${error}`);
       }
     }
   }
@@ -1260,14 +1267,11 @@ export async function runIssueWithLogging(
     // #1297 AC-3: say so when the body will be the placeholder.
     // #1311 AC-3: name the length of the exec output used, so "exec wrote
     // nothing" and "exec wrote a summary the extractor missed" read
-    // differently. console.log, not `log`: `log` is a no-op in parallel mode
-    // (every MCP run), which hid this warning; createPR's own warnings print
-    // the same way.
+    // differently. `warn`, not `log`: `log` is a no-op in parallel mode
+    // (every MCP run), which hid this warning.
     if (!composeExecSummary(execOutput) && !execSummary?.trim()) {
-      console.log(
-        chalk.yellow(
-          `    !  PR body for #${issueNumber}: exec output (${execOutput?.length ?? 0} chars) has no Summary or mutation markers; using placeholder`,
-        ),
+      warn(
+        `    !  PR body for #${issueNumber}: exec output (${execOutput?.length ?? 0} chars) has no Summary or mutation markers; using placeholder`,
       );
     }
     const prResult = createPR(
@@ -1314,7 +1318,7 @@ export async function runIssueWithLogging(
         stateManager: stateManager ?? null,
       });
       if (relayActivation.warning && config.verbose) {
-        log(chalk.yellow(`    !  Relay: ${relayActivation.warning}`));
+        warn(`    !  Relay: ${relayActivation.warning}`);
       } else if (relayActivation.activated && config.verbose) {
         log(
           chalk.gray(
@@ -1324,7 +1328,7 @@ export async function runIssueWithLogging(
       }
     } catch (err) {
       if (config.verbose) {
-        log(chalk.yellow(`    !  Relay activation failed: ${err}`));
+        warn(`    !  Relay activation failed: ${err}`);
       }
     }
   }
@@ -1559,7 +1563,7 @@ export async function runIssueWithLogging(
       ? buildBundle("SPEC_DIVERGENCE", "spec", specResult.specDivergence)
       : null;
     if (specBundle) {
-      log(chalk.yellow(formatEvidenceBundle(specBundle)));
+      warn(formatEvidenceBundle(specBundle));
     }
 
     if (!specResult.success || specResult.specDivergence) {
@@ -1630,10 +1634,8 @@ export async function runIssueWithLogging(
         ),
       );
     } else {
-      log(
-        chalk.yellow(
-          `    Could not parse spec recommendation, using label-based detection`,
-        ),
+      warn(
+        `    Could not parse spec recommendation, using label-based detection`,
       );
       log(chalk.gray(`    Fallback: ${phases.join(" → ")}`));
     }
@@ -1788,9 +1790,7 @@ export async function runIssueWithLogging(
 
     if (useQualityLoop && iteration > 1) {
       log(
-        chalk.yellow(
-          `    Quality loop iteration ${iteration}/${maxIterations}`,
-        ),
+        chalk.cyan(`    Quality loop iteration ${iteration}/${maxIterations}`),
       );
       loopTriggered = true;
     }
@@ -1901,7 +1901,7 @@ export async function runIssueWithLogging(
       if (phaseTopOfLadder) {
         haltedByDivergence = "TOP_OF_LADDER";
         divergenceBundle = buildBundle("TOP_OF_LADDER", phase);
-        log(chalk.yellow(formatEvidenceBundle(divergenceBundle)));
+        warn(formatEvidenceBundle(divergenceBundle));
         phasesFailed = true;
         break;
       }
@@ -2045,7 +2045,7 @@ export async function runIssueWithLogging(
           result.summary,
           verdictCommitHash,
           iteration,
-          log,
+          warn,
           injectedPostComment,
         );
       }
@@ -2186,10 +2186,8 @@ export async function runIssueWithLogging(
       ) {
         const early = await openOrUpdatePR(worktreePath, branch);
         if (early.attempted && !early.success) {
-          log(
-            chalk.yellow(
-              `    !  PR after exec failed (retried after QA): ${early.error ?? "unknown error"}`,
-            ),
+          warn(
+            `    !  PR after exec failed (retried after QA): ${early.error ?? "unknown error"}`,
           );
         }
       }
@@ -2207,7 +2205,7 @@ export async function runIssueWithLogging(
       // the exit status.
       if (haltedByDivergence === "SPEC_DIVERGENCE" && divergenceBundle) {
         phasesFailed = true;
-        log(chalk.yellow(formatEvidenceBundle(divergenceBundle)));
+        warn(formatEvidenceBundle(divergenceBundle));
         break;
       }
 
@@ -2435,7 +2433,7 @@ export async function runIssueWithLogging(
             "DIVERGENCE_SUSPECT",
             phases[phases.length - 1],
           );
-          log(chalk.yellow(formatEvidenceBundle(divergenceBundle)));
+          warn(formatEvidenceBundle(divergenceBundle));
         }
       } else {
         // Any other classification breaks the streak: the halt is about a
@@ -2489,6 +2487,7 @@ export async function runIssueWithLogging(
           phasePauseHandle,
           onProgress,
           log,
+          warn,
         })
       : undefined;
   const readyGateResult = readyGateOutcome?.result;
@@ -2565,12 +2564,10 @@ export async function runIssueWithLogging(
           `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`
         : `so a re-run won't skip it (the chain resumes at its first unfinished link); ` +
           `commit the work in ${worktreePath} first so the next link builds on it.`;
-      log(
-        chalk.yellow(
-          `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
-            `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
-            `${finalStatus}, ${reRunConsequence}`,
-        ),
+      warn(
+        `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
+          `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
+          `${finalStatus}, ${reRunConsequence}`,
       );
     }
   }
@@ -2654,7 +2651,7 @@ export async function runIssueWithLogging(
       });
     } catch (err) {
       if (config.verbose) {
-        log(chalk.yellow(`    !  Relay deactivation failed: ${err}`));
+        warn(`    !  Relay deactivation failed: ${err}`);
       }
     }
   }
