@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`.sequant-manifest.json` ends with a newline (#1355).** `sequant init`, `sync` and `update` wrote the manifest with no final newline, so a repo whose CI runs `prettier --check` failed after every sync.
 - Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
 
 ### Added
