@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **`.sequant-manifest.json` ends with a newline (#1355).** `sequant init`, `sync` and `update` wrote the manifest with no final newline, so a repo whose CI runs `prettier --check` failed after every sync.
-- Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
-
 ### Added
 
 - **`/exec` and `/qa` run the tests a branch affects instead of the full suite (#1349).** `npx vitest run --changed origin/main` (jest: `--changedSince`), plus AC `Evidence:` test files, changed test files and tests that mention a changed file. Stacks with no affected mode keep the full command (`resolveAffectedTestCommand`). CI still runs everything.
@@ -22,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The run dashboard shows phases in the order they run (#1356).** When label detection adds a phase to `--phases` (e.g. `exec,qa` gains `test`), the dashboard's issue card listed it last, after `qa`, because the orchestrator never applied the resolved phase plan the plain-text renderer already used. It now does, so `exec ▸ test ▸ qa` reads correctly from the start, and a configured phase the plan dropped no longer lingers as pending.
+- **`.sequant-manifest.json` ends with a newline (#1355).** `sequant init`, `sync` and `update` wrote the manifest with no final newline, so a repo whose CI runs `prettier --check` failed after every sync.
+- Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
 - **Parallel runs (every MCP `sequant_run`) no longer drop per-issue warnings (#1342).** `runIssueWithLogging` silenced all per-issue output in parallel mode, including warnings: the spec-recommendation parse failure, "PR after exec failed", the checkpoint-commit failure, relay and ready-gate warnings, and evidence bundles. They now go through a `warn` channel built on `bracketedConsoleLog`, which uses the renderer's `appendNotice` under the TUI and `console.log` otherwise. Progress lines stay suppressed.
 
 - **The recommended Claude Code version is now 2.1.288 (#1346).** Sequant relies on Claude Code's native dangerous-`rm` analyzer, which before 2.1.288 let a `bash -c` or `sh -c` script run a dangerous `rm` without a prompt under `bypassPermissions`, the mode phase agents run in. The README gives the new recommendation and the reason, and `docs/THREAT-MODEL.md` lists the analyzer as a defense with that version dependency. ADR-0009 (#1345) is accepted.
