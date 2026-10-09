@@ -10,6 +10,12 @@ vi.mock("child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
+// #1354: the git state is stubbed; the formatter is the real one.
+vi.mock("../lib/skills-commit-state.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/skills-commit-state.js")>()),
+  getSkillsCommitState: vi.fn(() => ({ committedVersion: null, modified: [] })),
+}));
+
 // Mock fs functions
 vi.mock("../lib/fs.js", () => ({
   fileExists: vi.fn(),
@@ -181,6 +187,7 @@ import {
 } from "../lib/mcp-config.js";
 import { readAgentsMd, isAgentsMdSequantOwned } from "../lib/agents-md.js";
 import { getSettings } from "../lib/settings.js";
+import { getSkillsCommitState } from "../lib/skills-commit-state.js";
 
 const mockGetSettings = vi.mocked(getSettings);
 
@@ -376,6 +383,24 @@ describe("doctor command", () => {
       await doctorCommand();
 
       expect(output()).toContain("Not committed to git: .claude/skills/exec.");
+      expect(output()).not.toContain("Core skills are committed");
+    });
+
+    it("warns when tracked skills have uncommitted changes, naming the committed version (#1354)", async () => {
+      vi.mocked(getSkillsCommitState).mockReturnValueOnce({
+        committedVersion: "2.15.1",
+        modified: [
+          ".claude/skills/.sequant-version",
+          ".claude/skills/exec/SKILL.md",
+        ],
+      });
+
+      await doctorCommand();
+
+      expect(output()).toContain(
+        "2 tracked files under .claude/skills/ have uncommitted changes",
+      );
+      expect(output()).toContain("committed skills (2.15.1)");
       expect(output()).not.toContain("Core skills are committed");
     });
 

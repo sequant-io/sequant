@@ -307,6 +307,21 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
 
 **When the message names the main checkout** (`the main checkout at … is missing .claude/skills/spec/SKILL.md`): `spec` runs in your main checkout, not a worktree, so its skill must be present there. Committing the skills will not help if they are already committed. Update the checkout (`git pull` on the base branch) or run `sequant sync --only skills` in it, then re-run. No worktree was created, so there is nothing to clean up.
 
+### Phases behave like an older sequant after `sync`
+
+**Symptoms:** You ran `sequant sync` (or `update`), but `sequant run` phases still follow the old skill text. For example, exec opens the PR itself, or QA has no follow-up ledger. `sequant run`, `doctor`, `sync` and `update` print `N tracked files under .claude/skills/ have uncommitted changes; ... phases will use the committed skills (<version>)`.
+
+**Cause:** `sequant run` checks each phase worktree out from git, so phases load the skills committed at `HEAD`, not the files on disk in your main checkout. A sync that was never committed never reaches a run. The `Skills are outdated (X → Y)` line reads the version file on disk, so before v2.20 it could name a version the phases weren't using (#1354).
+
+**Solution:** Commit the sync, then run again:
+
+```bash
+git add .claude/skills .sequant-manifest.json
+git commit -m "chore(sequant): sync skills"
+```
+
+If an issue's worktree already exists, merge your base branch into its branch too (`git -C <worktree> merge origin/<base>`). A reused worktree keeps the skills from the commit it was cut from, and `sequant run` merges the base in only after the phases, before it updates the PR.
+
 ### Spec fails with "spec produced no SEQUANT_SPEC marker"
 
 **Problem:** The spec phase ran to completion, but the run records it as failed with `spec produced no SEQUANT_SPEC marker … the /spec skill likely did not load`.

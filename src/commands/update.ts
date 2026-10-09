@@ -23,6 +23,7 @@ import { chmod } from "fs/promises";
 import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
 import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
+import { warnUncommittedSkills } from "./sync.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
@@ -372,6 +373,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   await updateManifest();
 
   console.log(chalk.green(`\n✔ Updated ${updated} files`));
+  warnUncommittedSkills();
 
   // Check if package.json was updated and run install
   const packageJsonUpdated = applySet.some(
