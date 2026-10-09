@@ -7,11 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Uncommitted skills no longer pass silently (#1354).** `sequant run` checks phase worktrees out from git, so a `sequant sync` that was never committed never reached a phase, and the `Skills are outdated` warning, which reads the on-disk version, named a version the phases weren't using. `sequant run` (before provisioning worktrees), `doctor`, `sync` and `update` now warn when tracked files under `.claude/skills/` have uncommitted changes, naming the committed version phases will run. See [troubleshooting](docs/troubleshooting.md#phases-behave-like-an-older-sequant-after-sync).
-- Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
-
 ### Added
 
 - **`/exec` and `/qa` run the tests a branch affects instead of the full suite (#1349).** `npx vitest run --changed origin/main` (jest: `--changedSince`), plus AC `Evidence:` test files, changed test files and tests that mention a changed file. Stacks with no affected mode keep the full command (`resolveAffectedTestCommand`). CI still runs everything.
@@ -22,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Uncommitted skills no longer pass silently (#1354).** `sequant run` checks phase worktrees out from git, so a `sequant sync` that was never committed never reached a phase, and the `Skills are outdated` warning, which reads the on-disk version, named a version the phases weren't using. `sequant run` (before provisioning worktrees), `doctor`, `sync` and `update` now warn when tracked files under `.claude/skills/` have uncommitted changes, naming the committed version phases will run. See [troubleshooting](docs/troubleshooting.md#phases-behave-like-an-older-sequant-after-sync).
+- Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
 - **The run dashboard shows phases in the order they run (#1356).** When label detection adds a phase to `--phases` (e.g. `exec,qa` gains `test`), the dashboard's issue card listed it last, after `qa`, because the orchestrator never applied the resolved phase plan the plain-text renderer already used. It now does, so `exec ▸ test ▸ qa` reads correctly from the start, and a configured phase the plan dropped no longer lingers as pending.
 - **`.sequant-manifest.json` ends with a newline (#1355).** `sequant init`, `sync` and `update` wrote the manifest with no final newline, so a repo whose CI runs `prettier --check` failed after every sync.
 - Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
