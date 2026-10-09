@@ -46,6 +46,10 @@ import {
   isAgentsMdSequantOwned,
   AGENTS_MD_PATH,
 } from "../lib/agents-md.js";
+import {
+  formatSkillsCommitWarning,
+  getSkillsCommitState,
+} from "../lib/skills-commit-state.js";
 
 interface Check {
   name: string;
@@ -722,11 +726,20 @@ export async function doctorCommand(
           "Commit .claude/skills/ before your first `sequant run`",
       });
     } else {
-      checks.push({
-        name: "Skills Committed",
-        status: "pass",
-        message: "Core skills are committed",
-      });
+      // #1354: tracked but modified (an uncommitted sync) is the other way
+      // phases end up on different skills than the ones on disk.
+      const uncommitted = formatSkillsCommitWarning(
+        getSkillsCommitState(process.cwd()),
+      );
+      checks.push(
+        uncommitted
+          ? { name: "Skills Committed", status: "warn", message: uncommitted }
+          : {
+              name: "Skills Committed",
+              status: "pass",
+              message: "Core skills are committed",
+            },
+      );
     }
   }
 

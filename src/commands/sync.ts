@@ -45,6 +45,10 @@ import {
 import { getProjectName } from "../lib/project-name.js";
 import { getStackConfig } from "../lib/stacks.js";
 import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
+import {
+  formatSkillsCommitWarning,
+  getSkillsCommitState,
+} from "../lib/skills-commit-state.js";
 
 const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 
@@ -824,7 +828,17 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
           : "\nSkills, hooks, and memory files have been updated.",
       ),
     );
+    warnUncommittedSkills();
   }
+}
+
+/**
+ * #1354: after writing, tell the user `sequant run` will not see the new
+ * skills until they are committed — phase worktrees come from git.
+ */
+export function warnUncommittedSkills(cwd: string = process.cwd()): void {
+  const warning = formatSkillsCommitWarning(getSkillsCommitState(cwd));
+  if (warning) console.log(chalk.yellow(`\n!  ${warning}`));
 }
 
 /**

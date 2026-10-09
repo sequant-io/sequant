@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Uncommitted skills no longer pass silently (#1354).** `sequant run` checks phase worktrees out from git, so a `sequant sync` that was never committed never reached a phase, and the `Skills are outdated` warning, which reads the on-disk version, named a version the phases weren't using. `sequant run` (before provisioning worktrees), `doctor`, `sync` and `update` now warn when tracked files under `.claude/skills/` have uncommitted changes, naming the committed version phases will run. See [troubleshooting](docs/troubleshooting.md#phases-behave-like-an-older-sequant-after-sync).
 - Worktree provisioning's skip message now says `no package.json at the worktree root` for JS stacks, so a repo whose package lives in a subdirectory sees why nothing installed. The `npm ci` EUSAGE itself was fixed by #1196 (#1243)
 
 ### Added

@@ -126,6 +126,10 @@ import {
   runSkillsPreflight,
   SYNC_ONLY_SKILLS_NOTE,
 } from "./skills-preflight.js";
+import {
+  formatSkillsCommitWarning,
+  getSkillsCommitState,
+} from "../skills-commit-state.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import { formatEscalationTriggerLabel } from "./model-ladder.js";
@@ -1183,6 +1187,21 @@ export class RunOrchestrator {
       logWriter: null,
       wallClockDurationSeconds: wallClock(),
     });
+
+    // #1354: worktrees are checked out from git, so uncommitted skill edits
+    // in the main checkout (typically an uncommitted `sequant sync`) never
+    // reach a phase. Warn, naming the committed version phases will run.
+    if (skillsPreflightActive && useWorktreeIsolation) {
+      const warning = formatSkillsCommitWarning(
+        getSkillsCommitState(process.cwd()),
+      );
+      if (warning) {
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.yellow(`\n  !  ${warning}`),
+        );
+      }
+    }
 
     // ── Main-checkout skills pre-flight (#1193) ────────────────────────
     // Spec (and verify/merger) are `requiresWorktree: false`: they run in the
