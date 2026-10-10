@@ -17,25 +17,44 @@ The npm package already ships `plugin/` (`package.json` `files`). The Agent SDK'
 
 ## Decision
 
-The Claude Code driver loads phase skills from the installed package by default. It passes a **skills-only** plugin view (a `.claude-plugin/plugin.json` named `sequant` plus the package's `plugin/skills/`, with no hooks and no `.mcp.json`) and invokes skills as `sequant:<name>`. A project that tracks `.claude/skills/<skill>/SKILL.md` keeps today's behaviour for that skill: bare name, committed copy. This is option (c), a hybrid.
+The Claude Code driver loads phase skills from the installed package by default. It passes a **skills-only** plugin view (a `.claude-plugin/plugin.json` named `sequant` plus the package's `plugin/skills/`, with no hooks and no `.mcp.json`) and invokes skills as `sequant:<name>`. A project that tracks `.claude/skills/<skill>/SKILL.md` keeps today's behaviour for that skill: bare name, committed copy. This is #1388's option (a), using a skills-only plugin view rather than the whole `plugin/`.
 
 ## Options
 
-### Option A: Package by default, committed skills as an opt-in override (hybrid, chosen)
+### Option (a): Package by default, committed skills as an opt-in override (chosen)
 
 Skills come from the package unless the project commits its own copy of that skill. **Pros:** a new project commits only the manifest. Existing projects keep working unchanged. A fork of one skill stays possible, alongside `.claude/.local/skills/<name>/overrides.md` for small tailoring. **Cons:** two sources to explain. `doctor` has to report which one each phase uses.
 
-### Option B: Package only, the whole `plugin/` directory (rejected)
+### Option (a′): The same, but pass the whole `plugin/` directory (rejected)
 
-Pass `node_modules/sequant/plugin` as is. **Pros:** smallest code change, and the spike proved it works. **Cons:** hooks double-fire in every initialized project (finding 2), the MCP server bypasses #936 (finding 3), and there's no path for a project that forked a skill.
+Pass `node_modules/sequant/plugin` as is. **Pros:** smallest code change, and the spike proved it works. **Cons:** hooks double-fire in every initialized project (finding 2), and the MCP server bypasses #936 (finding 3).
 
-### Option C: Keep the commit model (rejected)
+### Option (b): Keep the commit model (rejected)
 
 **Pros:** no change. **Cons:** the 23,000-line first commit, per-project drift, and the uncommitted-skills failure class (#933, #1193, #1201) all stay. The override file already covers the main reason to commit skills.
 
+### Option (c): Hybrid (folded into (a))
+
+#1388 listed a hybrid as a separate option. Here, the per-skill override already is the hybrid: a project can commit some skills and take the rest from the package. A separate mode adds nothing.
+
 ## Trade-offs
 
-Option A takes Option B's one real gain, no committed skill text, and drops the hooks and MCP server that make B unsafe in projects initialized today. The cost is a resolution rule, "committed copy wins, per skill", and namespaced invocations in the paths that don't use a committed copy.
+Option (a) keeps (a′)'s one real gain, no committed skill text, and drops the hooks and MCP server that make (a′) unsafe in projects initialized today. The cost is a resolution rule, "committed copy wins, per skill", and namespaced invocations in the paths that don't use a committed copy.
+
+## Guards this retires or narrows
+
+Since #813, every guard against missing or stale committed skills has patched a symptom of `settingSources: ["project"]`. Under option (a), each one changes like this:
+
+| Guard | Added by | Under option (a) |
+|---|---|---|
+| Skills pre-flight (`runSkillsPreflight`), including its worktree and main-checkout coverage | #813, #933, #1193 | **Narrow:** for the Claude Code driver, fail only when a phase skill is neither committed nor present in the package's `plugin/skills/`. Keep it unchanged for drivers that still need committed skills (Codex, opencode). |
+| Missing-skills remedy text | #1201 | **Rewrite:** the remedy becomes "update the sequant package", not "commit or sync `.claude/skills/`". |
+| Spec-marker check (a spec without `SEQUANT_SPEC` fails) | #1193 | **Keep.** It checks that the skill ran, whatever its source, and it is what confirmed this spike. |
+| Uncommitted-skill-changes warning (`src/lib/skills-commit-state.ts`) in run, doctor, sync, update | #1354 | **Narrow** to skills the project commits. Dead for package-sourced skills. |
+| `doctor` "Skills Committed" check (warns on untracked skills) | #1257 | **Replace** with "skill source per phase" (package or committed), plus the identical-copy notice under Consequences. |
+| Minimal-install path | #1209 | **Becomes the default.** `init` stops writing `.claude/skills/` once the skill text is namespaced (after the freeze). |
+
+The follow-ups that land option (a) remove or narrow these guards in the same PRs. Nothing should be left checking for a commit that is no longer required.
 
 ## Consequences
 
