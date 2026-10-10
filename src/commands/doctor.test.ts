@@ -891,7 +891,8 @@ describe("doctor command", () => {
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("jq");
       expect(output).toContain("jq not installed");
-      expect(output).toContain("Warnings: 1");
+      // jq warning + the upstream #43869 notice, which prints a `!` line (#1387)
+      expect(output).toContain("Warnings: 2");
       // Should not exit with failure since jq is optional
       expect(processExitSpy).not.toHaveBeenCalled();
     });
@@ -939,11 +940,25 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand();
+      // --quiet suppresses the upstream notice, which otherwise counts as a
+      // warning (#1387), so the healthy summary is reachable.
+      await doctorCommand({ quiet: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       // New boxed format includes the count: "All X checks passed!"
       expect(output).toMatch(/All \d+ checks passed/);
+      expect(processExitSpy).not.toHaveBeenCalled();
+    });
+
+    it("counts the upstream notice as a warning when everything else passes (#1387)", async () => {
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Warnings: 1");
+      expect(output).toMatch(/All checks passed \(1 warning\)/);
       expect(processExitSpy).not.toHaveBeenCalled();
     });
 

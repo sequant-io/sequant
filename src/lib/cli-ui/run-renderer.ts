@@ -436,8 +436,13 @@ export class NonTTYRenderer extends BaseRenderer {
     );
     if (running.length === 0) return;
     const parts = running.map((s) => {
+      // #1387: time since the current phase started, not since the issue did;
+      // fall back to the issue's start when the phase has no start recorded.
+      const phaseStartedAt =
+        s.phases.find((p) => p.name === s.currentPhase)?.startedAt ??
+        s.startedAt;
       const elapsedSec =
-        s.startedAt !== undefined ? (this.now() - s.startedAt) / 1000 : 0;
+        phaseStartedAt !== undefined ? (this.now() - phaseStartedAt) / 1000 : 0;
       // #860 AC-6: a phase paused on an auto-wait names its wake time instead
       // of masquerading as ordinary running time — this heartbeat is the only
       // periodic signal a non-TTY (background) run gets during a multi-hour

@@ -1307,13 +1307,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     : "";
 
   // Success message with boxed output
-  const nextStepsContent = `${chalk.bold("Next steps:")}
-  1. Review .claude/memory/constitution.md
-  2. Start using workflow commands:
-
-     ${chalk.cyan("/spec 123")}  - Plan implementation
-     ${chalk.cyan("/exec 123")}  - Implement the feature
-     ${chalk.cyan("/qa 123")}    - Quality review`;
+  const nextStepsContent = buildNextSteps(await resolveCommitPaths());
 
   console.log(
     "\n" + ui.successBox("Sequant initialized successfully!", nextStepsContent),
@@ -1332,6 +1326,62 @@ export async function initCommand(options: InitOptions): Promise<void> {
       "\nDocumentation: https://github.com/sequant-io/sequant#readme\n",
     ),
   );
+}
+
+/**
+ * Paths `init` may write that belong in the first commit. `.sequant/` is not
+ * one of them: init gitignores it (GITIGNORE_ENTRIES), so `git add .sequant/`
+ * fails. `.gitignore` is, because init appends to it.
+ */
+export const COMMIT_PATH_CANDIDATES = [
+  ".claude/",
+  ".gitignore",
+  ".sequant-manifest.json",
+  "AGENTS.md",
+  ".mcp.json",
+  "scripts/dev/",
+  ".opencode/",
+  ".codex/",
+];
+
+/**
+ * The commit candidates that exist in `cwd`. A path init skipped (for
+ * example `AGENTS.md` under `--no-agents-md`) is left out, since naming a
+ * missing path makes the whole `git add` fail.
+ */
+export async function resolveCommitPaths(cwd: string = "."): Promise<string[]> {
+  const present: string[] = [];
+  for (const candidate of COMMIT_PATH_CANDIDATES) {
+    if (await fileExists(join(cwd, candidate))) present.push(candidate);
+  }
+  return present;
+}
+
+/**
+ * Build the "Next steps" block printed after a successful init.
+ *
+ * `sequant run` phases execute in worktrees that only see committed files, so
+ * the generated files must be committed first (#1387).
+ */
+export function buildNextSteps(
+  commitPaths: string[] = [".claude/", ".gitignore", ".sequant-manifest.json"],
+): string {
+  return `${chalk.bold("Next steps:")}
+  1. Review .claude/memory/constitution.md
+  2. Commit the generated files (phase worktrees only see committed skills):
+
+     ${chalk.cyan(`git add ${commitPaths.join(" ")}`)}
+     ${chalk.cyan('git commit -m "chore: add sequant"')}
+
+  3. Run a workflow on an issue:
+
+     ${chalk.cyan("npx sequant run 123")}  - Run spec, exec and qa headlessly
+
+     Or step through the phases in Claude Code:
+
+     ${chalk.cyan("/spec 123")}  - Plan implementation
+     ${chalk.cyan("/exec 123")}  - Implement the feature
+     ${chalk.cyan("/qa 123")}    - Quality review`;
 }
 
 /**

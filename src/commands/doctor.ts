@@ -241,13 +241,16 @@ export const UPSTREAM_SUBAGENT_WARNING = {
  * AC-2: primary line + link, suppressible via `quiet`.
  * AC-4: when the user's `agents.model` differs from the shipped default,
  * append a second-line note flagging the field as inert.
+ *
+ * Returns true when the notice printed, so the caller counts it as a warning
+ * (#1387); false under `--quiet`.
  */
 export function emitUpstreamWarning(opts: {
   quiet?: boolean;
   agentsModel: string;
   defaultAgentsModel: string;
-}): void {
-  if (opts.quiet) return;
+}): boolean {
+  if (opts.quiet) return false;
   console.log("");
   console.log(chalk.yellow(`  !  ${UPSTREAM_SUBAGENT_WARNING.primary}`));
   console.log(chalk.yellow(`     ${UPSTREAM_SUBAGENT_WARNING.url}`));
@@ -256,6 +259,45 @@ export function emitUpstreamWarning(opts: {
       chalk.yellow(`     ${UPSTREAM_SUBAGENT_WARNING.inertFieldNote}`),
     );
   }
+  return true;
+}
+
+export interface DoctorSummary {
+  level: "error" | "warning" | "success";
+  title: string;
+  message: string;
+}
+
+/**
+ * Build the doctor summary box content from the check counts. `warn` must
+ * include every `!` line printed, the upstream notice among them (#1387).
+ */
+export function buildDoctorSummary(counts: {
+  pass: number;
+  warn: number;
+  fail: number;
+}): DoctorSummary {
+  const { pass, warn, fail } = counts;
+  const total = pass + warn + fail;
+  if (fail > 0) {
+    return {
+      level: "error",
+      title: `${fail} check${fail > 1 ? "s" : ""} failed`,
+      message: `Passed: ${pass}/${total}\nWarnings: ${warn}\nFailed: ${fail}\n\nRun \`sequant init\` to fix issues.`,
+    };
+  }
+  if (warn > 0) {
+    return {
+      level: "warning",
+      title: `All checks passed (${warn} warning${warn > 1 ? "s" : ""})`,
+      message: `Passed: ${pass}/${total}\nWarnings: ${warn}\n\nSequant should work correctly.`,
+    };
+  }
+  return {
+    level: "success",
+    title: `All ${total} checks passed!`,
+    message: `Your Sequant installation is healthy.`,
+  };
 }
 
 /**
@@ -491,6 +533,15 @@ function isInsideGitWorkTree(): boolean {
   }
 }
 
+/**
+ * The remediation printed under an outdated `Version` check. It belongs to
+ * that one counted warning, so it carries no `!` marker of its own: the
+ * summary's `Warnings:` count must match the `!` lines printed (#1387 AC-3).
+ */
+export function formatVersionRemediation(warning: string): string {
+  return `     ${warning}`;
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -514,7 +565,13 @@ export async function doctorCommand(
       // Show remediation steps
       console.log(
         chalk.yellow(
-          `  !  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
+          formatVersionRemediation(
+            getVersionWarning(
+              versionResult.currentVersion,
+              versionResult.latestVersion,
+              versionResult.isLocalInstall,
+            ),
+          ),
         ),
       );
       console.log("");
@@ -1104,30 +1161,31 @@ export async function doctorCommand(
     else failCount++;
   }
 
-  // Upstream subagent routing notice (AC-2/AC-4)
-  emitUpstreamWarning({
-    quiet: options.quiet,
-    agentsModel: settings.agents.model,
-    defaultAgentsModel: DEFAULT_AGENT_SETTINGS.model,
-  });
+  // Upstream subagent routing notice (AC-2/AC-4). It prints a `!` line, so it
+  // counts as a warning in the summary (#1387).
+  if (
+    emitUpstreamWarning({
+      quiet: options.quiet,
+      agentsModel: settings.agents.model,
+      defaultAgentsModel: DEFAULT_AGENT_SETTINGS.model,
+    })
+  ) {
+    warnCount++;
+  }
 
   // Summary with boxed output
-  const totalChecks = passCount + warnCount + failCount;
-  let summaryTitle: string;
-  let summaryMessage: string;
+  const summary = buildDoctorSummary({
+    pass: passCount,
+    warn: warnCount,
+    fail: failCount,
+  });
 
-  if (failCount > 0) {
-    summaryTitle = `${failCount} check${failCount > 1 ? "s" : ""} failed`;
-    summaryMessage = `Passed: ${passCount}/${totalChecks}\nWarnings: ${warnCount}\nFailed: ${failCount}\n\nRun \`sequant init\` to fix issues.`;
-    console.log("\n" + ui.errorBox(summaryTitle, summaryMessage));
+  if (summary.level === "error") {
+    console.log("\n" + ui.errorBox(summary.title, summary.message));
     process.exit(1);
-  } else if (warnCount > 0) {
-    summaryTitle = `All checks passed (${warnCount} warning${warnCount > 1 ? "s" : ""})`;
-    summaryMessage = `Passed: ${passCount}/${totalChecks}\nWarnings: ${warnCount}\n\nSequant should work correctly.`;
-    console.log("\n" + ui.warningBox(summaryTitle, summaryMessage));
+  } else if (summary.level === "warning") {
+    console.log("\n" + ui.warningBox(summary.title, summary.message));
   } else {
-    summaryTitle = `All ${totalChecks} checks passed!`;
-    summaryMessage = `Your Sequant installation is healthy.`;
-    console.log("\n" + ui.successBox(summaryTitle, summaryMessage));
+    console.log("\n" + ui.successBox(summary.title, summary.message));
   }
 }
