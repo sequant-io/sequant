@@ -1020,6 +1020,14 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
       git(info.path, "rev-list", "--count", `HEAD..origin/${branch}`),
     ).toBe("0");
     expect(git(info.path, "log", "--format=%s")).toContain("pr commit");
+    // The recreated branch still tracks the PR branch, so a later push
+    // fast-forwards origin/<branch>.
+    expect(git(info.path, "config", "--get", `branch.${branch}.remote`)).toBe(
+      "origin",
+    );
+    expect(git(info.path, "config", "--get", `branch.${branch}.merge`)).toBe(
+      `refs/heads/${branch}`,
+    );
   }, 90_000);
 
   it("1380 AC-2 recreates a local-only branch with no commits of its own from the base", () => {
