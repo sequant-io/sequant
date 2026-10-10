@@ -533,6 +533,15 @@ function isInsideGitWorkTree(): boolean {
   }
 }
 
+/**
+ * The remediation printed under an outdated `Version` check. It belongs to
+ * that one counted warning, so it carries no `!` marker of its own: the
+ * summary's `Warnings:` count must match the `!` lines printed (#1387 AC-3).
+ */
+export function formatVersionRemediation(warning: string): string {
+  return `     ${warning}`;
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -556,7 +565,13 @@ export async function doctorCommand(
       // Show remediation steps
       console.log(
         chalk.yellow(
-          `  !  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
+          formatVersionRemediation(
+            getVersionWarning(
+              versionResult.currentVersion,
+              versionResult.latestVersion,
+              versionResult.isLocalInstall,
+            ),
+          ),
         ),
       );
       console.log("");

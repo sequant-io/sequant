@@ -4,7 +4,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildDoctorSummary, emitUpstreamWarning } from "./doctor.js";
+import {
+  buildDoctorSummary,
+  emitUpstreamWarning,
+  formatVersionRemediation,
+} from "./doctor.js";
 
 function captureLogs(fn: () => void): string[] {
   const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -71,6 +75,14 @@ describe("doctor summary (#1387)", () => {
           .map(stripAnsi)
           .filter((l) => l.trimStart().startsWith("!"));
         expect(bang).toHaveLength(1);
+      });
+
+      it("prints the outdated-version remediation without a second `!` line", () => {
+        const line = stripAnsi(
+          formatVersionRemediation("sequant 2.19.0 → 2.20.0 available"),
+        );
+        expect(line.trimStart().startsWith("!")).toBe(false);
+        expect(line).toContain("2.20.0 available");
       });
 
       it("keeps the fail and healthy summaries unchanged", () => {
