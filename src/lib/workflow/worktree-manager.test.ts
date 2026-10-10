@@ -310,7 +310,16 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     git(clone, "checkout", "-q", "-b", "main");
     commitFile(clone, "base.txt", "base");
     git(clone, "push", "-q", "origin", "main");
-    git(clone, "worktree", "add", "-q", "-b", "feature/1247", wt, "origin/main");
+    git(
+      clone,
+      "worktree",
+      "add",
+      "-q",
+      "-b",
+      "feature/1247",
+      wt,
+      "origin/main",
+    );
     commitFile(wt, "fix.txt", "fix one");
     logs = [];
     vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
@@ -931,4 +940,125 @@ describe("#1386: resolvePrBase", () => {
     expect(resolvePrBase("feature/1-a", "feat/x", detect)).toBe("feature/1-a");
     expect(detect).not.toHaveBeenCalled();
   });
+});
+
+// #1380: a stale-and-clean worktree is recreated from origin/<branch> when the
+// remote has it, and never in a way that drops the branch's commits.
+describe("#1380 ensureWorktree recreate keeps the branch's commits", () => {
+  let root: string;
+  let clone: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1380-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    git(clone, "config", "commit.gpgsign", "false");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "a.txt", "init");
+    git(clone, "push", "-q", "-u", "origin", "main");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const ensure = (
+    issue: number,
+  ): { out: string; info: { path: string; existed: boolean } } => {
+    const script = join(root, `run-${Math.random().toString(36).slice(2)}.mts`);
+    const modPath = join(__dirname, "worktree-manager.ts");
+    writeFileSync(
+      script,
+      `import { ensureWorktree } from ${JSON.stringify(modPath)};
+const info = await ensureWorktree(${issue}, "recreate me", false, undefined, undefined, false, ".trees");
+process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
+    );
+    const env = { ...process.env };
+    delete env.SEQUANT_WORKTREE_ROOT;
+    const out = execFileSync("npx", ["tsx", script], {
+      cwd: clone,
+      env,
+      encoding: "utf8",
+    });
+    const line = out.split("\n").find((l) => l.startsWith("RESULT="));
+    return { out, info: JSON.parse(line!.slice("RESULT=".length)) };
+  };
+
+  // A teammate lands six commits on main; the clone fetches them.
+  const advanceMain = (): void => {
+    const mate = join(root, "mate");
+    git(root, "clone", "-q", join(root, "remote.git"), mate);
+    git(mate, "config", "user.email", "m@m");
+    git(mate, "config", "user.name", "m");
+    git(mate, "config", "commit.gpgsign", "false");
+    for (let i = 0; i < 6; i++) commitFile(mate, `m${i}.txt`, `main ${i}`);
+    git(mate, "push", "-q", "origin", "main");
+    git(clone, "fetch", "-q", "origin");
+  };
+
+  // The PR shape: a worktree whose branch has a commit pushed with -u.
+  const pushedBranch = (issue: number): { wt: string; branch: string } => {
+    const wt = ensure(issue).info.path;
+    const branch = git(wt, "branch", "--show-current");
+    commitFile(wt, "pr.txt", "pr commit");
+    git(wt, "push", "-q", "-u", "origin", branch);
+    return { wt, branch };
+  };
+
+  it("1380 AC-1 recreates a pushed branch from origin/<branch>, keeping its commits", () => {
+    const { branch } = pushedBranch(10);
+    advanceMain();
+
+    const { out, info } = ensure(10);
+    expect(out).toContain("recreating fresh");
+    expect(info.existed).toBe(false);
+    expect(
+      git(info.path, "rev-list", "--count", `HEAD..origin/${branch}`),
+    ).toBe("0");
+    expect(git(info.path, "log", "--format=%s")).toContain("pr commit");
+  }, 90_000);
+
+  it("1380 AC-2 recreates a local-only branch with no commits of its own from the base", () => {
+    const branch = git(ensure(11).info.path, "branch", "--show-current");
+    expect(git(clone, "ls-remote", "--heads", "origin", branch)).toBe("");
+    advanceMain();
+
+    const { out, info } = ensure(11);
+    expect(out).toContain("recreating fresh");
+    expect(info.existed).toBe(false);
+    expect(git(info.path, "rev-parse", "HEAD")).toBe(
+      git(clone, "rev-parse", "origin/main"),
+    );
+  }, 90_000);
+
+  it("1380 AC-3 keeps the worktree when the start ref lacks the branch's commits", () => {
+    const { wt, branch } = pushedBranch(12);
+    advanceMain();
+    const head = git(wt, "rev-parse", "HEAD");
+    // Offline blip: sequant cannot see origin/<branch> any more.
+    git(clone, "update-ref", "-d", `refs/remotes/origin/${branch}`);
+    git(clone, "remote", "set-url", "origin", join(root, "missing.git"));
+
+    const { out, info } = ensure(12);
+    expect(out).toContain("does not contain its commits");
+    expect(out).toContain("Keeping existing worktree");
+    expect(out).not.toContain("recreating fresh");
+    expect(info.existed).toBe(true);
+    expect(git(wt, "rev-parse", "HEAD")).toBe(head);
+  }, 90_000);
+
+  it("1380 AC-4 records the run's base, not origin/<branch>, after a recreate", () => {
+    const { branch } = pushedBranch(13);
+    advanceMain();
+
+    const { info } = ensure(13);
+    expect(info.existed).toBe(false);
+    expect(
+      git(info.path, "config", "--get", `branch.${branch}.sequantBaseRef`),
+    ).toBe("origin/main");
+  }, 90_000);
 });
