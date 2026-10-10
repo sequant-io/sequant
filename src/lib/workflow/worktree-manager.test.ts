@@ -20,6 +20,7 @@ import {
   buildPRTitle,
   createPR,
   isAutomatedPRBody,
+  resolvePrBase,
   resolvePrLinkMode,
   resolveWorktreeRoot,
   shouldPreserveWorktree,

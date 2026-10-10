@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { execSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -12,6 +12,7 @@ import type { IssueResult } from "./types.js";
  * (batch-executor.test.ts asserts the second hop reaches those two consumers.)
  */
 
+const fixture = vi.hoisted(() => ({ worktree: "" }));
 const spies = vi.hoisted(() => ({
   ensureWorktrees: vi.fn(),
   issueCtxBase: vi.fn(),
@@ -23,7 +24,19 @@ vi.mock("./worktree-manager.js", async (importOriginal) => {
     ...actual,
     ensureWorktrees: async (...args: unknown[]) => {
       spies.ensureWorktrees(...args);
-      return new Map();
+      const issues = args[0] as Array<{ number: number }>;
+      return new Map(
+        issues.map((i) => [
+          i.number,
+          {
+            issue: i.number,
+            path: fixture.worktree,
+            branch: `feature/${i.number}-test`,
+            existed: true,
+            rebased: false,
+          },
+        ]),
+      );
     },
   };
 });
@@ -68,6 +81,20 @@ describe("run resolves the base once (#1386)", () => {
       "git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit --allow-empty -m init",
       { cwd: repo, stdio: "pipe" },
     );
+    // The skills pre-flight reads the provisioned worktree: use the repo
+    // itself, with the three phase skills committed.
+    for (const skill of ["spec", "exec", "qa"]) {
+      mkdirSync(join(repo, ".claude/skills", skill), { recursive: true });
+      writeFileSync(
+        join(repo, ".claude/skills", skill, "SKILL.md"),
+        `---\nname: ${skill}\n---\n`,
+      );
+    }
+    execSync(
+      "git add . && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -m skills",
+      { cwd: repo, stdio: "pipe" },
+    );
+    fixture.worktree = repo;
     process.chdir(repo);
     spies.ensureWorktrees.mockClear();
     spies.issueCtxBase.mockClear();
