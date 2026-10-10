@@ -63,6 +63,13 @@ Change n, the floor, the fixture or the metric. Any deviation goes in a dated "D
 
 - **2026-10-10, pilot build.** The pilot ran on a local dev build of sequant 2.19.0 (at or before `68446b02`), not a published release. The fixture PR's branch is `feature/24-add-notes-import`, and each run used `--force` so that a completed QA phase would run again on the reset head.
 - **2026-10-10, human read format.** The owner judged each defect from the passage the grader matched, with the full reviews open beside it. The read was not blind, which does not matter for the pilot, because all 3 runs are arm A.
+- **2026-10-10, "caught" defined (before the arms).** The pre-registration says "human-read recall" but never defines "caught". In the first pilot pass the owner compared runs: of near-identical findings, they picked the one that left the least room for interpretation. That standard can't score shuffled reviews one at a time, so it is replaced by a per-review rubric that uses the owner's own bar. Each defect in each review is scored on its own as one of:
+  - **clear:** the review says what is wrong, where it is, and what it breaks. A stated consequence is enough, and no AC is needed (D4 has none by design). Someone fixing it would not need to investigate further. Only **clear** counts as caught.
+  - **vague:** the defect is mentioned, but the consequence is missing or hedged (e.g. a one-line list item, or "dead export" with no broken user path).
+  - **absent:** not mentioned.
+
+  The **vague** count is recorded as secondary data, because a second look may turn vague findings into clear ones. The pilot is scored again under this rubric, with every passage in each review that mentions the defect, shuffled and without run labels. Both passes are reported below. The re-score follows from this change of standard, not from the first score. If the re-score reaches 0.90 or higher, the issue stops as pre-registered.
+- **2026-10-10, first-pass excerpts were incomplete.** The first pass showed one excerpt per row, cut at 700 characters. For run 1 D4 and run 1 D5 the reviews hold stronger findings than the ones shown: an evidenced `src/store.ts:11-14` regression paragraph, and a full AC-3 NOT_MET row.
 
 ## Results
 
