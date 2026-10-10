@@ -834,6 +834,30 @@ export function computeWorktreeBaseRef(
 }
 
 /**
+ * The branch a PR is opened against (#1386): the same base value the worktree
+ * was cut from, as a bare branch name for `gh pr create --base`.
+ *
+ * `stackPrBase` (the `--stacked` predecessor) wins; else `baseBranch` with any
+ * `origin/` prefix stripped when it differs from the detected default; else
+ * `undefined`, so gh uses the repository's default branch as it always has.
+ * Passing the detected default explicitly is avoided on purpose: detection
+ * falls back to `"main"`, which `gh` would then reject on a repo whose default
+ * is something else.
+ *
+ * @internal Exported for testing only.
+ */
+export function resolvePrBase(
+  stackPrBase: string | undefined,
+  baseBranch: string | undefined,
+  detectedDefault: () => string,
+): string | undefined {
+  if (stackPrBase) return stackPrBase;
+  if (!baseBranch) return undefined;
+  const bare = baseBranch.replace(/^origin\//, "");
+  return bare === detectedDefault() ? undefined : bare;
+}
+
+/**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
@@ -2253,6 +2277,9 @@ export function buildAutomatedPRBody(
  *   issue carrying `prNoCloseLabel`, via {@link resolvePrLinkMode}.
  * @param prNoCloseLabel `settings.run.prNoCloseLabel` (#1197 AC-2), default
  *   `"no-autoclose"`.
+ * @param opts.baseBranch The run's resolved base (`ResolvedRun.baseBranch`,
+ *   #1386): the PR target when it is not the repo default and `--stacked`
+ *   sets no `prBase`. Resolved through {@link resolvePrBase}.
  * @param opts.execOutput The exec phase's captured output (#1223 AC-2),
  *   threaded through to {@link buildAutomatedPRBody}. Added as a trailing
  *   options object rather than another positional parameter.
@@ -2276,6 +2303,7 @@ export function createPR(
   prIssueLink?: "closes" | "refs",
   prNoCloseLabel?: string,
   opts?: {
+    baseBranch?: string;
     execOutput?: string;
     execSummary?: string;
     followups?: GapFinding[];
@@ -2283,6 +2311,10 @@ export function createPR(
   },
 ): PRCreationResult {
   const github = new GitHubProvider();
+  // #1386: one PR base for the create and update paths, resolved once.
+  const prBase = resolvePrBase(stackOptions?.prBase, opts?.baseBranch, () =>
+    detectDefaultBranch(verbose),
+  );
 
   // Title and body are built once, before Step 1, so the create path and the
   // update-existing path (#1247) publish the same content.
@@ -2339,8 +2371,8 @@ export function createPR(
         ),
       );
     }
-    if (stackOptions?.prBase) {
-      fields.base = stackOptions.prBase;
+    if (prBase) {
+      fields.base = prBase;
     }
     const update = github.updatePRSync(existing.number, fields, worktreePath);
     if (!update.success) {
@@ -2394,7 +2426,7 @@ export function createPR(
     prBody,
     branch,
     worktreePath,
-    stackOptions?.prBase,
+    prBase,
   );
 
   if (prResult.exitCode !== 0) {

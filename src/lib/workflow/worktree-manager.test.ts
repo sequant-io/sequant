@@ -327,7 +327,10 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const run = (stackOptions?: { prBase?: string; stackManifest?: string }) =>
+  const run = (
+    stackOptions?: { prBase?: string; stackManifest?: string },
+    baseBranch?: string,
+  ) =>
     createPR(
       wt,
       1247,
@@ -340,7 +343,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
       undefined,
       undefined,
       undefined,
-      { execSummary: "Exec summary from state." },
+      { execSummary: "Exec summary from state.", baseBranch },
     );
 
   const remoteHead = (): string =>
@@ -366,6 +369,40 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     expect(fields.body).toContain("Fixes #1247");
     expect(fields.body).not.toContain("Automated PR for issue #1247.");
     expect(fields.base).toBeUndefined();
+  });
+
+  // #1386: a plain --base (no --stacked) reaches `gh`'s --base / the PATCH.
+  it("#1386 AC-1: create path passes --base <branch> when only --base is set", () => {
+    viewSpy.mockReturnValue(null);
+    createSpy.mockReturnValue({
+      stdout: "https://github.com/o/r/pull/9",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    run(undefined, "feat/x");
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    // `base` is createPRCliSync's 5th positional argument.
+    expect(createSpy.mock.calls[0][4]).toBe("feat/x");
+  });
+
+  it("#1386 AC-1: update path retargets the PR to --base <branch>", () => {
+    viewSpy.mockReturnValue(existing(AUTOMATED_BODY));
+
+    run(undefined, "origin/feat/x");
+
+    const fields = updateSpy.mock.calls[0][1] as { base?: string };
+    expect(fields.base).toBe("feat/x");
+  });
+
+  it("#1386 AC-4: --stacked predecessor wins over --base", () => {
+    viewSpy.mockReturnValue(existing(AUTOMATED_BODY));
+
+    run({ prBase: "feature/1200-first" }, "feat/x");
+
+    const fields = updateSpy.mock.calls[0][1] as { base?: string };
+    expect(fields.base).toBe("feature/1200-first");
   });
 
   it("an empty existing body is overwritten too", () => {
@@ -869,4 +906,28 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
     );
     expect(out).toContain("onto origin/main");
   }, 60_000);
+});
+
+describe("#1386: resolvePrBase", () => {
+  const detected = () => "main";
+
+  it("no base: undefined, so gh uses the repo default", () => {
+    expect(resolvePrBase(undefined, undefined, detected)).toBeUndefined();
+  });
+
+  it("a base equal to the detected default: undefined (unchanged)", () => {
+    expect(resolvePrBase(undefined, "main", detected)).toBeUndefined();
+    expect(resolvePrBase(undefined, "origin/main", detected)).toBeUndefined();
+  });
+
+  it("a non-default base: the bare branch name", () => {
+    expect(resolvePrBase(undefined, "feat/x", detected)).toBe("feat/x");
+    expect(resolvePrBase(undefined, "origin/feat/x", detected)).toBe("feat/x");
+  });
+
+  it("--stacked predecessor wins and detection is not consulted", () => {
+    const detect = vi.fn(() => "main");
+    expect(resolvePrBase("feature/1-a", "feat/x", detect)).toBe("feature/1-a");
+    expect(detect).not.toHaveBeenCalled();
+  });
 });

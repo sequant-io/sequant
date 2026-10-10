@@ -1288,7 +1288,15 @@ export async function runIssueWithLogging(
       // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
       config.prIssueLink,
       config.prNoCloseLabel,
-      { execOutput, execSummary, followups: after.followups, qaNotRun },
+      {
+        // #1386: the same resolved base worktree creation and
+        // `rebaseBeforePR` received; `createPR` resolves the PR target from it.
+        baseBranch,
+        execOutput,
+        execSummary,
+        followups: after.followups,
+        qaNotRun,
+      },
     );
     if (
       prResult.success &&
