@@ -20,6 +20,7 @@ import {
   type Metrics,
   type MetricRun,
   type FailureCategory,
+  type RunSource,
   METRICS_FILE_PATH,
 } from "../lib/workflow/metrics-schema.js";
 
@@ -383,8 +384,18 @@ interface FailureCategoryBucket {
 /**
  * Local metrics analytics
  */
+/** Outcome counts for one `MetricRun.source` (#929). */
+interface SourceBucket {
+  total: number;
+  success: number;
+  partial: number;
+  failed: number;
+}
+
 interface MetricsAnalytics {
+  /** Runs with `source: "run"` only; standalone `ready` runs are in `bySource` (#929). */
   totalRuns: number;
+  bySource: Record<RunSource, SourceBucket>;
   successCount: number;
   partialCount: number;
   failedCount: number;
@@ -478,14 +489,44 @@ function calculateFailureCategoryBreakdown(
 }
 
 /**
+ * Count runs per entry point (#929). Always returns both buckets so consumers
+ * never branch on a missing key.
+ */
+function calculateSourceBreakdown(
+  runs: MetricRun[],
+): Record<RunSource, SourceBucket> {
+  const empty = (): SourceBucket => ({
+    total: 0,
+    success: 0,
+    partial: 0,
+    failed: 0,
+  });
+  const buckets: Record<RunSource, SourceBucket> = {
+    run: empty(),
+    ready: empty(),
+  };
+  for (const run of runs) {
+    const bucket = buckets[run.source];
+    bucket.total += 1;
+    bucket[run.outcome] += 1;
+  }
+  return buckets;
+}
+
+/**
  * Calculate analytics from metrics
  */
 function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
-  const runs = metrics.runs;
+  // #929: a ready-gate record has no files/lines and a different shape of
+  // "success", so headline aggregates cover `source: "run"` records only and
+  // standalone `ready` runs get their own `bySource` bucket.
+  const bySource = calculateSourceBreakdown(metrics.runs);
+  const runs = metrics.runs.filter((r) => r.source === "run");
 
   if (runs.length === 0) {
     return {
       totalRuns: 0,
+      bySource,
       successCount: 0,
       partialCount: 0,
       failedCount: 0,
@@ -607,6 +648,7 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
 
   return {
     totalRuns: runs.length,
+    bySource,
     successCount,
     partialCount,
     failedCount,
@@ -729,6 +771,14 @@ function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
   const failedBar = ui.progressBar(analytics.failedCount, total, 12);
 
   console.log(`  Runs: ${analytics.totalRuns} total\n`);
+  if (analytics.bySource.ready.total > 0) {
+    const r = analytics.bySource.ready;
+    console.log(
+      colors.muted(
+        `  By source: run ${analytics.bySource.run.total}, ready ${r.total} (${r.success} success, ${r.failed} failed)\n`,
+      ),
+    );
+  }
   console.log(
     `  ${colors.success("\u2713 Success")}   ${analytics.successCount} (${analytics.successRate.toFixed(0)}%)    ${successBar}`,
   );
@@ -1105,6 +1155,7 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
       const output = {
         source: "metrics",
         totalRuns: analytics.totalRuns,
+        bySource: analytics.bySource,
         successCount: analytics.successCount,
         partialCount: analytics.partialCount,
         failedCount: analytics.failedCount,

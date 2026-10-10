@@ -23,11 +23,20 @@ import { getStateManager } from "../lib/workflow/state-manager.js";
 import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
 import { buildProgressWiring } from "./run-progress.js";
 import { formatEscalationTriggerLabel } from "../lib/workflow/model-ladder.js";
+import { MetricsWriter } from "../lib/workflow/metrics-writer.js";
+import type {
+  MetricPhase,
+  RunOutcome,
+} from "../lib/workflow/metrics-schema.js";
 import { ReadySnapshotAdapter } from "./ready-tui-adapter.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
-import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
+import type {
+  ExecutionConfig,
+  ProgressCallback,
+  RunOptions,
+} from "../lib/workflow/types.js";
 import {
   buildExecutionConfig,
   resolveRunOptions,
@@ -131,6 +140,55 @@ export function resolveReadyLimits(
 export function resolveWorktreePath(issueNumber: number): string | null {
   const match = listWorktrees().find((w) => w.issue === issueNumber);
   return match?.path ?? null;
+}
+
+/**
+ * Map a gate result onto a `MetricRun` payload (#929). `ready` already encodes
+ * `AC_MET`/`READY_FOR_MERGE`, so the outcome is binary: a gate pass is not a
+ * batch, so `partial` has no meaning here.
+ */
+export function buildReadyMetricsRecord(
+  result: ReadyResult,
+  config: Pick<ExecutionConfig, "phasePolicies">,
+  durationSeconds: number,
+): Parameters<MetricsWriter["recordRun"]>[0] {
+  const outcome: RunOutcome = result.ready ? "success" : "failed";
+  const phases: MetricPhase[] = result.iterations > 1 ? ["qa", "loop"] : ["qa"];
+  return {
+    issues: [result.issueNumber],
+    phases,
+    outcome,
+    source: "ready",
+    duration: durationSeconds,
+    flags: [`--policy=${result.policy}`],
+    ...(config.phasePolicies ? { phasePolicies: config.phasePolicies } : {}),
+    effortEscalations: result.effortEscalations,
+    modelEscalations: result.modelEscalations,
+    metrics: {
+      tokensUsed: result.tokensUsed,
+      qaIterations: result.iterations,
+    },
+  };
+}
+
+/**
+ * Best-effort: a metrics failure warns on stderr and never changes the exit
+ * code or pollutes `--json` stdout (#929).
+ */
+async function recordReadyMetrics(
+  result: ReadyResult,
+  config: ExecutionConfig,
+  durationSeconds: number,
+  verbose: boolean | undefined,
+): Promise<void> {
+  try {
+    await new MetricsWriter({ verbose }).recordRun(
+      buildReadyMetricsRecord(result, config, durationSeconds),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(colors.warning(`Metrics recording failed: ${message}`));
+  }
 }
 
 export async function readyCommand(
@@ -296,6 +354,7 @@ export async function readyCommand(
     );
 
   let result: ReadyResult;
+  const gateStartedAt = Date.now();
   try {
     result = await runReadyGate({
       issueNumber,
@@ -339,9 +398,8 @@ export async function readyCommand(
       );
     }
     // #971: the model rungs the gate spent, for the same reason — the gate
-    // has no live print of its own, and on this standalone path there is no
-    // run-metrics record either, so this is the ONLY place a `sequant ready
-    // --model-ladder` user sees what the ladder cost them.
+    // has no live print of its own. Since #929 they are also in the run's
+    // `source: "ready"` metrics record; this is the only live view of them.
     for (const e of result.modelEscalations) {
       console.log(
         colors.muted(
@@ -367,6 +425,18 @@ export async function readyCommand(
   } catch {
     // State persistence is non-fatal — the report is the primary output.
   }
+
+  // #929: one `source: "ready"` MetricRun per resolved gate pass. After the
+  // state block and before any report output, so the warning cannot land in
+  // the middle of the report; never touches `process.exitCode`.
+  await recordReadyMetrics(
+    result,
+    config,
+    Math.round((Date.now() - gateStartedAt) / 1000),
+    // `--json` stdout carries only the JSON payload: the writer's verbose
+    // "Metrics recorded" line goes to stdout, so it is off under --json.
+    options.verbose && !options.json,
+  );
 
   if (options.json) {
     console.log(
