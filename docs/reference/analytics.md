@@ -4,7 +4,7 @@ Sequant collects local workflow analytics to help you understand your patterns a
 
 ## Overview
 
-Every `sequant run` execution records metrics to `.sequant/metrics.json`. This enables:
+Every `sequant run` and standalone `sequant ready` execution records metrics to `.sequant/metrics.json`. This enables:
 
 - Understanding optimal issue complexity for AI-assisted workflows
 - Identifying patterns in success vs. failure
@@ -28,9 +28,10 @@ Every `sequant run` execution records metrics to `.sequant/metrics.json`. This e
 | `issues` | Issue numbers only | No titles/content |
 | `phases` | Phases executed | Configuration |
 | `outcome` | success/partial/failed | Aggregate status |
+| `source` | `run` or `ready` — which command wrote the record (records without it read as `run`) | Configuration |
 | `duration` | Total run time (seconds) | Performance metric |
 | `model` | Model used (e.g., "opus") | Configuration |
-| `flags` | CLI flags used | Configuration |
+| `flags` | CLI flags used (a `ready` record carries `--policy=<ac\|a-plus>`) | Configuration |
 | `failureCategory` | Why a failed run halted (e.g., `rate_limit`, `billing`, `timeout`) | Bounded enum only — never error message text |
 | `metrics.filesChanged` | Number of files changed | Aggregate count |
 | `metrics.linesAdded` | Lines of code added | Aggregate count |
