@@ -119,10 +119,12 @@ import {
   createCheckpointCommit,
   createPR,
   filterResumedPhases,
+  rebaseBeforePR,
 } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
 const mockCreatePR = vi.mocked(createPR);
+const mockRebaseBeforePR = vi.mocked(rebaseBeforePR);
 const mockHasExecChanges = vi.mocked(hasExecChanges);
 
 /** Build a minimal ExecutionConfig for testing */
@@ -2585,6 +2587,43 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
           .execOutput,
       ).toBe("## Summary\nexec work");
       expect(mockCreatePR.mock.calls[1][7]).toBe("READY_FOR_MERGE");
+    });
+
+    // #1386: the run's one resolved base reaches `rebaseBeforePR` and both
+    // `createPR` calls (the after-exec create and the after-qa update).
+    it("#1386 AC-1: rebaseBeforePR and createPR receive the run's one resolved base", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+
+      await runIssueWithLogging({
+        ...ctx1247(),
+        baseBranch: "feat/x",
+      });
+
+      expect(mockRebaseBeforePR).toHaveBeenCalledTimes(1);
+      // `baseBranch` is rebaseBeforePR's 5th positional argument.
+      const rebaseBase = mockRebaseBeforePR.mock.calls[0][4];
+      expect(mockCreatePR).toHaveBeenCalledTimes(2);
+      const prBases = mockCreatePR.mock.calls.map(
+        (c) => (c.at(-1) as { baseBranch?: string }).baseBranch,
+      );
+      expect(rebaseBase).toBe("feat/x");
+      expect(prBases).toEqual([rebaseBase, rebaseBase]);
+    });
+
+    it("#1386 AC-3: no base given leaves createPR's baseBranch unset", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+
+      await runIssueWithLogging(ctx1247());
+
+      for (const call of mockCreatePR.mock.calls) {
+        expect(
+          (call.at(-1) as { baseBranch?: string }).baseBranch,
+        ).toBeUndefined();
+      }
     });
 
     it("a failed after-exec call warns and the run still succeeds when the post-qa call works", async () => {
