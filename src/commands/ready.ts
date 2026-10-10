@@ -398,9 +398,8 @@ export async function readyCommand(
       );
     }
     // #971: the model rungs the gate spent, for the same reason — the gate
-    // has no live print of its own, and on this standalone path there is no
-    // run-metrics record either, so this is the ONLY place a `sequant ready
-    // --model-ladder` user sees what the ladder cost them.
+    // has no live print of its own. Since #929 they are also in the run's
+    // `source: "ready"` metrics record; this is the only live view of them.
     for (const e of result.modelEscalations) {
       console.log(
         colors.muted(
@@ -434,7 +433,9 @@ export async function readyCommand(
     result,
     config,
     Math.round((Date.now() - gateStartedAt) / 1000),
-    options.verbose,
+    // `--json` stdout carries only the JSON payload: the writer's verbose
+    // "Metrics recorded" line goes to stdout, so it is off under --json.
+    options.verbose && !options.json,
   );
 
   if (options.json) {

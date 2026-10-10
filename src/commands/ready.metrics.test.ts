@@ -163,6 +163,17 @@ describe("readyCommand — #929 metrics recording", () => {
         expect(process.exitCode).toBe(2);
       });
 
+      it("keeps the writer quiet under --json --verbose, so stdout stays one JSON payload", async () => {
+        vi.mocked(runReadyGate).mockResolvedValue(result());
+
+        await readyCommand(String(ISSUE), { json: true, verbose: true });
+
+        expect(recordRun).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(MetricsWriter)).toHaveBeenCalledWith({
+          verbose: false,
+        });
+      });
+
       it("keeps --json stdout parseable when the writer fails (warning goes to stderr)", async () => {
         vi.mocked(runReadyGate).mockResolvedValue(result());
         recordRun.mockRejectedValue(new Error("disk full"));
