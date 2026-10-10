@@ -127,6 +127,18 @@ Source: `src/lib/worktree-isolation.ts`.
 
 ---
 
+## P5 re-probe (runner, 2026-10-10)
+
+The original P5 logs were in the deleted `mktemp` fixture, so the runner re-ran the probe to leave a record. Claude Code `2.1.296`, parent `--model haiku`, headless `-p`, 280 s cap, about $0.015. The fixture had one committed file and a `.claude/settings.json` registering `WorktreeRemove`, `SubagentStop` and `SessionEnd` hooks, each appending its stdin to its own log. There was no `WorktreeCreate` hook. The prompt spawned two `isolation: "worktree"` subagents, one that changed `a.txt` and one that only ran `ls`.
+
+| Hook | Firings |
+|---|---|
+| `WorktreeRemove` | **0** |
+| `SubagentStop` | 2 |
+| `SessionEnd` | 1 |
+
+After the run, `git worktree list` showed only the changed agent's worktree (`.claude/worktrees/agent-<id>`, branch `worktree-agent-<id>`, `M a.txt`). The unchanged one had been removed natively, without `WorktreeRemove` firing. That matches P5 and the native-cleanup row above.
+
 ## Decision
 
 **Partial.** On Claude Code 2.1.296, native `isolation: "worktree"` is safe to use for *creation* of parallel-group sub-worktrees, and `worktree-isolation.ts` stays as the owner of *merge-back, cleanup and reporting*:
@@ -152,7 +164,7 @@ Closed, and the probe confirms the fix holds: the parent's branch never moved in
 | **Keep** — no change at all | The #47548 blocker that #632 cited is closed and the fix holds; base-ref and `.worktreeinclude` behaviour match sequant's needs. Keeping prompt-only cwd enforcement leaves a gain on the table that the probe shows is now available. |
 | **Answer from upstream docs, no probe** | #485 already evaluated on paper; the replace-vs-alongside question (P2) and the cleanup behaviour (P5, run 3) were only settled by running it. |
 
-### Follow-up issue text (not filed — adoption is filed separately)
+### Follow-up issue (filed as #1407)
 
 > **feat(exec): create parallel-group sub-worktrees with native `isolation: "worktree"`; keep merge-back in `worktree-isolation.ts`**
 >
