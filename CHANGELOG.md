@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Standalone `sequant ready` records its run to `.sequant/metrics.json` (#929).** One `MetricRun` per gate pass with `source: "ready"`, the policy in `flags`, `success`/`failed` from the gate result, `qaIterations`, `tokensUsed` and the effort/model escalations. Recording is best-effort: a write failure warns on stderr and leaves the exit code and `--json` stdout alone. `sequant stats` reports `bySource` counts, and headline averages cover `run` records only. Records with no `source` read as `run`; no migration.
+
 - **The `main` ruleset payload uses a merge queue instead of strict up-to-date (#1350).** `scripts/ruleset-main.sh --print` now drops `strict_required_status_checks_policy`, adds a squash `merge_queue` rule and lists `canary` beside `test` (the live ruleset already required both). `ci.yml` runs on `merge_group` so queued PRs get their checks. The live ruleset is unchanged: applying the queue waits on #1368, where `/release` learns to wait for a queued merge before tagging.
 
 - **`/exec` and `/qa` run the tests a branch affects instead of the full suite (#1349).** `npx vitest run --changed origin/main` (jest: `--changedSince`), plus AC `Evidence:` test files, changed test files and tests that mention a changed file. Stacks with no affected mode keep the full command (`resolveAffectedTestCommand`). CI still runs everything.
