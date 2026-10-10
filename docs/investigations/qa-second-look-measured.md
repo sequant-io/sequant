@@ -1,6 +1,6 @@
 # QA second look, measured: does `--ready-gate` catch what the first verdict misses? (#1344)
 
-**Status:** Pre-registered 2026-10-10 (owner-approved); no scored run yet.
+**Status:** Pre-registered 2026-10-10 (owner-approved). Headroom pilot done (human-read recall 0.53, so the arms run); arms not yet run.
 
 ## Pre-registration (2026-10-10, committed before any scored run)
 
@@ -59,6 +59,26 @@ A run that the 30-minute wall, a watchdog or a crash kills **counts as a miss in
 
 Change n, the floor, the fixture or the metric. Any deviation goes in a dated "Deviations" section above the results.
 
+## Deviations
+
+- **2026-10-10, pilot build.** The pilot ran on a local dev build of sequant 2.19.0 (at or before `68446b02`), not a published release. The fixture PR's branch is `feature/24-add-notes-import`, and each run used `--force` so that a completed QA phase would run again on the reset head.
+- **2026-10-10, human read format.** The owner judged each defect from the passage the grader matched, with the full reviews open beside it. The read was not blind, which does not matter for the pilot, because all 3 runs are arm A.
+
 ## Results
 
-(empty until the pilot)
+### Headroom pilot (AC-2)
+
+3 arm-A runs on 2026-10-10 against the seeded head `76ec7784`. Each run's final verdict was `AC_NOT_MET` (exit 1). Cost is estimated at about $1.2–3.1 per run; the runs logged no exact figure.
+
+| Run | Wall (s) | Grader recall | Human-read recall | Human-read catches |
+|---|---|---|---|---|
+| 1 | 97 | 1.00 | 0.60 | D1, D3, D5 |
+| 2 | 79 | 1.00 | 0.20 | D4 |
+| 3 | 85 | 1.00 | 0.80 | D1, D2, D4, D5 |
+| **Mean** | 87 | **1.00** | **0.53** | |
+
+Per defect, human read (runs caught, of 3): D1 `missing-implementation` 2, D2 `vacuous-test` 1, D3 `primary-path-broken` 1, D4 `regression-deletion` 2, D5 `docs-contract-drift` 2.
+
+**Decision:** mean human-read recall is 0.53, below 0.90, so the fixture has headroom and the arms run as registered.
+
+The grader found every defect's alias in every review. The owner judged 7 of those 15 matches as not caught, including some whose wording is close to a match judged caught in another run. The grader and the human read therefore disagree a lot on this fixture. Each arm's noise floor comes from its own human-read spread, so it already includes this disagreement.
