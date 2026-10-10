@@ -21,15 +21,11 @@ beforeAll(() => {
 
 /** The `--no-rebase` entry of `run --help`, joined across wrapped lines. */
 function noRebaseHelp(): string {
-  const result = spawnSync(
-    "node",
-    [cliPath, "--quiet", "run", "--help", "--no-color"],
-    {
-      cwd: projectRoot,
-      encoding: "utf-8",
-      env: { ...process.env, COLUMNS: "400" },
-    },
-  );
+  const result = spawnSync("node", [cliPath, "run", "--help"], {
+    cwd: projectRoot,
+    encoding: "utf-8",
+    env: { ...process.env, COLUMNS: "400" },
+  });
   const lines = result.stdout.split("\n");
   const start = lines.findIndex((l) => l.includes("--no-rebase"));
   if (start === -1) return "";

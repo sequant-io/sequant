@@ -30,7 +30,7 @@ function setup() {
 
 describe("run-renderer heartbeat (#1387)", () => {
   describe("AC-4: elapsed is per phase", () => {
-    it("reads `#21 exec (1m 0s)` when the issue started at T0, exec at T0+11m, now T0+12m", () => {
+    it("reads `#21 exec (1m)` when the issue started at T0, exec at T0+11m, now T0+12m", () => {
       const { r, clock, heartbeats } = setup();
       r.onEvent({ issue: 21, phase: "spec", event: "start" });
       clock.now = T0 + 11 * MIN;
@@ -47,7 +47,7 @@ describe("run-renderer heartbeat (#1387)", () => {
 
       const lines = heartbeats();
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain("#21 exec (1m 0s)");
+      expect(lines[0]).toContain("#21 exec (1m)");
       expect(lines[0]).not.toContain("12m");
       r.dispose();
     });
@@ -67,7 +67,7 @@ describe("run-renderer heartbeat (#1387)", () => {
         clock.now = T0 + 3 * MIN;
         r.tickHeartbeatNow();
 
-        expect(heartbeats()[0]).toContain("#21 exec (3m 0s)");
+        expect(heartbeats()[0]).toContain("#21 exec (3m)");
         r.dispose();
       });
     });
