@@ -2,7 +2,7 @@
  * Tests for the state command
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -16,6 +16,25 @@ import {
   cleanupStaleEntries,
   rebuildStateFromLogs,
 } from "../lib/workflow/state-utils.js";
+import {
+  FIXTURE_ISSUE_WORKTREES,
+  installWorktreeDiscoveryFixture,
+} from "../lib/workflow/__fixtures__/worktree-discovery.fixture.js";
+
+// Discovery reads `git worktree list` and runs `gh issue view` per worktree;
+// the fixture answers both, everything else passes through (#1322).
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    spawnSync: vi.fn(actual.spawnSync),
+  };
+});
+
+import { spawnSync } from "child_process";
+const mockSpawnSync = vi.mocked(spawnSync);
+const { spawnSync: actualSpawnSync } =
+  await vi.importActual<typeof import("child_process")>("child_process");
 
 describe("state command", () => {
   let tempDir: string;
@@ -29,35 +48,36 @@ describe("state command", () => {
     logPath = path.join(tempDir, ".sequant", "logs");
     fs.mkdirSync(path.dirname(statePath), { recursive: true });
     fs.mkdirSync(logPath, { recursive: true });
+    installWorktreeDiscoveryFixture(mockSpawnSync, actualSpawnSync);
   });
 
   afterEach(() => {
     // Cleanup temp dir
     fs.rmSync(tempDir, { recursive: true, force: true });
+    mockSpawnSync.mockReset();
   });
 
-  describe("idempotency (AC-4)", { timeout: 30000 }, () => {
+  describe("idempotency (AC-4)", () => {
     it("state init should be idempotent - running twice yields same result", async () => {
       // Run discovery twice with the same state
       const result1 = await discoverUntrackedWorktrees({ statePath });
       expect(result1.success).toBe(true);
+      expect(result1.discovered).toHaveLength(FIXTURE_ISSUE_WORKTREES.length);
 
-      // If worktrees were discovered, add them to state
-      if (result1.discovered.length > 0) {
-        const manager = new StateManager({ statePath });
-        for (const wt of result1.discovered) {
-          await manager.initializeIssue(wt.issueNumber, wt.title, {
-            worktree: wt.worktreePath,
-            branch: wt.branch,
-          });
-        }
-
-        // Second run should find fewer/no new worktrees
-        const result2 = await discoverUntrackedWorktrees({ statePath });
-        expect(result2.success).toBe(true);
-        expect(result2.discovered.length).toBe(0);
-        expect(result2.alreadyTracked).toBe(result1.discovered.length);
+      // Add every discovered worktree to state
+      const manager = new StateManager({ statePath });
+      for (const wt of result1.discovered) {
+        await manager.initializeIssue(wt.issueNumber, wt.title, {
+          worktree: wt.worktreePath,
+          branch: wt.branch,
+        });
       }
+
+      // Second run finds no new worktrees
+      const result2 = await discoverUntrackedWorktrees({ statePath });
+      expect(result2.success).toBe(true);
+      expect(result2.discovered.length).toBe(0);
+      expect(result2.alreadyTracked).toBe(result1.discovered.length);
     });
 
     it("state clean should be idempotent - running twice yields same result", async () => {
@@ -151,7 +171,7 @@ describe("state command", () => {
     });
   });
 
-  describe("clear output (AC-5)", { timeout: 30000 }, () => {
+  describe("clear output (AC-5)", () => {
     it("discoverUntrackedWorktrees returns structured data for output", async () => {
       const result = await discoverUntrackedWorktrees({ statePath });
 
@@ -163,6 +183,8 @@ describe("state command", () => {
       expect(result).toHaveProperty("skipped");
 
       // Discovered worktrees have all needed info for output
+      expect(result.discovered.length).toBeGreaterThan(0);
+      expect(result.skipped.length).toBeGreaterThan(0);
       for (const wt of result.discovered) {
         expect(wt).toHaveProperty("issueNumber");
         expect(wt).toHaveProperty("title");
