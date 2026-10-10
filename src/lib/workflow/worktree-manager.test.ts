@@ -1043,6 +1043,20 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
     );
   }, 90_000);
 
+  it("1380 AC-2 keeps a local-only branch that has commits of its own", () => {
+    const wt = ensure(15).info.path;
+    const branch = git(wt, "branch", "--show-current");
+    commitFile(wt, "local.txt", "local-only commit");
+    expect(git(clone, "ls-remote", "--heads", "origin", branch)).toBe("");
+    const head = git(wt, "rev-parse", "HEAD");
+    advanceMain();
+
+    const { out, info } = ensure(15);
+    expect(out).not.toContain("recreating fresh");
+    expect(info.existed).toBe(true);
+    expect(git(wt, "rev-parse", "HEAD")).toBe(head);
+  }, 90_000);
+
   it("1380 AC-3 keeps the worktree when the start ref lacks the branch's commits", () => {
     const { wt, branch } = pushedBranch(12);
     advanceMain();
