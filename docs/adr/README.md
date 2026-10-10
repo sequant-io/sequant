@@ -68,3 +68,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0008](0008-retire-root-plugin-mirrors.md) | Retire the root `skills/` and `hooks/` copies; one owner for the skill mirror list | Accepted |
 | [0009](0009-verify-skill-guards-bare-invocation.md) | Keep the `verify` skill name; make pre-commit invocations a no-op | Accepted |
 | [0012](0012-phase-skills-from-installed-package.md) | Phase agents load skills from the installed package; committed skills become an override | Proposed |
+| [0013](0013-recreate-stale-worktree-from-remote-branch.md) | Recreate a stale worktree from its remote branch, behind a containment guard | Proposed |
