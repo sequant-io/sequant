@@ -138,8 +138,7 @@ export function isDeclaredDependency(installPath: string = __dirname): boolean {
   // pnpm's real path is <root>/node_modules/.pnpm/sequant@x/node_modules/sequant:
   // the project is the directory above the store, not `.pnpm/sequant@x`.
   const pnpmStore = normalizedPath.lastIndexOf("/node_modules/.pnpm/");
-  const idx =
-    pnpmStore !== -1 ? pnpmStore : normalizedPath.lastIndexOf(marker);
+  const idx = pnpmStore !== -1 ? pnpmStore : normalizedPath.lastIndexOf(marker);
   if (idx === -1 || !normalizedPath.includes(marker)) return false;
   const projectRoot = normalizedPath.slice(0, idx) || "/";
   try {

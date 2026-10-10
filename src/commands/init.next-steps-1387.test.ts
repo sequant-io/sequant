@@ -62,10 +62,14 @@ describe("buildNextSteps (#1387)", () => {
         expect(args).not.toContain("AGENTS.md");
 
         execFileSync("git", args, { cwd: dir, stdio: "pipe" });
-        const staged = execFileSync("git", ["diff", "--cached", "--name-only"], {
-          cwd: dir,
-          encoding: "utf8",
-        })
+        const staged = execFileSync(
+          "git",
+          ["diff", "--cached", "--name-only"],
+          {
+            cwd: dir,
+            encoding: "utf8",
+          },
+        )
           .trim()
           .split("\n");
         expect(staged).toEqual(
