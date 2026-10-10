@@ -1209,7 +1209,8 @@ export async function runIssueWithLogging(
     } = {},
   ): Promise<ReturnType<typeof createPR>> => {
     // #605: under --stacked, target predecessor branch (only for non-first,
-    // non-last issues). Last PR keeps `main` so partial progress can land.
+    // non-last issues). The last PR targets the run's base (#1386: `--base`,
+    // else the repo default) so partial progress can land.
     const stackOptions =
       chain?.predecessorBranch || chain?.stackManifest
         ? {
