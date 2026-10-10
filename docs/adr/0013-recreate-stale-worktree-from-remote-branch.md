@@ -1,4 +1,4 @@
-# ADR-0011: Recreate a stale worktree from its remote branch, behind a containment guard
+# ADR-0013: Recreate a stale worktree from its remote branch, behind a containment guard
 
 **Status:** Proposed
 **Date:** 2026-10-10
