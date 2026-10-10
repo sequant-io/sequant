@@ -128,15 +128,19 @@ export function isLocalNodeModulesInstall(
  * optionalDependencies).
  *
  * The project root is the directory holding the nearest `node_modules/sequant`
- * segment of the install path, not `process.cwd()`, so a run from a
+ * segment of the install path (above the store for pnpm), not `process.cwd()`, so a run from a
  * subdirectory gives the same answer. An unreadable or invalid package.json
  * counts as undeclared.
  */
 export function isDeclaredDependency(installPath: string = __dirname): boolean {
   const normalizedPath = installPath.replace(/\\/g, "/");
   const marker = "/node_modules/sequant";
-  const idx = normalizedPath.lastIndexOf(marker);
-  if (idx === -1) return false;
+  // pnpm's real path is <root>/node_modules/.pnpm/sequant@x/node_modules/sequant:
+  // the project is the directory above the store, not `.pnpm/sequant@x`.
+  const pnpmStore = normalizedPath.lastIndexOf("/node_modules/.pnpm/");
+  const idx =
+    pnpmStore !== -1 ? pnpmStore : normalizedPath.lastIndexOf(marker);
+  if (idx === -1 || !normalizedPath.includes(marker)) return false;
   const projectRoot = normalizedPath.slice(0, idx) || "/";
   try {
     const pkg = JSON.parse(

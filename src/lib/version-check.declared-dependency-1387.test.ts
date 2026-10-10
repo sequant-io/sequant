@@ -53,6 +53,24 @@ describe("shouldWarnLocalInstall (#1387)", () => {
       },
     );
 
+    it("does not warn for a pnpm install the project declares", () => {
+      writeProject({ name: "app", devDependencies: { sequant: "^2.19.0" } });
+      const pnpmPath = path.join(
+        root,
+        "node_modules",
+        ".pnpm",
+        "sequant@2.19.0",
+        "node_modules",
+        "sequant",
+        "dist",
+        "src",
+        "lib",
+      );
+      fs.mkdirSync(pnpmPath, { recursive: true });
+      expect(isLocalNodeModulesInstall(pnpmPath)).toBe(true);
+      expect(shouldWarnLocalInstall(pnpmPath)).toBe(false);
+    });
+
     describe("error handling", () => {
       it("still warns when sequant is not declared (stray install)", () => {
         writeProject({ name: "app", dependencies: { chalk: "^5.0.0" } });
