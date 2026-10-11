@@ -1,6 +1,6 @@
 # QA second look, measured: does `--ready-gate` catch what the first verdict misses? (#1344)
 
-**Status:** Pre-registered 2026-10-10 (owner-approved). Headroom pilot done (human-read recall 0.53, so the arms run); arms not yet run.
+**Status:** Pre-registered 2026-10-10 (owner-approved). Headroom pilot done (human-read recall 0.60 under the rubric). Arms on hold: the human read agreed with itself on 8 of 15 cells across two passes.
 
 ## Pre-registration (2026-10-10, committed before any scored run)
 
@@ -86,6 +86,21 @@ Change n, the floor, the fixture or the metric. Any deviation goes in a dated "D
 
 Per defect, human read (runs caught, of 3): D1 `missing-implementation` 2, D2 `vacuous-test` 1, D3 `primary-path-broken` 1, D4 `regression-deletion` 2, D5 `docs-contract-drift` 2.
 
-**Decision:** mean human-read recall is 0.53, below 0.90, so the fixture has headroom and the arms run as registered.
+First pass (comparative standard, one excerpt per row): mean human-read recall 0.53.
+
+**Second pass (2026-10-11, per-review rubric).** The 15 items were shuffled, shown without run labels, and each one listed every passage in its review that mentions the defect. Shuffle key: item 1 = run 2 D3, 2 = 1 D4, 3 = 3 D5, 4 = 2 D1, 5 = 3 D2, 6 = 1 D3, 7 = 2 D4, 8 = 3 D1, 9 = 1 D5, 10 = 2 D2, 11 = 3 D4, 12 = 1 D1, 13 = 2 D5, 14 = 3 D3, 15 = 1 D2.
+
+| Run | D1 | D2 | D3 | D4 | D5 | Recall (clear) |
+|---|---|---|---|---|---|---|
+| 1 | vague | vague | clear | clear | clear | 0.60 |
+| 2 | clear | vague | clear | clear | clear | 0.80 |
+| 3 | vague | clear | vague | vague | clear | 0.40 |
+| **Mean** | | | | | | **0.60** |
+
+No defect was rated absent. Every review names all 5, as the grader found.
+
+**Agreement between the two passes:** the two passes agree on caught versus not caught for 8 of 15 cells. The mean barely moved (0.53, then 0.60), but the cells that count as caught changed. For example, run 1 D1 went from caught to vague, and run 2 D3 from not caught to clear. Some passages that read almost the same also got different ratings within the second pass: D3 is "ids 1,1,2, and `runImport` never calls it, `src/import.ts:21`" in runs 2 and 3, and was rated clear and vague. As used here, the primary metric is not stable enough to separate the arms. Each arm-A run's recall ranges over 0.4–0.8 on the same fixture, so the noise floor (arm A spread) would likely be 0.4 or more. B would then need a mean near 1.0 to win.
+
+**Decision:** mean human-read recall is 0.60 under the rubric, below 0.90, so the fixture has headroom by the pre-registered rule. The arms are **on hold pending the owner's decision**, because of the agreement finding above.
 
 The grader found every defect's alias in every review. The owner judged 7 of those 15 matches as not caught, including some whose wording is close to a match judged caught in another run. The grader and the human read therefore disagree a lot on this fixture. Each arm's noise floor comes from its own human-read spread, so it already includes this disagreement.
