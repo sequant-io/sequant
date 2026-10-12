@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import { execFileSync } from "child_process";
+import * as os from "os";
 import {
   extractFindings,
   gradePlantedShare,
@@ -341,5 +342,67 @@ describe("AC-3 (#1313): template intro bullets and status-table ❌ are not find
   it("the title heading does not open an issues section", () => {
     const v = "## QA Review for Issue #7\n- **Mode:** x\n- **Branch:** y\n";
     expect(extractFindings(v)).toEqual([]);
+  });
+});
+
+describe("#1344: the held-out fixture is well-formed and stays held out", () => {
+  const HELDOUT = path.join("docs", "investigations", "qa-heldout-fixture");
+  const heldTruthFile = path.join(HELDOUT, "ground-truth.json");
+  const heldPatch = path.join(HELDOUT, "defects.patch");
+  const truth = loadTruth(heldTruthFile);
+  const patchLines = fs.readFileSync(heldPatch, "utf-8").split("\n");
+
+  it("carries a held-out warning that names #1068", () => {
+    const raw = JSON.parse(fs.readFileSync(heldTruthFile, "utf-8"));
+    expect(raw._warning).toMatch(/#1068/);
+  });
+
+  it("plants 5 defects of distinct classes, each anchored on one patch line", () => {
+    expect(truth.defects).toHaveLength(5);
+    expect(new Set(truth.defects.map((d) => d.class)).size).toBe(5);
+    for (const d of truth.defects) {
+      const counts = d.identifiers.map(
+        (id) => patchLines.filter((l) => l.includes(id)).length,
+      );
+      expect({ id: d.identifiers[0], anchored: counts.includes(1) }).toEqual({
+        id: d.identifiers[0],
+        anchored: true,
+      });
+    }
+  });
+
+  it("uses classes the dataset never shows caught, plus primary-path-broken", () => {
+    const caught = caughtClasses(fs.readFileSync(DATASET_FILE, "utf-8"));
+    for (const d of truth.defects) {
+      if (d.class === "primary-path-broken") continue;
+      expect({ class: d.class, caught: caught.has(d.class) }).toEqual({
+        class: d.class,
+        caught: false,
+      });
+    }
+  });
+
+  it("shares no identifier with the in-sample seeded fixture", () => {
+    const seeded = new Set(
+      loadTruth(TRUTH_FILE).defects.flatMap((d) => d.identifiers),
+    );
+    const shared = truth.defects
+      .flatMap((d) => d.identifiers)
+      .filter((id) => seeded.has(id));
+    expect(shared).toEqual([]);
+  });
+
+  it("applies cleanly to the shared base project", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "heldout-"));
+    try {
+      fs.cpSync(path.join(FIXTURE, "base"), dir, { recursive: true });
+      execFileSync("git", ["init", "-q"], { cwd: dir });
+      execFileSync("git", ["apply", "--check", path.resolve(heldPatch)], {
+        cwd: dir,
+        stdio: "pipe",
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

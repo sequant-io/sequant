@@ -1,0 +1,42 @@
+{
+  "_warning": "HELD-OUT SET (#1344, #1272 AC-2). #1068 and any work choosing /qa sections must never read this file. It is scored once per run and is never used to tune a skill.",
+  "fixture": "notes-cli import (#1344 held-out)",
+  "patch": "defects.patch",
+  "defects": [
+    {
+      "identifiers": ["dedupeNotes", "function dedupeNotes"],
+      "class": "missing-implementation",
+      "file": "src/import.ts",
+      "rationale": "`--dedupe` is registered and documented, and the change claims it works, but `dedupeNotes` returns the incoming notes unchanged (AC-2). Duplicates are always imported."
+    },
+    {
+      "identifiers": [
+        "imports a notes file",
+        "no assertions",
+        "zero assertions",
+        "no expect"
+      ],
+      "class": "vacuous-test",
+      "file": "src/import.test.ts",
+      "rationale": "The only end-to-end test, `imports a notes file`, calls runImport and asserts nothing, so it passes whatever the store ends up holding (AC-5). No test covers `--dedupe` or `--dry-run`."
+    },
+    {
+      "identifiers": ["assignFreshIds", "[...existing, ...incoming]"],
+      "class": "primary-path-broken",
+      "file": "src/import.ts",
+      "rationale": "`assignFreshIds` is correct and unit-tested, but runImport never calls it: it merges `[...existing, ...incoming]` as-is, so a colliding id is written twice (AC-1). The passing helper test hides the broken user path."
+    },
+    {
+      "identifiers": ["expected a JSON array", "Array.isArray"],
+      "class": "regression-deletion",
+      "file": "src/store.ts",
+      "rationale": "While adding writeNotesFile, the diff deletes readNotesFile's `expected a JSON array of notes` guard. `notes list` on a non-array store now crashes with a TypeError instead of a clear error. No AC mentions the guard."
+    },
+    {
+      "identifiers": ["--dryrun", "dryrun"],
+      "class": "docs-contract-drift",
+      "file": "src/cli.ts",
+      "rationale": "The README and AC-3 say `--dry-run`, but the CLI registers `--dryrun`, so `notes import f --dry-run` fails with `unknown option` (AC-3)."
+    }
+  ]
+}

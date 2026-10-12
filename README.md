@@ -4,7 +4,7 @@
 
 For developers who won't merge what they can't trust — solo or on a team.
 
-Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, implement, review — each in its own git worktree, with quality gates between them. The PR arrives with evidence: every acceptance criterion re-checked against the code and posted to the issue. The merge is always yours.
+Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, implement, review — each in its own git worktree, with quality gates between them. The PR arrives with evidence: every acceptance criterion re-checked against the code and posted to the issue. On a held-out fixture with 5 planted defects, the review named all 5 in each of 3 runs ([measured](docs/investigations/qa-second-look-measured.md)). The merge is always yours.
 
 **[sequant.io](https://sequant.io)** — docs, guides, and getting started.
 
