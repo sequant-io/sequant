@@ -834,6 +834,38 @@ export function computeWorktreeBaseRef(
 }
 
 /**
+ * The ref a stale worktree is recreated from (#1380): `origin/<branch>` when
+ * the remote has the branch (a pushed PR branch keeps its commits), else the
+ * base ref a new branch would be cut from. Fetches the branch first; a failed
+ * fetch falls back to whatever remote-tracking ref is already present.
+ *
+ * @internal Exported for testing only.
+ */
+export function resolveRecreateStartRef(
+  cwd: string,
+  branch: string,
+  baseRef: string,
+): string {
+  spawnSync("git", ["-C", cwd, "fetch", "origin", branch], {
+    stdio: "pipe",
+    timeout: 30000,
+  });
+  const remoteCheck = spawnSync(
+    "git",
+    [
+      "-C",
+      cwd,
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/remotes/origin/${branch}`,
+    ],
+    { stdio: "pipe" },
+  );
+  return remoteCheck.status === 0 ? `origin/${branch}` : baseRef;
+}
+
+/**
  * The branch a PR is opened against (#1386): the same base value the worktree
  * was cut from, as a bare branch name for `gh pr create --base`.
  *
@@ -885,6 +917,8 @@ export async function ensureWorktree(
 
   // Check if worktree already exists
   let existingPath = findExistingWorktree(branch);
+  // #1380: set when a stale worktree is recreated from its remote branch
+  let recreateFrom: string | null = null;
   if (existingPath) {
     // AC-3: Check if worktree is stale and needs recreation
     const detectedBase = baseBranch || detectDefaultBranch(verbose);
@@ -919,15 +953,43 @@ export async function ensureWorktree(
         );
         // Continue with existing worktree
       } else {
-        // Safe to recreate - no uncommitted/unpushed work
-        console.log(
-          chalk.yellow(
-            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
-          ),
+        // #1380: recreate from origin/<branch> when it exists, and only when
+        // the start ref already contains HEAD — otherwise the recreate drops
+        // the branch's commits (a pushed PR, or a local-only branch).
+        const startRef = resolveRecreateStartRef(
+          existingPath,
+          branch,
+          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose)),
         );
+        const contained = spawnSync(
+          "git",
+          ["-C", existingPath, "merge-base", "--is-ancestor", "HEAD", startRef],
+          { stdio: "pipe" },
+        );
+        if (contained.status !== 0) {
+          console.log(
+            chalk.yellow(
+              `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but ${startRef} does not contain its commits`,
+            ),
+          );
+          console.log(
+            chalk.yellow(
+              `    ℹ️  Keeping existing worktree so the branch's commits are not dropped.`,
+            ),
+          );
+          // Continue with existing worktree
+        } else {
+          // Safe to recreate - no uncommitted/unpushed work
+          console.log(
+            chalk.yellow(
+              `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
+            ),
+          );
 
-        if (removeStaleWorktree(existingPath, branch, verbose)) {
-          existingPath = null; // Will fall through to create new worktree
+          if (removeStaleWorktree(existingPath, branch, verbose)) {
+            existingPath = null; // Will fall through to create new worktree
+            if (startRef === `origin/${branch}`) recreateFrom = startRef;
+          }
         }
       }
     }
@@ -1062,7 +1124,15 @@ export async function ensureWorktree(
   let createResult;
   let needsRebase = false;
 
-  if (branchExists) {
+  if (recreateFrom) {
+    // #1380: rebuild the deleted local branch from origin/<branch>, never
+    // from the base, so the recreated worktree keeps the PR's commits.
+    createResult = spawnSync(
+      "git",
+      ["worktree", "add", "-B", branch, worktreePath, recreateFrom],
+      { stdio: "pipe" },
+    );
+  } else if (branchExists) {
     // Use existing branch
     createResult = spawnSync("git", ["worktree", "add", worktreePath, branch], {
       stdio: "pipe",

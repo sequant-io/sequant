@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Standalone `sequant ready` records its run to `.sequant/metrics.json` (#929).** One `MetricRun` per gate pass with `source: "ready"`, the policy in `flags`, `success`/`failed` from the gate result, `qaIterations`, `tokensUsed` and the effort/model escalations. Recording is best-effort: a write failure warns on stderr and leaves the exit code and `--json` stdout alone. `sequant stats` reports `bySource` counts, and headline averages cover `run` records only. Records with no `source` read as `run`; no migration.
+
 - **The `main` ruleset payload uses a merge queue instead of strict up-to-date (#1350).** `scripts/ruleset-main.sh --print` now drops `strict_required_status_checks_policy`, adds a squash `merge_queue` rule and lists `canary` beside `test` (the live ruleset already required both). `ci.yml` runs on `merge_group` so queued PRs get their checks. The live ruleset is unchanged: applying the queue waits on #1368, where `/release` learns to wait for a queued merge before tagging.
 
 - **`/exec` and `/qa` run the tests a branch affects instead of the full suite (#1349).** `npx vitest run --changed origin/main` (jest: `--changedSince`), plus AC `Evidence:` test files, changed test files and tests that mention a changed file. Stacks with no affected mode keep the full command (`resolveAffectedTestCommand`). CI still runs everything.
@@ -19,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A stale worktree for a pushed PR branch is recreated from `origin/<branch>`, not from the base (#1380).** When a worktree was more than 5 commits behind and clean, `ensureWorktree` deleted the local branch and cut a new one from the base, so a qa re-run reviewed the base without the PR's commits. The recreate now starts from `origin/<branch>` when the remote has it. If the start ref does not contain the worktree's HEAD (an offline fetch, or a local-only branch with commits of its own), it prints a warning and keeps the existing worktree. See ADR-0013.
 - **First-run papercuts from a stranger smoke test (#1387).** The "Running sequant from local node_modules" warning no longer tells a project that declares `sequant` in `package.json` to uninstall it (a stray, undeclared install still warns). `init`'s next steps now say to commit the generated files and run `npx sequant run <issue>`. `doctor`'s `Warnings:` count includes the upstream #43869 notice it prints, so a healthy install now reads "All checks passed (1 warning)" unless `--quiet`. The `still running` line shows time since the current phase started, not the issue. `run --help` describes `--no-rebase` as skipping the rebase onto the base branch.
 
 - **`sequant run --base <branch>` opens the PR against `<branch>` (#1386).** The worktree was cut from `--base` and rebased onto it, but `createPR` set `gh pr create --base` only under `--stacked`, so a plain `--base` (or `settings.run.defaultBase`) opened the PR against the repo default and its diff carried every difference between the two branches. `createPR` now takes the run's one resolved base and derives the PR target through `resolvePrBase`; `--stacked` still wins for non-last links, and a base equal to the repo default passes no `--base`, as before.
