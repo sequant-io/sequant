@@ -1,6 +1,6 @@
 # QA second look, measured: does `--ready-gate` catch what the first verdict misses? (#1344)
 
-**Status:** Pre-registered 2026-10-10 (owner-approved). Headroom pilot done (human-read recall 0.60 under the rubric). Arms on hold: the human read agreed with itself on 8 of 15 cells across two passes.
+**Status:** Pre-registered 2026-10-10 (owner-approved). Headroom pilot done (human-read recall 0.60 under the rubric). Stopped: no headroom (grader recall 1.00 over 3 pilot runs; follow-up #1408).
 
 ## Pre-registration (2026-10-10, committed before any scored run)
 
@@ -88,6 +88,8 @@ Per defect, human read (runs caught, of 3): D1 `missing-implementation` 2, D2 `v
 
 First pass (comparative standard, one excerpt per row): mean human-read recall 0.53.
 
+The grader found every defect's alias in every review. In the first pass the owner judged 7 of those 15 matches as not caught, including some whose wording is close to a match judged caught in another run.
+
 **Second pass (2026-10-11, per-review rubric).** The 15 items were shuffled, shown without run labels, and each one listed every passage in its review that mentions the defect. Shuffle key: item 1 = run 2 D3, 2 = 1 D4, 3 = 3 D5, 4 = 2 D1, 5 = 3 D2, 6 = 1 D3, 7 = 2 D4, 8 = 3 D1, 9 = 1 D5, 10 = 2 D2, 11 = 3 D4, 12 = 1 D1, 13 = 2 D5, 14 = 3 D3, 15 = 1 D2.
 
 | Run | D1 | D2 | D3 | D4 | D5 | Recall (clear) |
@@ -101,6 +103,13 @@ No defect was rated absent. Every review names all 5, as the grader found.
 
 **Agreement between the two passes:** the two passes agree on caught versus not caught for 8 of 15 cells. The mean barely moved (0.53, then 0.60), but the cells that count as caught changed. For example, run 1 D1 went from caught to vague, and run 2 D3 from not caught to clear. Some passages that read almost the same also got different ratings within the second pass: D3 is "ids 1,1,2, and `runImport` never calls it, `src/import.ts:21`" in runs 2 and 3, and was rated clear and vague. As used here, the primary metric is not stable enough to separate the arms. Each arm-A run's recall ranges over 0.4–0.8 on the same fixture, so the noise floor (arm A spread) would likely be 0.4 or more. B would then need a mean near 1.0 to win.
 
-**Decision:** mean human-read recall is 0.60 under the rubric, below 0.90, so the fixture has headroom by the pre-registered rule. The arms are **on hold pending the owner's decision**, because of the agreement finding above.
+**Decision (owner, 2026-10-11):** stop. See below.
 
-The grader found every defect's alias in every review. The owner judged 7 of those 15 matches as not caught, including some whose wording is close to a match judged caught in another run. The grader and the human read therefore disagree a lot on this fixture. Each arm's noise floor comes from its own human-read spread, so it already includes this disagreement.
+## Stopped: no headroom
+
+The arms (AC-3, AC-4, AC-5) were not run. The issue ends at the pilot, as AC-2 allows.
+
+- **By the issue's own AC-2 test, there is no headroom.** AC-2 asks for arm-A grader recall below 0.90, and the pilot scored 1.00 in all 3 runs. The owner rated none of the 15 cells absent: every first verdict named all 5 planted defects, most of them with a CLI run as evidence.
+- **The human clarity rating can't stand in.** The pre-registration made human-read recall primary. On this fixture it measures only how clearly a found defect is stated, and two passes by the same reader agreed on 8 of 15 cells. A noise floor of 0.4 or more would leave the arms null by construction, so running them would spend about $40 to learn nothing.
+- **What this shows, honestly.** The 5 defects copy classes the first verdict missed elsewhere (#529/#570, #467, #421/#503), but here each one is visible in the diff. The first verdict caught them all. So a defect's class alone doesn't make the first verdict miss it. This fixture did not reproduce what made those historical defects hard to see. Nothing here shows that the first verdict misses nothing, and nothing shows that `--ready-gate` adds nothing.
+- **Follow-up:** #1408 asks for a fixture the first verdict actually misses and a scoring rule that agrees with itself, then runs these arms.
