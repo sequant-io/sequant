@@ -8,7 +8,7 @@ When a workflow keeps failing, the tempting fix is "throw a stronger model at it
 
 This distinction is the whole design. Two failing loops can look identical from the outside and need opposite remedies.
 
-| | **Capability-bound** | **Spec-bound** |
+| Aspect | **Capability-bound** | **Spec-bound** |
 |---|---|---|
 | What you see | The agent produces **nothing** — no commits, no working-tree change — iteration after iteration | The agent produces a **new diff every iteration**, and QA keeps rejecting it |
 | What it means | The model cannot construct a working change for this task | The criteria contradict themselves, or contradict the repository |

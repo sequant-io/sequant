@@ -3,7 +3,7 @@
 When a run fails on an exhausted subscription rate-limit window (`five_hour` /
 `seven_day`, see #860), Sequant has two recovery shapes:
 
-| | `--auto-wait` (#804) | Halt-and-resume (#892) |
+| Aspect | `--auto-wait` (#804) | Halt-and-resume (#892) |
 |---|---|---|
 | Mechanism | Live process sleeps until the window reopens | Process exits cleanly; `sequant resume` re-enters later |
 | Per-issue lock | Held for the whole wait | **Released at halt** |

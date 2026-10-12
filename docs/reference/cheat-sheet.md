@@ -18,7 +18,7 @@ yarn global add sequant      # yarn
 bun add -g sequant           # bun
 ```
 
-#### Update & sync
+### Update & sync
 
 ```bash
 sequant update              # Update skill templates to latest version (interactive)
@@ -28,7 +28,7 @@ sequant sync --dry-run      # Preview what sync would write (exits non-zero if w
 sequant doctor              # Verify installation health
 ```
 
-#### When to use which
+### When to use which
 
 | Scenario | Command |
 |----------|---------|
@@ -170,13 +170,13 @@ sequant doctor              # Verify installation health
 
 ## Common Workflows
 
-#### Single issue, full auto
+### Single issue, full auto
 ```bash
 /fullsolve 123
 ```
 Runs spec → exec → test → qa with automatic fix loops, stopping at PR creation. Add `--auto-merge` to also merge the PR.
 
-#### Step-by-step with control
+### Step-by-step with control
 ```bash
 /spec 123        # Review the plan
 /exec 123        # Implement in worktree
@@ -184,37 +184,37 @@ Runs spec → exec → test → qa with automatic fix loops, stopping at PR crea
 ```
 Pause between phases to review output and adjust.
 
-#### Batch three issues
+### Batch three issues
 ```bash
 npx sequant run 101 102 103 --quality-loop
 ```
 Runs all issues with auto-retry on failures.
 
-#### Sequential chain (each builds on previous)
+### Sequential chain (each builds on previous)
 ```bash
 npx sequant run 101 102 103 --sequential --chain
 ```
 Each issue branches from the last; a failed issue halts the chain before any successor starts.
 
-#### Resume a failed run
+### Resume a failed run
 ```bash
 npx sequant run 123 --resume
 ```
 Picks up from the last completed phase using GitHub markers.
 
-#### Dry run to preview
+### Dry run to preview
 ```bash
 npx sequant run 101 102 --dry-run
 ```
 Shows what would happen without executing anything.
 
-#### Generate tests before implementation
+### Generate tests before implementation
 ```bash
 npx sequant run 123 --phases spec,testgen,exec,qa
 ```
 Creates test stubs from spec, then implements against them.
 
-#### Security-sensitive feature
+### Security-sensitive feature
 ```bash
 /spec 123
 /exec 123

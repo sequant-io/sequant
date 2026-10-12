@@ -41,7 +41,7 @@ Add these to the project's `.mcp.json` (the same file `sequant init` already wri
 
 Enables automated browser testing with snapshots, screenshots, and interaction recording.
 
-1. Follow the [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools#setup) for the exact `command`/`args`
+1. Follow the [Chrome DevTools MCP setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools#setup) for the exact `command`/`args`
 2. Add the resulting entry to `.mcp.json`'s `mcpServers` object at the project root
 
 **Without this MCP:** The `/test` skill falls back to generating manual test checklists instead of automated browser tests.
@@ -69,7 +69,7 @@ Add an entry to `.mcp.json`:
 
 Enables extended reasoning for complex multi-step problems.
 
-1. Follow the [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking#setup) for the exact `command`/`args`
+1. Follow the [Sequential Thinking MCP setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking#setup) for the exact `command`/`args`
 2. Add the resulting entry to `.mcp.json`'s `mcpServers` object at the project root
 
 **Without this MCP:** The `/fullsolve` skill uses standard reasoning without extended thinking chains.
