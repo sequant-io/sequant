@@ -379,16 +379,16 @@ npx sequant ready 42 --models qa=sonnet
 
 A malformed spec (empty value, mixing a bare value with `phase=value` pairs, or an unrecognized phase name) fails fast with a usage error — it never silently resolves to "nothing configured".
 
-**What the aliases resolve to.** The examples use Claude Code's model aliases, which track the current model of each family. As of Claude Code 2.1.283:
+**What the aliases resolve to.** The examples use Claude Code's model aliases, which track the current model of each family. As of Claude Code 2.1.296:
 
 | Alias | Model | Full ID |
 |-------|-------|---------|
 | `opus` | Opus 5.5 | `claude-opus-5-5` |
-| `sonnet` | Sonnet 5 | `claude-sonnet-5` |
-| `haiku` | Haiku 4.5 | `claude-haiku-4-5-20251001` |
+| `sonnet` | Sonnet 5.5 | `claude-sonnet-5-5` |
+| `haiku` | Haiku 5.5 | `claude-haiku-5-5` |
 | `fable` | Fable 5.1 | `claude-fable-5-1` |
 
-A full ID pins a model across CLI upgrades (`--models spec=claude-opus-5-5,exec=claude-sonnet-5`); an alias moves with them. To check what an alias resolves to on your install, run `claude -p --model <alias> --output-format json "ok"` and read the `modelUsage` keys.
+A full ID pins a model across CLI upgrades (`--models spec=claude-opus-5-5,exec=claude-sonnet-5-5`); an alias moves with them. To check what an alias resolves to on your install, run `claude -p --model <alias> --output-format json "ok"` and read the `modelUsage` keys.
 
 **Precedence:** CLI flag > `.sequant/settings.json` > absent (SDK/CLI default). This is resolved by one shared function (`resolvePhasePolicies`) that both the `run` and `ready` execution-config builders call, so the two paths cannot drift apart on how a value resolves.
 
