@@ -369,8 +369,9 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     console.log(chalk.blue("Refreshed opencode shim"));
   }
 
-  // Update manifest
-  await updateManifest();
+  // `update` writes every new template file, whatever groups the install
+  // skipped, so the manifest now records a full install (#1409).
+  await updateManifest({ full: true });
 
   console.log(chalk.green(`\n✔ Updated ${updated} files`));
   warnUncommittedSkills();

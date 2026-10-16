@@ -11,6 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { initCommand } from "./init.js";
 import { areSkillsOutdated, syncCommand } from "./sync.js";
+import { updateCommand } from "./update.js";
 import {
   getSkillsInstallStatus,
   runVersionPreflight,
@@ -235,5 +236,23 @@ describe("#1409 skills-only install scope", () => {
     );
     expect("groups" in onDisk).toBe(false);
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
+  });
+
+  it("an update on a skills-only install records a full install", async () => {
+    // `update` writes every new template file, hooks and settings included.
+    // A manifest still saying "skills" would hide drift in those files.
+    const log = captureLog();
+    try {
+      await updateCommand({ yes: true });
+    } finally {
+      log.restore();
+    }
+
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(root, MANIFEST), "utf8"),
+    );
+    expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
+    expect("groups" in onDisk).toBe(false);
+    expect(getInstallScope((await getManifest())!)).toEqual({ kind: "full" });
   });
 });
