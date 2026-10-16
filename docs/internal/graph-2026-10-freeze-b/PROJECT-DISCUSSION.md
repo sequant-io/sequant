@@ -1,6 +1,6 @@
 # Graph 2026-10 freeze (b): freeze-safe bug fixes, second batch
 
-**Status:** Draft for owner review, 2026-10-16. Not filed.
+**Status:** Reviewed and approved by the owner, 2026-10-16. Filed the same day. **Tracker:** #1452.
 **Epic tag:** `graph-2026-10-freeze-b`
 **Predecessor:** `docs/internal/graph-2026-10-freeze/` (tracker #1390, 9/9 closed).
 
@@ -10,9 +10,9 @@ The plugin directory review still holds the merge freeze on `plugin/`, `.claude/
 
 ## §2 MVP (one sentence)
 
-The smallest set of merges after which a phase agent run from a `main` build has no claude.ai connectors and runs Claude Code ≥ 2.1.296, and a worktree for an existing remote PR branch starts from that branch on a fresh machine. A runner smoke of an `npm pack` of `main` (R-1) verifies it.
+The smallest set of merges after which a phase agent run from a `main` build has no claude.ai connectors and runs Claude Code ≥ 2.1.296, and a worktree for an existing remote PR branch starts from that branch on a fresh machine. A runner smoke of an `npm pack` of `main` (#1451) verifies it.
 
-Includes: #1396, #1440, #1405, R-1. Supporting: #1406 (same class as #1405), #1409, #1305, #1325.
+Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325.
 
 ## §3 Non-goals
 
@@ -38,7 +38,7 @@ Includes: #1396, #1440, #1405, R-1. Supporting: #1406 (same class as #1405), #14
   | `settings: { disableClaudeAiConnectors: true }` | only the passed server | same |
   | both | only the passed server | same |
 
-  Probe script and raw output: `evidence/probe-1396.mjs`, `evidence/probe-1396.md`. #1396's AC-1 evidence still comes from R-1, through the real driver.
+  Probe script and raw output: `evidence/probe-1396.mjs`, `evidence/probe-1396.md`. #1396's AC-1 evidence still comes from #1451, through the real driver.
 - **Worktrees:** `ensureWorktree` (`worktree-manager.ts:898`) checks branch existence with a local-only `show-ref refs/heads/<branch>` (`:1078`). `computeWorktreeBaseRef` (`:826`) returns a non-default bare base unchanged, while `countCommitsBehind` (`:244`) compares against `origin/<base>`.
 - **Install drift:** `computeContentDrift` (`src/commands/sync.ts:228`) counts template changes with status `new` or `modified` over the whole template set. `.sequant-manifest.json` has `files: {}` and no install-scope field. It's read or written by 11 non-test modules (`init`, `sync`, `update`, `doctor`, `status`, `run`, `run-manifest`, `version-preflight`, `skills-commit-state`, `manifest`, `bin/cli.ts`).
 - **Mutation markers:** `/qa` §6i calls `parseMutationMarkers` through `npx tsx` (`qa/SKILL.md` §6i). It doesn't embed the regex, so #1305 needs no skill edit.
@@ -60,13 +60,13 @@ Includes: #1396, #1440, #1405, R-1. Supporting: #1406 (same class as #1405), #14
 | Node | Input | Output | Main failure mode | Done when |
 |---|---|---|---|---|
 | #1440 | `main` after #1445 merges (lockfile 0.3.296) | `package.json` floor `^0.3.296`, one README line | the floor stays `^0.3.289`, so a fresh install can resolve the old CLI | `npm ls` shows ≥ 0.3.296 and the range floor matches |
-| #1396 | the driver's `query()` options | `settings: { disableClaudeAiConnectors: true }` (D-3) | a spread later in the options object (`env`, `mcpServers`) overrides `settings`, or a future second call site omits it | the one `query()` call passes it, asserted by a test, and R-1's init shows no `claudeai` server |
+| #1396 | the driver's `query()` options | `settings: { disableClaudeAiConnectors: true }` (D-3) | a spread later in the options object (`env`, `mcpServers`) overrides `settings`, or a future second call site omits it | the one `query()` call passes it, asserted by a test, and #1451's init shows no `claudeai` server |
 | #1405 | no local `<branch>`, existing `origin/<branch>` | a worktree from `origin/<branch>`; no repeat recreate | AC-3's "abandoned branch" check adds a `gh` call per worktree on the hot path (#1322's lesson: per-worktree `gh` calls made run time scale with load) | AC-1..AC-3 pass; spec names where the abandoned-branch check runs (recreate and first-creation paths only, not every `ensureWorktree`) |
 | #1406 | a bare non-default base | one ref for creation, staleness and `sequantBaseRef` | fixing `computeWorktreeBaseRef` while `countCommitsBehind` keeps its own resolution | one test asserts all three consumers see the same ref |
 | #1409 | a skills-only install | drift scoped to what was installed; a remedy that only rewrites skills | patching the remedy text without recording scope (the issue's own Open question) | AC-1..AC-3 pass under the owner's OQ-1 ruling |
 | #1305 | a marker whose fields contain `}` | a round-tripping marker | fixing the PR-body entry point and not the exec-output one | both entry points round-trip a brace-bearing marker |
 | #1325 | an unused module | the module and its test deleted; the doc names the real check | deleting the module while the doc still cites it | `git grep checkVersionSync` is empty and `plugin-updates.md` names `ci.yml`'s step |
-| R-1 | `npm pack` of `main` after #1440, #1396, #1405 | a smoke report | passing because nothing exercised the fixes | the report shows a phase init with no `claudeai` server, `claude_code_version` ≥ 2.1.296, and a fresh-clone worktree on an existing PR branch whose HEAD equals `origin/<branch>` |
+| #1451 | `npm pack` of `main` after #1440, #1396, #1405 | a smoke report | passing because nothing exercised the fixes | the report shows a phase init with no `claudeai` server, `claude_code_version` ≥ 2.1.296, and a fresh-clone worktree on an existing PR branch whose HEAD equals `origin/<branch>` |
 
 ## §7 Decisions
 
@@ -90,10 +90,10 @@ Includes: #1396, #1440, #1405, R-1. Supporting: #1406 (same class as #1405), #14
 
 ## §9 Open questions and owner gates
 
-- **OQ-1 (owner, before #1409's exec):** does an install record its scope in `.sequant-manifest.json` (for example a `groups` field written by `init` and `sync --only`), or is scope worked out from what exists on disk? **Recommendation: record it.** Inference from disk can't tell "deliberately skipped" from "deleted by accident", and the manifest already has an unused `files` map. Recording it changes a file 11 modules read, so `src/lib/manifest.ts` owns the format and every other module reads it through `getManifest`.
+- ~~**OQ-1 (owner, before #1409's exec):**~~ **Ruled 2026-10-16: record it** (the owner approved the plan with the recommendation; #1409 AC-4 as filed). does an install record its scope in `.sequant-manifest.json` (for example a `groups` field written by `init` and `sync --only`), or is scope worked out from what exists on disk? **Recommendation: record it.** Inference from disk can't tell "deliberately skipped" from "deleted by accident", and the manifest already has an unused `files` map. Recording it changes a file 11 modules read, so `src/lib/manifest.ts` owns the format and every other module reads it through `getManifest`.
 - **OQ-2 (#1405 spec):** where does AC-3's abandoned-branch check run, and does it need `gh`? A local `git` check (for example, `origin/<branch>` already merged into `origin/<base>`) may answer it without a network call.
 - ~~**OQ-3:** does any driver code path build `query()` options separately?~~ No: `src` has one `query()` call (`drivers/claude-code.ts:130`, the only SDK import), checked 2026-10-16. A future second call site would need the option too; AC-2's test asserts on the one site.
-- **OQ-4 (owner, at review):** add #1293 (`--frontier`) as a node? It's freeze-safe but a feature with 10 ACs.
+- ~~**OQ-4 (owner, at review):** add #1293 (`--frontier`) as a node?~~ **Ruled 2026-10-16: no**; it stays out of this graph.
 - **Runner note:** if #1368's merge queue lands mid-graph, re-read the `main` ruleset before each wave.
 
 **Owner gates (not nodes):** #1439 (freeze exception?), #1359 (Gitleaks required; its earliest date, ~2026-10-14, has passed), #1361, #1368.
