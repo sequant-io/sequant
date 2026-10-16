@@ -834,9 +834,13 @@ describe("#1234 ensureWorktree records sequantBaseRef", () => {
     });
   };
 
-  const ensure = (issue: number, base: string | undefined): string => {
+  const ensure = (
+    issue: number,
+    base: string | undefined,
+    chain = false,
+  ): string => {
     const out = runScript(
-      `const info = await ensureWorktree(${issue}, "base ref", false, undefined, ${JSON.stringify(base)}, false, ".trees");
+      `const info = await ensureWorktree(${issue}, "base ref", false, undefined, ${JSON.stringify(base)}, ${chain}, ".trees");
 process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
     );
     const line = out.split("\n").find((l) => l.startsWith("RESULT="));
@@ -863,6 +867,46 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
 
   it("1234 records a local --base branch as-is", () => {
     expect(recorded(ensure(3, "local-base"))).toBe("local-base");
+  }, 60_000);
+
+  // #1406: a non-default bare base is cut from origin/<base>, not a stale local.
+  const lagBehindOrigin = (name: string): void => {
+    git(clone, "checkout", "-q", "-b", name, "main");
+    commitFile(clone, `${name}-1.txt`, `${name} one`);
+    git(clone, "push", "-q", "-u", "origin", name);
+    git(clone, "checkout", "-q", "main");
+    const mate = join(root, `mate-${name}`);
+    git(root, "clone", "-q", join(root, "remote.git"), mate);
+    git(mate, "config", "user.email", "m@m");
+    git(mate, "config", "user.name", "m");
+    git(mate, "config", "commit.gpgsign", "false");
+    git(mate, "checkout", "-q", name);
+    commitFile(mate, `${name}-2.txt`, `${name} two`);
+    git(mate, "push", "-q", "origin", name);
+  };
+
+  it("1406 a lagging local base: the worktree is cut from origin/<base>", () => {
+    lagBehindOrigin("release");
+    const wt = ensure(10, "release");
+    const originTip = git(clone, "rev-parse", "origin/release");
+    expect(originTip).not.toBe(git(clone, "rev-parse", "release"));
+    expect(git(wt, "rev-parse", "HEAD")).toBe(originTip);
+    expect(recorded(wt)).toBe("origin/release");
+  }, 60_000);
+
+  it("1406 a local-only base is still cut from the local branch", () => {
+    const wt = ensure(11, "local-base");
+    expect(git(wt, "rev-parse", "HEAD")).toBe(
+      git(clone, "rev-parse", "local-base"),
+    );
+    expect(recorded(wt)).toBe("local-base");
+  }, 60_000);
+
+  it("1406 a stacked predecessor that is also on origin stays local", () => {
+    lagBehindOrigin("pred");
+    const wt = ensure(12, "pred", true);
+    expect(git(wt, "rev-parse", "HEAD")).toBe(git(clone, "rev-parse", "pred"));
+    expect(recorded(wt)).toBe("pred");
   }, 60_000);
 
   it("1234 pre-PR rebase onto a local-only base prints no fetch failure", () => {
@@ -1167,7 +1211,9 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
       expect(git(second.info.path, "rev-parse", "HEAD")).toBe(head);
       // Still more than 5 behind main: the skip, not freshness, kept it.
       expect(
-        Number(git(second.info.path, "rev-list", "--count", "HEAD..origin/main")),
+        Number(
+          git(second.info.path, "rev-list", "--count", "HEAD..origin/main"),
+        ),
       ).toBeGreaterThan(5);
     }, 90_000);
 
