@@ -2,7 +2,8 @@
  * Extended tests for merge-check modules
  *
  * Covers: getExitCode, getChecksToRun, buildResult, extractPatternsFromDiff,
- * rangesOverlap, findMostRecentLog, formatBranchReportMarkdown
+ * rangesOverlap, findMostRecentLog, formatBranchReportMarkdown,
+ * runExternalPrOverlap
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -11,8 +12,12 @@ import * as path from "path";
 import { getExitCode } from "../../commands/merge.js";
 import { getChecksToRun, findMostRecentLog } from "./index.js";
 import { buildResult } from "./combined-branch-test.js";
-import { rangesOverlap } from "./overlap-detection.js";
-import { formatBranchReportMarkdown, buildReport } from "./report.js";
+import { rangesOverlap, runExternalPrOverlap } from "./overlap-detection.js";
+import {
+  formatBranchReportMarkdown,
+  formatReportMarkdown,
+  buildReport,
+} from "./report.js";
 import { getBranchRef } from "./types.js";
 import type { BranchInfo, CheckResult, MergeCommandOptions } from "./types.js";
 
@@ -84,38 +89,39 @@ describe("getChecksToRun", () => {
   it("should return phase 1 checks for --check", () => {
     const options: MergeCommandOptions = { check: true };
     const checks = getChecksToRun(options);
-    expect(checks).toHaveLength(3);
+    expect(checks).toHaveLength(4);
     expect(checks).toContain("combined-branch-test");
     expect(checks).toContain("mirroring");
     expect(checks).toContain("overlap-detection");
+    expect(checks).toContain("external-pr-overlap");
     expect(checks).not.toContain("residual-pattern-scan");
   });
 
   it("should return phase 1+2 checks for --scan", () => {
     const options: MergeCommandOptions = { scan: true };
     const checks = getChecksToRun(options);
-    expect(checks).toHaveLength(4);
+    expect(checks).toHaveLength(5);
     expect(checks).toContain("residual-pattern-scan");
   });
 
   it("should return phase 1+2 checks for --review", () => {
     const options: MergeCommandOptions = { review: true };
     const checks = getChecksToRun(options);
-    expect(checks).toHaveLength(4);
+    expect(checks).toHaveLength(5);
     expect(checks).toContain("residual-pattern-scan");
   });
 
   it("should return phase 1+2 checks for --all", () => {
     const options: MergeCommandOptions = { all: true };
     const checks = getChecksToRun(options);
-    expect(checks).toHaveLength(4);
+    expect(checks).toHaveLength(5);
     expect(checks).toContain("residual-pattern-scan");
   });
 
   it("should return phase 1 only when no flags set", () => {
     const options: MergeCommandOptions = {};
     const checks = getChecksToRun(options);
-    expect(checks).toHaveLength(3);
+    expect(checks).toHaveLength(4);
   });
 });
 
@@ -427,5 +433,161 @@ describe("formatBranchReportMarkdown", () => {
     const markdown = formatBranchReportMarkdown(report, 999);
 
     expect(markdown).toContain("No data for issue #999");
+  });
+});
+
+// ============================================================================
+// runExternalPrOverlap Tests (#1454)
+// ============================================================================
+
+describe("runExternalPrOverlap", () => {
+  const batch: BranchInfo[] = [
+    {
+      issueNumber: 10,
+      title: "A",
+      branch: "feature/10-a",
+      filesModified: ["src/x.ts", "src/a.ts"],
+    },
+    {
+      issueNumber: 20,
+      title: "B",
+      branch: "feature/20-b",
+      filesModified: ["src/b.ts"],
+    },
+  ];
+
+  const exitCodeOf = (checks: CheckResult[]) =>
+    getExitCode(buildReport(batch, checks).batchVerdict);
+
+  it("reports one warning for a PR sharing a path; excludes the batch's own PR", () => {
+    const result = runExternalPrOverlap(batch, {
+      listOpenPRFilesSync: () => [
+        { number: 900, headRefName: "other", files: ["src/x.ts", "README.md"] },
+        { number: 901, headRefName: "feature/10-a", files: ["src/x.ts"] },
+      ],
+    });
+    const warnings = result.batchFindings.filter(
+      (f) => f.severity === "warning",
+    );
+    expect(warnings.map((f) => f.message)).toEqual([
+      "External PR overlap: PR #900 (other) shares src/x.ts with this batch",
+    ]);
+    expect(result.batchFindings).toHaveLength(1);
+    expect(result.passed).toBe(true);
+    expect(result.branchResults).toEqual([]);
+    expect(exitCodeOf([result])).toBe(exitCodeOf([]));
+    expect(formatReportMarkdown(buildReport(batch, [result]))).toContain(
+      "PR #900 (other) shares src/x.ts",
+    );
+  });
+
+  it("names every shared path in one finding per PR", () => {
+    const result = runExternalPrOverlap(batch, {
+      listOpenPRFilesSync: () => [
+        { number: 902, headRefName: "peer", files: ["src/b.ts", "src/a.ts"] },
+      ],
+    });
+    expect(result.batchFindings.map((f) => f.message)).toEqual([
+      "External PR overlap: PR #902 (peer) shares src/a.ts, src/b.ts with this batch",
+    ]);
+  });
+
+  it("no open PRs and a disjoint PR produce no warning", () => {
+    for (const prs of [
+      [],
+      [{ number: 903, headRefName: "far", files: ["docs/z.md"] }],
+    ]) {
+      const result = runExternalPrOverlap(batch, {
+        listOpenPRFilesSync: () => prs,
+      });
+      expect(result.batchFindings.map((f) => f.severity)).toEqual(["info"]);
+      expect(exitCodeOf([result])).toBe(0);
+    }
+  });
+
+  it("an in-batch PR alone is excluded", () => {
+    const result = runExternalPrOverlap(batch, {
+      listOpenPRFilesSync: () => [
+        { number: 904, headRefName: "feature/20-b", files: ["src/b.ts"] },
+      ],
+    });
+    expect(
+      result.batchFindings.filter((f) => f.severity === "warning"),
+    ).toEqual([]);
+  });
+
+  it("a failing provider yields exactly one skip line and no exit change", () => {
+    const result = runExternalPrOverlap(batch, {
+      listOpenPRFilesSync: () => {
+        throw new Error("gh pr list failed (spawnSync gh ENOENT)");
+      },
+    });
+    expect(result.batchFindings).toEqual([
+      {
+        check: "external-pr-overlap",
+        severity: "info",
+        message:
+          "Open-PR overlap check skipped: gh pr list failed (spawnSync gh ENOENT)",
+      },
+    ]);
+    expect(result.passed).toBe(true);
+    expect(exitCodeOf([result])).toBe(exitCodeOf([]));
+    const md = formatReportMarkdown(buildReport(batch, [result]));
+    expect(md.split("\n").filter((l) => l.includes("skipped"))).toHaveLength(1);
+  });
+
+  it("a multi-line provider error (gh auth failure) still yields one skip line", () => {
+    const result = runExternalPrOverlap(batch, {
+      listOpenPRFilesSync: () => {
+        throw new Error(
+          "gh pr list failed (exit 1): HTTP 401: Bad credentials (https://api.github.com/graphql)\nTry authenticating with:  gh auth login\n",
+        );
+      },
+    });
+    expect(result.batchFindings).toEqual([
+      {
+        check: "external-pr-overlap",
+        severity: "info",
+        message:
+          "Open-PR overlap check skipped: gh pr list failed (exit 1): HTTP 401: Bad credentials (https://api.github.com/graphql)",
+      },
+    ]);
+    const md = formatReportMarkdown(buildReport(batch, [result]));
+    expect(md).not.toContain("Try authenticating");
+    expect(exitCodeOf([result])).toBe(exitCodeOf([]));
+  });
+
+  it("CHANGELOG.md and lockfiles alone are not an overlap", () => {
+    const withShared: BranchInfo[] = [
+      {
+        ...batch[0],
+        filesModified: [
+          ...batch[0].filesModified,
+          "CHANGELOG.md",
+          "package-lock.json",
+        ],
+      },
+    ];
+    const result = runExternalPrOverlap(withShared, {
+      listOpenPRFilesSync: () => [
+        {
+          number: 905,
+          headRefName: "peer",
+          files: ["CHANGELOG.md", "package-lock.json"],
+        },
+        {
+          number: 906,
+          headRefName: "peer2",
+          files: ["CHANGELOG.md", "src/x.ts"],
+        },
+      ],
+    });
+    expect(
+      result.batchFindings
+        .filter((f) => f.severity === "warning")
+        .map((f) => f.message),
+    ).toEqual([
+      "External PR overlap: PR #906 (peer2) shares src/x.ts with this batch",
+    ]);
   });
 });

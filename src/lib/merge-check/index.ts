@@ -25,7 +25,10 @@ import type {
 import { DEFAULT_MIRROR_PAIRS } from "./types.js";
 import { runCombinedBranchTest } from "./combined-branch-test.js";
 import { runMirroringCheck } from "./mirroring-check.js";
-import { runOverlapDetection } from "./overlap-detection.js";
+import {
+  runExternalPrOverlap,
+  runOverlapDetection,
+} from "./overlap-detection.js";
 import { runResidualPatternScan } from "./residual-pattern-scan.js";
 import {
   buildReport,
@@ -205,7 +208,12 @@ const ghProvider = new GitHubProvider();
  * and show the Phase 3 stub message (see merge.ts).
  */
 export function getChecksToRun(options: MergeCommandOptions): string[] {
-  const phase1 = ["combined-branch-test", "mirroring", "overlap-detection"];
+  const phase1 = [
+    "combined-branch-test",
+    "mirroring",
+    "overlap-detection",
+    "external-pr-overlap",
+  ];
   const phase2 = ["residual-pattern-scan"];
   // Phase 3 checks will be added here when AI briefing is implemented
   // const phase3 = ["ai-briefing"];
@@ -272,6 +280,10 @@ export async function runMergeChecks(
 
   if (checksToRun.includes("overlap-detection")) {
     checkResults.push(runOverlapDetection(branches, repoRoot));
+  }
+
+  if (checksToRun.includes("external-pr-overlap")) {
+    checkResults.push(runExternalPrOverlap(branches, ghProvider));
   }
 
   // Phase 2: Residual pattern detection
