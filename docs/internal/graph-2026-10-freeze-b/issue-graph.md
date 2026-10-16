@@ -1,6 +1,6 @@
 # Issue graph: graph-2026-10-freeze-b
 
-**Status:** Approved and filed 2026-10-16. From filing on, the issue bodies on GitHub are canonical and `issues/*.md` is the as-filed snapshot.
+**Status:** Approved and filed 2026-10-16. #1454 added the same day at the owner's request (relayed by session sequant-b9, confirmed by the owner here). From filing on, the issue bodies on GitHub are canonical and `issues/*.md` is the as-filed snapshot.
 **Founding doc:** `PROJECT-DISCUSSION.md` (cited as §N). **Tracker:** #1452. **Smoke node (R-1 in review):** #1451.
 
 ## Nodes
@@ -14,6 +14,7 @@
 | #1409 | judgment | sequant_run | skills-only install drifts forever; remedy overwrites the constitution | — (owner OQ-1 before exec) | `sync.ts`, `version-preflight.ts`, `init.ts`, `manifest.ts` | — |
 | #1305 | mechanical | sequant_run | mutation marker with `}` parses to nothing | — | `mutation-marker.ts` | — |
 | #1325 | mechanical | sequant_run | delete unused `plugin-version-sync.ts` | #1301 (closed) | `src/lib/plugin-version-sync*.ts`, `docs/internal/plugin-updates.md` | — |
+| #1454 | judgment | sequant_run | open PRs on origin join `merge --check` overlap warnings (+ `/assess` library function, D-8) | — | `src/lib/merge-check/`, `assess-collision-detect.ts`, `platforms/github.ts`, `platform-provider.ts` | — |
 | #1451 | judgment | runner | smoke a `main` build: no connectors, CC ≥ 2.1.296, fresh-clone worktree | #1440, #1396, #1405 | none in the repo; the private fixture repo | — |
 
 ## File-overlap clusters (serialize within a cluster)
@@ -32,6 +33,7 @@ graph TD
   N1405 --> N1406["#1406 bare base ref"]
   N1409["#1409 skills-only drift (owner OQ-1)"]
   N1305["#1305 marker braces"]
+  N1454["#1454 external PR overlap (added 2026-10-16)"]
   N1325["#1325 delete dead module"]
   N1445["PR #1445 (Dependabot)"] -- "merges first (D-2)" --> N1440
 ```
@@ -39,7 +41,7 @@ graph TD
 ## Waves (file-disjoint within each wave; merges one at a time, `main` strict up to date)
 
 - **Wave 1:** the runner merges Dependabot #1445 first (owner consent). Then #1440, #1396, #1405, #1305, #1325 as five `sequant_run` calls, one issue each. #1409 is in wave 1 (OQ-1 ruled at review: record the scope).
-- **Wave 2:** #1406 (after #1405 merges), #1451 (after #1440, #1396, #1405 merge).
+- **Wave 2:** #1406 (after #1405 merges), #1451 (after #1440, #1396, #1405 merge), #1454 (no edges; wave 2 by the owner's choice, added after filing).
 - **Critical path:** #1405 → #1451. #1405 is the only judgment-tier node on the MVP path. Each merge costs about 9 minutes of CI plus an update-branch cycle whenever `main` moves; five wave-1 merges in sequence are about an hour of CI.
 
 ## Anti-gap passes (run 2026-10-16)
@@ -50,7 +52,7 @@ graph TD
 4. **Shared-file ownership:** `worktree-manager.ts` has two writers, serialized (D-5). `.sequant-manifest.json`: 11 reader/writer modules; `src/lib/manifest.ts` owns the format and #1409 adds any field there (§9 OQ-1). `package-lock.json`: #1440 and Dependabot (#1445, #1450). #1445 merges first; #1450 (dev deps, also `package.json`) may then conflict, so resolve it with Dependabot's `@dependabot rebase`, or `npm install` after a `git merge origin/main`, never by hand-editing. **Committed copy deployed elsewhere:** none. No node edits a routine prompt, hosted config or env var.
 5. **First-episode dry run:** wave 1 launches five runs; #1396's exec writes the option and the test, and its PR body notes AC-1 is #1451's; #1440 launches only after the runner has merged #1445. The runner checks each PR, records mutation markers, the owner consents, the runner runs I-1 and merges one at a time. Wave 2: #1406, then #1451 under `launchctl`. **Gap found:** #1440 regenerating the lockfile from `main` would leave #1445's other bumps behind. Fixed by merging #1445 first (D-2). **Gap found:** #1409 can't start until the owner rules. Recorded as OQ-1 and asked at this review.
 
-**Reachability:** #1440, #1396, #1405 and #1451 are on the §2 MVP path. #1406 is the same bug class as #1405 on the neighbouring path. #1409, #1305 and #1325 are deliberate exceptions: freeze-safe fixes that don't block the MVP.
+**Reachability:** #1440, #1396, #1405 and #1451 are on the §2 MVP path. #1406 is the same bug class as #1405 on the neighbouring path. #1409, #1305, #1325 and #1454 are deliberate exceptions: freeze-safe fixes that don't block the MVP.
 
 ## Edits to apply at filing (after review)
 

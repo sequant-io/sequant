@@ -12,7 +12,7 @@ The plugin directory review still holds the merge freeze on `plugin/`, `.claude/
 
 The smallest set of merges after which a phase agent run from a `main` build has no claude.ai connectors and runs Claude Code ≥ 2.1.296, and a worktree for an existing remote PR branch starts from that branch on a fresh machine. A runner smoke of an `npm pack` of `main` (#1451) verifies it.
 
-Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325.
+Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325, #1454 (added 2026-10-16).
 
 ## §3 Non-goals
 
@@ -77,6 +77,8 @@ Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #
 - **D-5: #1405 and #1406 serialize, #1405 first.** Same file (`worktree-manager.ts`); #1405 changes `ensureWorktree`'s branch-existence check, #1406 changes `computeWorktreeBaseRef` and `countCommitsBehind`. They're disjoint functions, but #1406's AC-1 test creates worktrees through `ensureWorktree`. Rejected: parallel (merge conflicts in the shared temp-repo test harness).
 - **D-6: #1305 and #1325 join this graph,** reversing the predecessor's §3 (kept for outside contributors). Both have been open 12 days as `good first issue` with no takers, and #1305 silently floors QA verdicts. Rejected: keep waiting.
 - **D-7: #1325 deletes the module (AC-1's first option).** Wiring it into `ci.yml` would edit the workflow that produces the required `test` / `canary` checks (`ci.yml:24` warns a job change can brick merging). Rejected: wiring it in.
+
+- **D-8 (2026-10-16, on adding #1454): `/assess` gets a library function now and its wiring after the freeze.** `assess/SKILL.md` Step 5 builds the collision inputs in prose and calls the pure functions in `assess-collision-detect.ts`, so passing open-PR data in is a skill edit. #1454 ships the function and its tests; `sequant merge --check` (CLI) gets the full feature. Rejected: making the existing pure functions fetch PRs themselves (it hides network I/O inside functions the skill treats as pure, and still wouldn't print without a skill change to read the new result).
 
 ## §8 Conventions
 
