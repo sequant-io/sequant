@@ -10,7 +10,7 @@ Twenty definitions are duplicated across two or more non-test `src/` files at HE
 
 Five PRs that reduce every real duplicate group in the Phase 0 list to a single exported definition, with the behaviour differences between copies decided once and tested, and `accretion dups` on sequant HEAD reporting none of the 16 names afterwards.
 
-Includes: the 16 names below, one shared home per cluster, tests for each shared helper, the divergence decisions (D-1, D-1b, D-2, D-3, D-7), and the detector allowlist for the four noise names (cross-repo, A-1).
+Includes: the 15 names below (16 groups: `resolveLogDir` forms two, one per file pair), one shared home per cluster, tests for each shared helper, the divergence decisions (D-1, D-1b, D-2, D-3, D-7), and the detector allowlist for the four noise names (cross-repo, A-1).
 
 ## §3 Non-goals
 
