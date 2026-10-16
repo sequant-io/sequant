@@ -1,4 +1,4 @@
-# ADR-0014: Record the install scope in the manifest
+# ADR-0015: Record the install scope in the manifest
 
 **Status:** Accepted
 **Date:** 2026-10-16
