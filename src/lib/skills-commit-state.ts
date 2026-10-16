@@ -1,5 +1,5 @@
 /**
- * Committed vs on-disk skills (#1354).
+ * Committed vs on-disk skills (#1354) and hooks (#1456).
  *
  * `sequant run` provisions phase worktrees from git, so phases load the
  * skills committed at `HEAD`, not the ones on disk in the main checkout. A
@@ -9,8 +9,11 @@
  * downstream: the warning said 2.18.0 while every phase ran the committed
  * 2.15.1 skills.
  *
- * This module reads what git sees: tracked files under `.claude/skills/` with
- * uncommitted changes, and the `.sequant-version` at `HEAD`. `doctor`, the run
+ * Hooks load the same way, from `.claude/hooks/` at `HEAD` (#1456).
+ *
+ * This module reads what git sees: tracked files under `.claude/skills/` or
+ * `.claude/hooks/` with uncommitted changes, and the `.sequant-version` at
+ * `HEAD`. `doctor`, the run
  * pre-flight and `sync`/`update` all format their warning from it, so the
  * three cannot drift. Untracked skills are #1257's check (`doctor`); this one
  * covers tracked-but-modified.
