@@ -17,6 +17,7 @@ import type {
 import { getBranchRef } from "./types.js";
 import type { OpenPRFiles } from "../workflow/platforms/github.js";
 import { findOpenPrOverlaps } from "../open-pr-overlap.js";
+import { EXCLUDED_PATHS } from "../assess-collision-detect.js";
 
 /**
  * Parse git diff hunk headers to extract changed line ranges.
@@ -199,7 +200,13 @@ export interface OpenPrFilesSource {
  *
  * Always `passed: true` with no branch results, so these findings never move
  * the batch verdict or the exit code: the owner decides merge order. When the
- * PR list can't be fetched, the check yields one `info` skip finding.
+ * PR list can't be fetched, the check yields one `info` skip finding, whose
+ * reason is the error's first line (gh appends hints such as
+ * "Try authenticating with: gh auth login").
+ *
+ * Files nearly every PR touches (`EXCLUDED_PATHS`: CHANGELOG.md, lockfiles)
+ * are left out, as in `/assess`'s collision check, or every open PR would
+ * be flagged.
  */
 export function runExternalPrOverlap(
   branches: BranchInfo[],
@@ -212,7 +219,12 @@ export function runExternalPrOverlap(
   try {
     prs = source.listOpenPRFilesSync();
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? err.message : String(err);
+    const reason =
+      message
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.length > 0) ?? "unknown error";
     batchFindings.push({
       check: "external-pr-overlap",
       severity: "info",
@@ -221,7 +233,11 @@ export function runExternalPrOverlap(
   }
 
   if (prs) {
-    const batchFiles = new Set(branches.flatMap((b) => b.filesModified));
+    const batchFiles = new Set(
+      branches
+        .flatMap((b) => b.filesModified)
+        .filter((f) => !EXCLUDED_PATHS.has(f)),
+    );
     const batchHeads = new Set(branches.map((b) => b.branch));
     const overlaps = findOpenPrOverlaps(
       new Map([["batch", batchFiles]]),

@@ -535,4 +535,59 @@ describe("runExternalPrOverlap", () => {
     const md = formatReportMarkdown(buildReport(batch, [result]));
     expect(md.split("\n").filter((l) => l.includes("skipped"))).toHaveLength(1);
   });
+
+  it("a multi-line provider error (gh auth failure) still yields one skip line", () => {
+    const result = runExternalPrOverlap(batch, {
+      listOpenPRFilesSync: () => {
+        throw new Error(
+          "gh pr list failed (exit 1): HTTP 401: Bad credentials (https://api.github.com/graphql)\nTry authenticating with:  gh auth login\n",
+        );
+      },
+    });
+    expect(result.batchFindings).toEqual([
+      {
+        check: "external-pr-overlap",
+        severity: "info",
+        message:
+          "Open-PR overlap check skipped: gh pr list failed (exit 1): HTTP 401: Bad credentials (https://api.github.com/graphql)",
+      },
+    ]);
+    const md = formatReportMarkdown(buildReport(batch, [result]));
+    expect(md).not.toContain("Try authenticating");
+    expect(exitCodeOf([result])).toBe(exitCodeOf([]));
+  });
+
+  it("CHANGELOG.md and lockfiles alone are not an overlap", () => {
+    const withShared: BranchInfo[] = [
+      {
+        ...batch[0],
+        filesModified: [
+          ...batch[0].filesModified,
+          "CHANGELOG.md",
+          "package-lock.json",
+        ],
+      },
+    ];
+    const result = runExternalPrOverlap(withShared, {
+      listOpenPRFilesSync: () => [
+        {
+          number: 905,
+          headRefName: "peer",
+          files: ["CHANGELOG.md", "package-lock.json"],
+        },
+        {
+          number: 906,
+          headRefName: "peer2",
+          files: ["CHANGELOG.md", "src/x.ts"],
+        },
+      ],
+    });
+    expect(
+      result.batchFindings
+        .filter((f) => f.severity === "warning")
+        .map((f) => f.message),
+    ).toEqual([
+      "External PR overlap: PR #906 (peer2) shares src/x.ts with this batch",
+    ]);
+  });
 });
