@@ -1,11 +1,40 @@
 import { describe, it, expect } from "vitest";
 import {
   parseMutationMarkers,
+  parseMutationMarkersFromExecOutput,
+  renderMutationMarker,
   latestMutationMarkerPerAc,
   classifyMutationMarker,
 } from "./mutation-marker.js";
 
 describe("mutation-marker", () => {
+  describe("renderMutationMarker round-trip (#1305)", () => {
+    const base = { ac: "AC-2", mutation: "m", failedTest: "a.test.ts > d > c" };
+    const cases = [
+      [
+        "mutation holds a regex quantifier",
+        { ...base, mutation: "regex changed to /x{9}/" },
+      ],
+      ["ac holds a brace", { ...base, ac: "AC-2}" }],
+      [
+        "failedTest holds braces",
+        { ...base, failedTest: "a.test.ts > {d} > c}" },
+      ],
+      ["mutation holds -->", { ...base, mutation: "dropped } --> tail" }],
+    ] as const;
+
+    it.each(cases)("%s: round-trips through both entry points", (_n, m) => {
+      const rendered = renderMutationMarker(m);
+      expect(parseMutationMarkers(rendered)).toEqual([m]);
+      expect(parseMutationMarkersFromExecOutput(rendered)).toEqual([m]);
+    });
+
+    it("never lets a rendered value end the comment early", () => {
+      const rendered = renderMutationMarker({ ...base, mutation: "a --> b" });
+      expect(rendered.indexOf("-->")).toBe(rendered.length - 3);
+    });
+  });
+
   describe("parseMutationMarkers", () => {
     it("parses a valid SEQUANT_MUTATION marker", () => {
       const body = `Some PR description.
