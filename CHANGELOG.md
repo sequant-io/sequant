@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Phase agents no longer receive the user's claude.ai connectors (#1396).** The Claude Code driver passes `settings: { disableClaudeAiConnectors: true }` to `query()`, so Gmail, Docs and other account connectors the SDK adds outside the #936 allowlist are not reachable from a `bypassPermissions` phase agent. The `sequant` server, `.mcp.json` servers and `mcpAllowlist` names are unaffected.
+
 - **A stale worktree for a pushed PR branch is recreated from `origin/<branch>`, not from the base (#1380).** When a worktree was more than 5 commits behind and clean, `ensureWorktree` deleted the local branch and cut a new one from the base, so a qa re-run reviewed the base without the PR's commits. The recreate now starts from `origin/<branch>` when the remote has it. If the start ref does not contain the worktree's HEAD (an offline fetch, or a local-only branch with commits of its own), it prints a warning and keeps the existing worktree. See ADR-0013.
 - **First-run papercuts from a stranger smoke test (#1387).** The "Running sequant from local node_modules" warning no longer tells a project that declares `sequant` in `package.json` to uninstall it (a stray, undeclared install still warns). `init`'s next steps now say to commit the generated files and run `npx sequant run <issue>`. `doctor`'s `Warnings:` count includes the upstream #43869 notice it prints, so a healthy install now reads "All checks passed (1 warning)" unless `--quiet`. The `still running` line shows time since the current phase started, not the issue. `run --help` describes `--no-rebase` as skipping the rebase onto the base branch.
 

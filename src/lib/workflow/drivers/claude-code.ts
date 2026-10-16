@@ -133,6 +133,11 @@ export class ClaudeCodeDriver implements AgentDriver {
           abortController,
           cwd: config.cwd,
           settingSources: ["project"],
+          // #1396: the SDK adds the account's claude.ai connectors (Gmail,
+          // Docs) outside the #936 mcpServers allowlist; a bypassPermissions
+          // agent must not reach them. Not strictMcpConfig: that would also
+          // drop project .mcp.json, plugin and agent MCP.
+          settings: { disableClaudeAiConnectors: true },
           systemPrompt: { type: "preset", preset: "claude_code" },
           tools: { type: "preset", preset: "claude_code" },
           permissionMode: "bypassPermissions",
