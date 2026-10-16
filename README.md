@@ -37,6 +37,8 @@ Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, 
 
 > **Why Claude Code ≥ 2.1.288?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`. Its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208, and its coverage of `bash -c` / `sh -c` scripts (e.g. `bash -c "rm -rf ~"`) landed in 2.1.288. On an older version, a phase agent running `bash -c "rm -rf ~"` is not stopped by either side. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
 
+> **Phase agents run the bundled Claude Code.** `sequant run` phases go through the Agent SDK `query()` and use the Claude Code bundled with `@anthropic-ai/claude-agent-sdk` (2.1.296 at SDK 0.3.296), which can differ from the interactive CLI you installed. The recommended version above applies to your interactive CLI and hooks.
+
 ### Install
 
 Pick the path that matches **where you run Sequant**:
