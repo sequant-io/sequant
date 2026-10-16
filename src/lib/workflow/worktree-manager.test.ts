@@ -1208,6 +1208,23 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
       );
     }, 90_000);
 
+    it("1405 AC-3 a deleted remote branch is detected under a non-English locale", () => {
+      // git translates "couldn't find remote ref"; the check must not depend
+      // on the user's locale. Vacuous where git has no translations installed.
+      const { branch } = pushedBranch(26);
+      const other = freshClone();
+      git(clone, "push", "-q", "origin", "--delete", branch);
+
+      const { info } = ensure(26, other, {
+        LC_ALL: "de_DE.UTF-8",
+        LANG: "de_DE.UTF-8",
+        LANGUAGE: "de",
+      });
+      expect(git(info.path, "rev-parse", "HEAD")).toBe(
+        git(other, "rev-parse", "origin/main"),
+      );
+    }, 90_000);
+
     it("1405 AC-3 the reuse path makes no gh call", () => {
       const bin = join(root, "bin");
       mkdirSync(bin);

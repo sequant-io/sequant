@@ -854,9 +854,12 @@ export function resolveBranchStartRef(
   baseRef: string,
 ): string {
   const remoteRef = `origin/${branch}`;
+  // LC_ALL=C: the check below matches git's English message, and git
+  // translates it under other locales (de: "Konnte Remote-Referenz …").
   const fetch = spawnSync("git", ["-C", cwd, "fetch", "origin", branch], {
     stdio: "pipe",
     timeout: 30000,
+    env: { ...process.env, LC_ALL: "C" },
   });
   if (fetch.stderr?.toString().includes("couldn't find remote ref")) {
     return baseRef;
