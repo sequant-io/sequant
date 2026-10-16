@@ -12,13 +12,13 @@ The manifest kept `"files": {}` after `sync --only skills`, so nothing recorded 
 
 ## Decision
 
-The manifest records the install scope in an optional `groups` field. `init --manifest-only` writes `groups: []`, `sync --only skills` adds `"skills"`, and a full sync removes the field. A manifest without the field is a full install. `src/lib/manifest.ts` owns the field; consumers read it through `getInstallScope`. Drift and the remedy text are scoped to it.
+The manifest records the install scope in an optional `groups` field. `init --manifest-only` writes `groups: []`, `sync --only skills` adds `"skills"`, and a full sync or `update` removes the field. A manifest without the field is a full install. `src/lib/manifest.ts` owns the field; consumers read it through `getInstallScope`. Drift and the remedy text are scoped to it.
 
 ## Options
 
 ### Option A: Record the scope in the manifest (chosen)
 
-An optional `groups` field written by the commands that choose the scope. **Pros:** says what the user chose; tells "never installed" apart from "deleted by accident"; old manifests need no migration because absence means full. **Cons:** one more field every manifest writer must keep correct; `update` (no `--only`) installs every group but leaves the field as it was (follow-up).
+An optional `groups` field written by the commands that choose the scope. **Pros:** says what the user chose; tells "never installed" apart from "deleted by accident"; old manifests need no migration because absence means full. **Cons:** one more field every manifest writer must keep correct; `update` (no `--only`) installs every group, so it removes the field too.
 
 ### Option B: Infer the scope from what exists on disk
 
