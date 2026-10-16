@@ -817,20 +817,47 @@ export function resolveWorktreeRoot(
 
 /**
  * The ref a new worktree branch is cut from (#1234 extracted it so the
- * creation and reuse paths record the same value): a local branch (chain
- * mode, or a local `--base`) as-is, `origin/<x>` for a remote-style base,
- * else `origin/<default>`.
+ * creation and reuse paths record the same value): `origin/<x>` for a
+ * remote-style base or the detected default, else `origin/<default>`.
+ *
+ * A non-default bare base is `origin/<base>` too when the remote has it
+ * (#1406), so creation, staleness (`countCommitsBehind`) and the recorded
+ * base read one ref. Chain mode (a `--stacked` predecessor) and a base with
+ * no `origin/<base>` stay bare: those are local branches by design.
+ *
+ * @param opts.chainMode - the bare base is a stacked predecessor
+ * @param opts.hasRemote - whether `origin/<baseBranch>` exists locally
  *
  * @internal Exported for testing only.
  */
 export function computeWorktreeBaseRef(
   baseBranch: string | undefined,
   detectedDefault: string,
+  opts: { chainMode?: boolean; hasRemote?: boolean } = {},
 ): string {
   if (!baseBranch) return `origin/${detectedDefault}`;
   if (baseBranch.startsWith("origin/")) return baseBranch;
   if (baseBranch === detectedDefault) return `origin/${baseBranch}`;
+  if (!opts.chainMode && opts.hasRemote) return `origin/${baseBranch}`;
   return baseBranch;
+}
+
+/** Whether the remote-tracking ref `origin/<branch>` exists (local check). */
+function hasRemoteTrackingRef(cwd: string, branch: string): boolean {
+  return (
+    spawnSync(
+      "git",
+      [
+        "-C",
+        cwd,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `refs/remotes/origin/${branch}`,
+      ],
+      { stdio: "pipe" },
+    ).status === 0
+  );
 }
 
 /**
@@ -1002,7 +1029,11 @@ export async function ensureWorktree(
         const startRef = resolveBranchStartRef(
           existingPath,
           branch,
-          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose)),
+          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+            chainMode,
+            hasRemote:
+              !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+          }),
         );
         const contained = spawnSync(
           "git",
@@ -1071,7 +1102,11 @@ export async function ensureWorktree(
       recordWorktreeBaseRef(
         existingPath,
         branch,
-        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose)),
+        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+          chainMode,
+          hasRemote:
+            !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+        }),
       );
     }
 
@@ -1154,15 +1189,11 @@ export async function ensureWorktree(
   // For local branches (chain mode), use as-is
   const detectedDefault = detectDefaultBranch(verbose);
   const effectiveBase = baseBranch || detectedDefault;
-  const isLocalBranch =
-    baseBranch &&
-    !baseBranch.startsWith("origin/") &&
-    baseBranch !== detectedDefault;
-  const baseRef = computeWorktreeBaseRef(baseBranch, detectedDefault);
-
-  // Fetch the base branch to ensure worktree starts from fresh baseline
+  // Fetch the base branch to ensure worktree starts from fresh baseline.
+  // Chain mode cuts from a local predecessor, so there is nothing to fetch.
+  // A failed fetch is tolerated: a local-only base (#1406) has no remote.
   const branchToFetch = effectiveBase.replace(/^origin\//, "");
-  if (!isLocalBranch) {
+  if (!chainMode) {
     if (verbose) {
       console.log(chalk.gray(`    Fetching latest ${branchToFetch}...`));
     }
@@ -1179,6 +1210,11 @@ export async function ensureWorktree(
   } else if (verbose) {
     console.log(chalk.gray(`    🔗 Chaining from branch: ${baseBranch}`));
   }
+  // Resolve after the fetch so a freshly fetched origin/<base> is seen.
+  const baseRef = computeWorktreeBaseRef(baseBranch, detectedDefault, {
+    chainMode,
+    hasRemote: !!baseBranch && hasRemoteTrackingRef(gitRoot, baseBranch),
+  });
 
   // #1405: on a fresh machine the PR branch may exist only on the remote.
   // Start from origin/<branch> (unless it is already merged into the base)
