@@ -70,3 +70,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0012](0012-phase-skills-from-installed-package.md) | Phase agents load skills from the installed package; committed skills become an override | Proposed |
 | [0013](0013-recreate-stale-worktree-from-remote-branch.md) | Recreate a stale worktree from its remote branch, behind a containment guard | Proposed |
 | [0014](0014-start-worktree-from-unmerged-remote-branch.md) | Start every worktree from an unmerged `origin/<branch>`, and keep one already at it | Proposed |
+| [0015](0015-install-scope-recorded-in-manifest.md) | Record the install scope in the manifest | Accepted |

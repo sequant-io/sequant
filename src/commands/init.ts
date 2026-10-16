@@ -647,7 +647,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
     const stack = options.stack ?? (await detectStack()) ?? "generic";
     const packageManager = await detectPackageManager();
-    await createManifest(stack, packageManager ?? undefined);
+    // Record an empty install scope: nothing is installed yet, so a later
+    // `sync --only skills` scopes drift to what it wrote (#1409).
+    await createManifest(stack, packageManager ?? undefined, { groups: [] });
     console.log(
       chalk.green(`✔ Created .sequant-manifest.json (stack: ${stack})`),
     );
