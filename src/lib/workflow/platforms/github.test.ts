@@ -594,4 +594,59 @@ describe("GitHubProvider", () => {
       );
     });
   });
+
+  describe("listOpenPRFilesSync (#1454)", () => {
+    it("parses gh pr list into number, head and file paths", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: JSON.stringify([
+          {
+            number: 5,
+            headRefName: "peer",
+            files: [{ path: "src/a.ts", additions: 1 }, { path: "b.md" }],
+          },
+          { number: 6, headRefName: "empty", files: [] },
+        ]),
+        stderr: "",
+      } as never);
+      expect(provider.listOpenPRFilesSync()).toEqual([
+        { number: 5, headRefName: "peer", files: ["src/a.ts", "b.md"] },
+        { number: 6, headRefName: "empty", files: [] },
+      ]);
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "gh",
+        [
+          "pr",
+          "list",
+          "--state",
+          "open",
+          "--limit",
+          "100",
+          "--json",
+          "number,headRefName,files",
+        ],
+        expect.anything(),
+      );
+    });
+
+    it("throws instead of returning [] when gh fails", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "gh auth login required",
+      } as never);
+      expect(() => provider.listOpenPRFilesSync()).toThrow(
+        /gh pr list failed .*gh auth login required/,
+      );
+    });
+
+    it("throws on output that is not JSON", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: "not json",
+        stderr: "",
+      } as never);
+      expect(() => provider.listOpenPRFilesSync()).toThrow(/not JSON/);
+    });
+  });
 });

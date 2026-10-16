@@ -14,6 +14,7 @@ import {
   detectFileCollisions,
   extractPathsFromIssueBody,
   formatCollisionAnnotations,
+  formatOpenPrCollisionWarnings,
 } from "../assess-collision-detect.ts";
 
 // ─── Verbatim issue body fixtures ───────────────────────────────────────────
@@ -538,5 +539,26 @@ describe("formatCollisionAnnotations", () => {
       { issues: [10, 20], file: "src/lib/foo.ts" },
     ]);
     expect(out.chainSuggestion).toBeUndefined();
+  });
+});
+
+describe("formatOpenPrCollisionWarnings (#1454)", () => {
+  it("emits one line for an overlapping PR and none for a disjoint PR", () => {
+    const lines = formatOpenPrCollisionWarnings(
+      new Map([[1454, new Set(["src/a.ts"])]]),
+      [
+        { number: 77, headRefName: "peer-a", files: ["src/a.ts"] },
+        { number: 78, headRefName: "peer-b", files: ["src/b.ts"] },
+      ],
+    );
+    expect(lines).toEqual([
+      "⚠ #1454  Modifies src/a.ts (overlaps PR #77); land sequentially",
+    ]);
+  });
+
+  it("returns nothing when there are no open PRs", () => {
+    expect(
+      formatOpenPrCollisionWarnings(new Map([[1, new Set(["src/a.ts"])]]), []),
+    ).toEqual([]);
   });
 });
