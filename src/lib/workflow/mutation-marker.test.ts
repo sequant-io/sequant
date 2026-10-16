@@ -33,6 +33,30 @@ describe("mutation-marker", () => {
       const rendered = renderMutationMarker({ ...base, mutation: "a --> b" });
       expect(rendered.indexOf("-->")).toBe(rendered.length - 3);
     });
+
+    it("renders the failedTest ` > ` separators literally", () => {
+      expect(renderMutationMarker(base)).toBe(
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"m","failedTest":"a.test.ts > d > c"} -->',
+      );
+    });
+
+    it("still parses a marker whose JSON spans lines", () => {
+      const body =
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-3",\n"mutation":"m {x}",\n"failedTest":"a.test.ts > t"} -->';
+      expect(parseMutationMarkers(body)).toEqual([
+        { ac: "AC-3", mutation: "m {x}", failedTest: "a.test.ts > t" },
+      ]);
+    });
+
+    it("does not let an unterminated marker swallow the next one", () => {
+      const body = [
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-1","mutation":"m","failedTest":"x"}',
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"m","failedTest":"y"} -->',
+      ].join("\n");
+      expect(parseMutationMarkers(body)).toEqual([
+        { ac: "AC-2", mutation: "m", failedTest: "y" },
+      ]);
+    });
   });
 
   describe("parseMutationMarkers", () => {

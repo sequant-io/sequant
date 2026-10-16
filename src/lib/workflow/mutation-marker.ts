@@ -15,9 +15,12 @@
  * Same durable-marker idiom as `SEQUANT_SPEC` (spec-recommendation.ts) and
  * `SEQUANT_PHASE` (phase-detection.ts): a flat-JSON HTML comment, matched
  * with a regex. The payload stays flat, and the match runs lazily to the
- * first ` -->` on the line, so `{` and `}` inside a value are safe (#1305).
- * {@link renderMutationMarker} escapes `>` as `\u003e`, so a rendered value
- * can never end the comment early. Unlike the sibling markers (one recommendation / one status per
+ * first `} -->` without crossing another `<!--`, so `{` and `}` inside a
+ * value are safe and a marker may still span lines (#1305).
+ * {@link renderMutationMarker} escapes the `>` of a `-->` inside a value as
+ * `\u003e`, so a rendered value can never end the comment early; every other
+ * character, including the `>` separators in `failedTest`, renders as written.
+ * Unlike the sibling markers (one recommendation / one status per
  * comment, latest-wins), a PR body carries one `SEQUANT_MUTATION` marker per
  * AC, so all markers are collected, not just the latest.
  */
@@ -26,7 +29,8 @@ import { z } from "zod";
 import { stripMarkdownCode } from "./phase-detection.js";
 
 /** Regex to extract mutation-verification marker JSON from HTML comments. */
-const MUTATION_MARKER_REGEX = /<!-- SEQUANT_MUTATION: (\{[^\n]*?\}) -->/g;
+const MUTATION_MARKER_REGEX =
+  /<!-- SEQUANT_MUTATION: (\{(?:(?!<!--)[\s\S])*?\}) -->/g;
 
 const MutationMarkerSchema = z.object({
   ac: z.string().min(1),
@@ -86,10 +90,12 @@ export function parseMutationMarkersFromExecOutput(
  */
 export function renderMutationMarker(marker: MutationMarker): string {
   const { ac, mutation, failedTest } = marker;
-  // `\u003e` decodes back to ">", so a value holding "-->" cannot end the comment early.
+  // `\u003e` decodes back to ">", so a value holding "-->" cannot end the
+  // comment early. Only that sequence is escaped: `failedTest` uses ` > ` as
+  // its separator, and rendered markers must stay byte-identical otherwise.
   const json = JSON.stringify({ ac, mutation, failedTest }).replace(
-    />/g,
-    "\\u003e",
+    /-->/g,
+    "--\\u003e",
   );
   return `<!-- SEQUANT_MUTATION: ${json} -->`;
 }
