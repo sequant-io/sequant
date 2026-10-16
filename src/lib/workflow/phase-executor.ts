@@ -990,9 +990,10 @@ function parsePorcelainPaths(porcelain: string): string[] {
  * that would falsely report "has commits" even when exec produced nothing,
  * reintroducing the bug #534 is fixing.
  *
- * The base ref defaults to `origin/main` but is overridden to the worktree's
- * recorded base (see #537) so zero-diff execs are still detected on custom-base
- * worktrees (e.g. those created with `--base feature/epic`).
+ * The base ref comes from `resolveBaseRef`: the worktree's recorded base
+ * (see #537), so zero-diff execs are still detected on custom-base worktrees
+ * (e.g. those created with `--base feature/epic`), else `origin/<default
+ * branch>` (#1460).
  *
  * Read-only: runs only `git rev-list` and `git status --porcelain`, so it never
  * mutates the worktree itself (#879 AC-3). The exec guard that consumes an
