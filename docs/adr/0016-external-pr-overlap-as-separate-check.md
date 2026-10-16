@@ -42,4 +42,4 @@ Option A gives up a verdict signal: a batch that overlaps a peer PR still reads 
 - `getChecksToRun` returns four Phase 1 checks (five with `--scan`).
 - Each `merge --check` makes one extra `gh pr list` GraphQL call (15 s timeout). `gh` caps `files` at 100 per PR, so a larger PR can be under-reported.
 - GitLab and Azure DevOps have no such method. Only `GitHubProvider` implements it, and `PlatformProvider` is unchanged. A provider without it would take the same skip path.
-- The `/assess`, `/exec` and `/merger` skill prose that calls these functions is a follow-up after the freeze (#1455).
+- The `/assess`, `/exec` and `/merger` skill prose that calls these functions is a follow-up after the freeze (#1459).
