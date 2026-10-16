@@ -19,12 +19,14 @@
 import { spawnSync } from "child_process";
 
 export const SKILLS_DIR_PATH = ".claude/skills";
+/** Hooks load from the committed tree too (#1456), so they get the same check. */
+export const HOOKS_DIR_PATH = ".claude/hooks";
 const VERSION_MARKER = `${SKILLS_DIR_PATH}/.sequant-version`;
 
 export interface SkillsCommitState {
   /** `.sequant-version` at `HEAD`, or null when not committed / not a repo. */
   committedVersion: string | null;
-  /** Tracked paths under `.claude/skills/` with uncommitted changes. */
+  /** Tracked paths under `.claude/skills/` or `.claude/hooks/` with uncommitted changes. */
   modified: string[];
 }
 
@@ -48,6 +50,7 @@ export function getSkillsCommitState(cwd: string): SkillsCommitState {
     "--untracked-files=no",
     "--",
     SKILLS_DIR_PATH,
+    HOOKS_DIR_PATH,
   ]);
   const modified = (status ?? "")
     .split("\n")
@@ -61,20 +64,39 @@ export function getSkillsCommitState(cwd: string): SkillsCommitState {
 }
 
 /**
- * The shared warning, or null when every tracked skill is committed. Names
- * the committed version, because that is what phases will run.
+ * The shared warning, or null when every tracked skill and hook is committed.
+ * Names the directory of each modified file, and the committed skills version
+ * because that is what phases will run.
  */
 export function formatSkillsCommitWarning(
   state: SkillsCommitState,
 ): string | null {
   if (state.modified.length === 0) return null;
-  const count = state.modified.length;
-  const files = `${count} tracked file${count === 1 ? "" : "s"} under ${SKILLS_DIR_PATH}/ ${count === 1 ? "has" : "have"} uncommitted changes`;
-  const uses = state.committedVersion
-    ? `phases will use the committed skills (${state.committedVersion})`
-    : "phases will use the committed skills";
+  const inDir = (dir: string) =>
+    state.modified.filter((p) => p.startsWith(`${dir}/`)).length;
+  const skills = inDir(SKILLS_DIR_PATH);
+  const hooks = inDir(HOOKS_DIR_PATH);
+  const clause = (count: number, dir: string) =>
+    `${count} tracked file${count === 1 ? "" : "s"} under ${dir}/ ${count === 1 ? "has" : "have"} uncommitted changes`;
+  const clauses: string[] = [];
+  const uses: string[] = [];
+  const commit: string[] = [];
+  if (skills > 0 || hooks === 0) {
+    clauses.push(clause(skills || state.modified.length, SKILLS_DIR_PATH));
+    uses.push(
+      state.committedVersion
+        ? `the committed skills (${state.committedVersion})`
+        : "the committed skills",
+    );
+    commit.push(`${SKILLS_DIR_PATH}/ (and .sequant-manifest.json)`);
+  }
+  if (hooks > 0) {
+    clauses.push(clause(hooks, HOOKS_DIR_PATH));
+    uses.push("the committed hooks");
+    commit.push(`${HOOKS_DIR_PATH}/`);
+  }
   return (
-    `${files}; sequant run checks phase worktrees out from git, so ${uses}, not the ones on disk. ` +
-    `Commit ${SKILLS_DIR_PATH}/ (and .sequant-manifest.json) before running.`
+    `${clauses.join("; ")}; sequant run checks phase worktrees out from git, so phases will use ${uses.join(" and ")}, not the ones on disk. ` +
+    `Commit ${commit.join(" and ")} before running.`
   );
 }
