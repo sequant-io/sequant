@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Phase agents get `SEQUANT_BASE_BRANCH` (#1460).** `sequant run` never set it, so skills that read `${SEQUANT_BASE_BRANCH:-main}` always used `main`, and on a repository whose default branch is `master` every `origin/main` in a phase's git commands failed. Every phase, spec included, now gets the base branch name from `resolveBaseRef`. When no base is recorded, `resolveBaseRef` falls back to `origin/<default branch>` of the repository it reads, not a literal `origin/main`.
 - **A worktree for a non-default bare base (`--base release`) is cut from `origin/<base>` after a fetch (#1406).** It was cut from the local branch, which can lag or not exist, while staleness and the recorded `sequantBaseRef` read `origin/<base>`. Creation, recreate and the record now share one ref. Stacked predecessors and bases with no `origin/<base>` stay local.
 - **A `SEQUANT_MUTATION` marker whose text contains `}` no longer parses to nothing (#1305).** The parser matched to the first `}`, so a `mutation` such as `regex changed to /x{9}/` made the marker vanish from QA §6i and from the exec carry-over. It now matches to the ` -->` terminator, and `renderMutationMarker` escapes `-->` and `<!--` inside a value so it round-trips. Existing markers, including ones whose JSON spans lines or whose values hold an HTML comment, parse as before.
 

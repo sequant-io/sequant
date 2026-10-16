@@ -646,6 +646,19 @@ PHASE_TIMEOUT=3600 npx sequant run 42  # 1 hour timeout
 SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 ```
 
+### Phase agent environment
+
+`sequant run` sets these for every phase agent it starts. Skills read them; you do not set them.
+
+| Variable | Value |
+|----------|-------|
+| `SEQUANT_ORCHESTRATOR` | `sequant-run` |
+| `SEQUANT_PHASE` | The phase being run (`spec`, `exec`, `qa`, ...) |
+| `SEQUANT_WORKTREE` | The issue worktree path (worktree phases only) |
+| `SEQUANT_ISSUE` | The issue number (worktree phases only) |
+| `SEQUANT_ISSUE_TYPE` | The issue type, when known |
+| `SEQUANT_BASE_BRANCH` | The base branch name, without `origin/` (#1460). It is the base recorded for the worktree, or the repository's default branch (`origin/HEAD`) when none is recorded, as for spec. On a repository whose default branch is `master`, it is `master`. |
+
 ## MCP Server Support
 
 `sequant run` supports MCP (Model Context Protocol) servers for enhanced functionality in headless mode. When enabled, each phase agent gets the sequant MCP server plus any servers declared in the project's own `.mcp.json` — **not** a passthrough of your Claude Desktop config.
