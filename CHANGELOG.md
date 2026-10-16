@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A `SEQUANT_MUTATION` marker whose text contains `}` no longer parses to nothing (#1305).** The parser matched to the first `}`, so a `mutation` such as `regex changed to /x{9}/` made the marker vanish from QA §6i and from the exec carry-over. It now matches to the ` -->` terminator, and `renderMutationMarker` escapes the `>` of a `-->` inside a value so it round-trips. Existing markers, including ones whose JSON spans lines, parse as before.
+- **A `SEQUANT_MUTATION` marker whose text contains `}` no longer parses to nothing (#1305).** The parser matched to the first `}`, so a `mutation` such as `regex changed to /x{9}/` made the marker vanish from QA §6i and from the exec carry-over. It now matches to the ` -->` terminator, and `renderMutationMarker` escapes `-->` and `<!--` inside a value so it round-trips. Existing markers, including ones whose JSON spans lines or whose values hold an HTML comment, parse as before.
 
 ### Added
 

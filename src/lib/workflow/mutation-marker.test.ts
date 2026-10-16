@@ -21,6 +21,14 @@ describe("mutation-marker", () => {
         { ...base, failedTest: "a.test.ts > {d} > c}" },
       ],
       ["mutation holds -->", { ...base, mutation: "dropped } --> tail" }],
+      [
+        "mutation holds an HTML comment with braces",
+        { ...base, mutation: "dropped the <!-- guards:{count} slot" },
+      ],
+      [
+        "mutation holds the marker opener",
+        { ...base, mutation: "x <!-- SEQUANT_MUTATION: {} --> y" },
+      ],
     ] as const;
 
     it.each(cases)("%s: round-trips through both entry points", (_n, m) => {
@@ -45,6 +53,20 @@ describe("mutation-marker", () => {
         '<!-- SEQUANT_MUTATION: {"ac":"AC-3",\n"mutation":"m {x}",\n"failedTest":"a.test.ts > t"} -->';
       expect(parseMutationMarkers(body)).toEqual([
         { ac: "AC-3", mutation: "m {x}", failedTest: "a.test.ts > t" },
+      ]);
+    });
+
+    it("parses a hand-written marker holding an HTML comment (PR #1035)", () => {
+      const body =
+        '<!-- SEQUANT_MUTATION: {"ac": "AC-4", "mutation": "changed the doc\'s guards:count slot from the computed 16 to 18", "failedTest": "src/lib/__tests__/security-docs.test.ts > matches the number in the doc\'s <!-- guards:count --> slot"} -->';
+      expect(parseMutationMarkers(body)).toEqual([
+        {
+          ac: "AC-4",
+          mutation:
+            "changed the doc's guards:count slot from the computed 16 to 18",
+          failedTest:
+            "src/lib/__tests__/security-docs.test.ts > matches the number in the doc's <!-- guards:count --> slot",
+        },
       ]);
     });
 
