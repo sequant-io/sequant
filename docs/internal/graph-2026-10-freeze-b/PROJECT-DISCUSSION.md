@@ -12,7 +12,7 @@ The plugin directory review still holds the merge freeze on `plugin/`, `.claude/
 
 The smallest set of merges after which a phase agent run from a `main` build has no claude.ai connectors and runs Claude Code ≥ 2.1.296, and a worktree for an existing remote PR branch starts from that branch on a fresh machine. A runner smoke of an `npm pack` of `main` (#1451) verifies it.
 
-Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325, #1454, #1456 (both added 2026-10-16).
+Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325, #1454, #1456, #1460 (all added 2026-10-16).
 
 ## §3 Non-goals
 
@@ -79,6 +79,8 @@ Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #
 - **D-7: #1325 deletes the module (AC-1's first option).** Wiring it into `ci.yml` would edit the workflow that produces the required `test` / `canary` checks (`ci.yml:24` warns a job change can brick merging). Rejected: wiring it in.
 
 - **D-8 (2026-10-16, on adding #1454): `/assess` gets a library function now and its wiring after the freeze.** `assess/SKILL.md` Step 5 builds the collision inputs in prose and calls the pure functions in `assess-collision-detect.ts`, so passing open-PR data in is a skill edit. #1454 ships the function and its tests; `sequant merge --check` (CLI) gets the full feature. Rejected: making the existing pure functions fetch PRs themselves (it hides network I/O inside functions the skill treats as pure, and still wouldn't print without a skill change to read the new result).
+
+- **D-9 (2026-10-16, on adding #1460): #1460 makes `detectDefaultBranch` take an optional `cwd`, and is blocked by #1406.** `detectDefaultBranch()` (`worktree-manager.ts:180`) runs git in `process.cwd()`. Called from `resolveBaseRef(cwd)` as-is, it reads the wrong repo whenever the two differ, and #1460's AC-2 temp-repo test could only pass by patching `process.cwd`, which the forks pool leaks across test files. The optional parameter defaults to `process.cwd()`, so existing callers don't change. It edits `worktree-manager.ts`, so #1460 joins that cluster after #1406. Rejected: a second default-branch lookup inside `phase-executor.ts` (a second producer of the default branch, the class #1460 itself names); calling `detectDefaultBranch()` with no `cwd` (wrong repo, untestable without a `process.cwd` patch).
 
 ## §8 Conventions
 
