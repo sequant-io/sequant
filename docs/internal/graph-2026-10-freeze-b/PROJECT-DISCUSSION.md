@@ -12,7 +12,7 @@ The plugin directory review still holds the merge freeze on `plugin/`, `.claude/
 
 The smallest set of merges after which a phase agent run from a `main` build has no claude.ai connectors and runs Claude Code ≥ 2.1.296, and a worktree for an existing remote PR branch starts from that branch on a fresh machine. A runner smoke of an `npm pack` of `main` (#1451) verifies it.
 
-Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325, #1454 (added 2026-10-16).
+Includes: #1396, #1440, #1405, #1451. Supporting: #1406 (same class as #1405), #1409, #1305, #1325, #1454, #1456 (both added 2026-10-16).
 
 ## §3 Non-goals
 
