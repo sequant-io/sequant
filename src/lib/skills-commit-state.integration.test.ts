@@ -30,6 +30,11 @@ function writeSkills(repo: string, version: string, body: string): void {
   writeFileSync(join(repo, ".claude/skills/.sequant-version"), version);
 }
 
+function writeHook(repo: string, body: string): void {
+  mkdirSync(join(repo, ".claude/hooks"), { recursive: true });
+  writeFileSync(join(repo, ".claude/hooks/pre-tool.sh"), `#!/bin/bash\n${body}\n`);
+}
+
 describe("skills commit state (#1354)", () => {
   let repo: string;
 
@@ -37,6 +42,7 @@ describe("skills commit state (#1354)", () => {
     repo = mkdtempSync(join(tmpdir(), "skills-commit-state-"));
     execSync("git init -b main", { cwd: repo, stdio: "pipe" });
     writeSkills(repo, "2.15.1", "old");
+    writeHook(repo, "old");
     execSync(`git add . && ${GIT} commit -m init`, { cwd: repo, stdio: "pipe" });
   });
 
@@ -69,6 +75,44 @@ describe("skills commit state (#1354)", () => {
     mkdirSync(join(repo, ".claude/skills/extra"), { recursive: true });
     writeFileSync(join(repo, ".claude/skills/extra/SKILL.md"), "x\n");
     expect(getSkillsCommitState(repo).modified).toEqual([]);
+  });
+
+  it("#1456 AC-1: a modified tracked hook warns and names .claude/hooks/", () => {
+    writeHook(repo, "new");
+    const state = getSkillsCommitState(repo);
+    expect(state.modified).toEqual([".claude/hooks/pre-tool.sh"]);
+    const warning = formatSkillsCommitWarning(state);
+    expect(warning).toContain(
+      "1 tracked file under .claude/hooks/ has uncommitted changes",
+    );
+    expect(warning).toContain("committed hooks");
+    expect(warning).not.toContain(".claude/skills/");
+  });
+
+  it("#1456 AC-1: a modified skill alone keeps the skills-only warning", () => {
+    writeSkills(repo, "2.18.0", "new");
+    const warning = formatSkillsCommitWarning(getSkillsCommitState(repo));
+    expect(warning).toContain("under .claude/skills/");
+    expect(warning).not.toContain(".claude/hooks/");
+  });
+
+  it("#1456 AC-1: a skill and a hook modified together name both directories", () => {
+    writeSkills(repo, "2.18.0", "new");
+    writeHook(repo, "new");
+    const warning = formatSkillsCommitWarning(getSkillsCommitState(repo));
+    expect(warning).toContain("under .claude/skills/");
+    expect(warning).toContain("1 tracked file under .claude/hooks/");
+  });
+
+  it("#1456 AC-1: skills and hooks both clean give no warning", () => {
+    expect(formatSkillsCommitWarning(getSkillsCommitState(repo))).toBeNull();
+  });
+
+  it("#1456 AC-3: an untracked hook produces no warning", () => {
+    writeFileSync(join(repo, ".claude/hooks/post-tool.sh"), "#!/bin/bash\n");
+    const state = getSkillsCommitState(repo);
+    expect(state.modified).toEqual([]);
+    expect(formatSkillsCommitWarning(state)).toBeNull();
   });
 
   it("stays silent outside a git repository", () => {

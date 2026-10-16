@@ -71,3 +71,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0013](0013-recreate-stale-worktree-from-remote-branch.md) | Recreate a stale worktree from its remote branch, behind a containment guard | Proposed |
 | [0014](0014-start-worktree-from-unmerged-remote-branch.md) | Start every worktree from an unmerged `origin/<branch>`, and keep one already at it | Proposed |
 | [0015](0015-install-scope-recorded-in-manifest.md) | Record the install scope in the manifest | Accepted |
+| [0016](0016-external-pr-overlap-as-separate-check.md) | Report open-PR overlap as a separate, non-blocking merge check | Accepted |
