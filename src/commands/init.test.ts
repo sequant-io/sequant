@@ -924,7 +924,10 @@ describe("init command", () => {
 
       // Then: only .sequant-manifest.json is created (no .claude/,
       // .sequant/logs, templates, settings, etc.)
-      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
+      // An empty install scope is recorded (#1409).
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {
+        groups: [],
+      });
       expect(mockCopyTemplates).not.toHaveBeenCalled();
       expect(mockCreateDefaultSettings).not.toHaveBeenCalled();
       expect(mockEnsureDir).not.toHaveBeenCalled();
@@ -962,7 +965,10 @@ describe("init command", () => {
 
         // Then: createManifest is called with stack "generic", not left
         // undefined and not prompting interactively
-        expect(mockCreateManifest).toHaveBeenCalledWith("generic", "npm");
+        // An empty install scope is recorded (#1409).
+        expect(mockCreateManifest).toHaveBeenCalledWith("generic", "npm", {
+          groups: [],
+        });
       });
     });
   });

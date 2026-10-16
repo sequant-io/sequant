@@ -23,6 +23,7 @@ import { resolveCliInvocation } from "../lib/version-check.js";
 import {
   areSkillsOutdated,
   checkAndWarnSkillsOutdated,
+  scopedRemedy,
   type SkillsOutdatedStatus,
 } from "./sync.js";
 
@@ -44,11 +45,7 @@ export const PREFLIGHT_EXEMPT_COMMANDS: ReadonlySet<string> = new Set([
 ]);
 
 export type VersionPreflightOutcome =
-  | "exempt"
-  | "no-manifest"
-  | "unmanaged"
-  | "warned"
-  | "clean";
+  "exempt" | "no-manifest" | "unmanaged" | "warned" | "clean";
 
 export interface VersionPreflightDeps {
   getManifest: typeof getManifest;
@@ -141,7 +138,15 @@ export async function getSkillsInstallStatus(
     currentVersion: status.currentVersion,
     packageVersion: status.packageVersion,
     contentDrift: status.contentDrift,
-    ...(stale ? { remediation: `${cli} update` } : {}),
+    // A partial install (#1409) gets a remedy scoped to its groups: bare
+    // `update` would install the hooks, agents and settings it left out.
+    ...(stale
+      ? {
+          remediation:
+            scopedRemedy(status.installScope, cli, status.outdated) ??
+            `${cli} update`,
+        }
+      : {}),
     filesModified: false,
   };
 }
