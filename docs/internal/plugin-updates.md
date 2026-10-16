@@ -12,7 +12,7 @@ Sequant uses **synchronized versioning** across all distribution files:
 | Claude Code plugin | `plugin/.claude-plugin/plugin.json` | `"version": "1.11.0"` |
 | Marketplace listing | `.claude-plugin/marketplace.json` → `plugins[0].version` | `"version": "1.11.0"` |
 
-**All versions MUST match.** The CI pipeline enforces this check on every PR via `plugin-version-sync.ts`.
+**All versions MUST match.** The CI pipeline enforces this on every PR in the plugin job of `ci.yml`: the `Check version sync` step compares the versions, and the `Validate plugin.json structure` step checks the manifest itself.
 
 We follow [Semantic Versioning](https://semver.org/):
 
