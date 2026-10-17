@@ -199,6 +199,10 @@ export interface OrchestratorConfig {
   issueInfoMap: Map<number, { title: string; labels: string[] }>;
   /** Worktree paths keyed by issue number */
   worktreeMap: Map<number, WorktreeInfo>;
+  /** #1469: isolation is on; an issue missing from `worktreeMap` fails. */
+  worktreeRequired?: boolean;
+  /** #1469: provisioning failure reasons, per issue. */
+  worktreeFailures?: Map<number, string>;
   /** Injectable services */
   services: OrchestratorServices;
   /** Package manager name (e.g. "npm", "pnpm") */
@@ -1193,6 +1197,9 @@ export class RunOrchestrator {
       mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
 
     let worktreeMap: Map<number, WorktreeInfo> = new Map();
+    // #1469: filled by provisioning; an issue in it never runs a phase.
+    const worktreeFailures = new Map<number, string>();
+    const worktreeRequired = useWorktreeIsolation && !config.dryRun;
 
     // Skills pre-flight inputs, shared by the main-checkout check below and
     // the per-worktree check after provisioning. Both are skipped entirely
@@ -1288,7 +1295,7 @@ export class RunOrchestrator {
       }
     }
 
-    if (useWorktreeIsolation && !config.dryRun) {
+    if (worktreeRequired) {
       const issueData = issueNumbers.map((num) => ({
         number: num,
         title: issueInfoMap.get(num)?.title || `Issue #${num}`,
@@ -1304,6 +1311,7 @@ export class RunOrchestrator {
           manifest.packageManager,
           chainBase,
           settings.run.worktreeRoot,
+          { failures: worktreeFailures },
         );
       } else {
         worktreeMap = await ensureWorktrees(
@@ -1312,6 +1320,7 @@ export class RunOrchestrator {
           manifest.packageManager,
           baseBranch,
           settings.run.worktreeRoot,
+          { failures: worktreeFailures },
         );
       }
       for (const [issueNum, worktree] of worktreeMap.entries()) {
@@ -1374,8 +1383,10 @@ export class RunOrchestrator {
     if (skillsPreflightActive) {
       // Worktree isolation disabled: phases execute in the main checkout,
       // same as pre-#933 behavior, so that's what gets checked.
+      // #1469: under isolation an empty map means provisioning failed, and
+      // those issues fail before any phase — not a main-checkout run to check.
       const cwdsToCheck =
-        worktreeMap.size > 0
+        worktreeMap.size > 0 || worktreeRequired
           ? [...worktreeMap.values()].map((w) => w.path)
           : [process.cwd()];
       for (const cwd of cwdsToCheck) {
@@ -1477,6 +1488,8 @@ export class RunOrchestrator {
       options: mergedOptions,
       issueInfoMap,
       worktreeMap,
+      worktreeRequired,
+      worktreeFailures,
       services: { logWriter, stateManager, shutdownManager: shutdown },
       packageManager: manifest.packageManager,
       baseBranch,
@@ -1620,6 +1633,8 @@ export class RunOrchestrator {
       options,
       issueInfoMap,
       worktreeMap,
+      worktreeRequired: this.cfg.worktreeRequired,
+      worktreeFailures: this.cfg.worktreeFailures,
       logWriter: services.logWriter ?? null,
       stateManager: services.stateManager ?? null,
       shutdownManager: services.shutdownManager,
@@ -1879,6 +1894,8 @@ export class RunOrchestrator {
       options,
       issueInfoMap,
       worktreeMap,
+      worktreeRequired,
+      worktreeFailures,
       logWriter,
       stateManager,
       shutdownManager,
@@ -1909,6 +1926,8 @@ export class RunOrchestrator {
       worktree: worktreeInfo
         ? { path: worktreeInfo.path, branch: worktreeInfo.branch }
         : undefined,
+      worktreeRequired,
+      worktreeError: worktreeFailures?.get(issueNumber),
       chain,
       packageManager,
       baseBranch,
