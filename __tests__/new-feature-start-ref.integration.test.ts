@@ -170,7 +170,9 @@ describe("new-feature.sh start ref (#1486)", () => {
     it("squash-merged remote branch -> base", () => {
       pushFeature();
       // Same change lands on main as a different commit (a squash merge).
-      commitFile(seed, "widget.txt", "add widget");
+      writeFileSync(join(seed, "widget.txt"), "add widget\n");
+      git(["add", "widget.txt"], seed);
+      git(["commit", "-q", "-m", "add widget (#77) squashed"], seed);
       git(["push", "-q", "origin", "main"], seed);
       cloneRepo();
       expectParity(BASE);
