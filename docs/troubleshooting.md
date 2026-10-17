@@ -539,7 +539,7 @@ Because this happens **inside npx, before `sequant serve` runs**, sequant cannot
    sequant update --force   # restore the managed spec/SKILL.md
    ```
    The overlay directive in `spec/SKILL.md` makes `overrides.md` authoritative at
-   invocation. See the [Customization Guide](guides/customization.md#modifying-an-existing-skill).
+   invocation. See [modifying an existing skill](guides/customization.md#modifying-an-existing-skill) in the Customization Guide.
 
 ### `<path> is a directory; move it aside`
 

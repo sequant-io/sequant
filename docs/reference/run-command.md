@@ -242,10 +242,10 @@ SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
 
 | Failure | Waits? | Why |
 |---------|--------|-----|
-| Rate limit, reset within the remaining budget | ✅ | The window reopens on its own |
-| Rate limit, reset beyond the budget | ❌ | You said you would not wait that long — halts as before |
-| Rate limit with no reset time | ❌ | No timing signal; falls through to the existing short exponential backoff |
-| **Out of credits (billing)** | ❌ **never** | Credits are purchased, not waited out. Note these failures *do* carry a reset timestamp, so the gate is the error type, not the presence of a timestamp |
+| Rate limit, reset within the remaining budget | ✅ Yes | The window reopens on its own |
+| Rate limit, reset beyond the budget | ❌ No | You said you would not wait that long — halts as before |
+| Rate limit with no reset time | ❌ No | No timing signal; falls through to the existing short exponential backoff |
+| **Out of credits (billing)** | ❌ **No, never** | Credits are purchased, not waited out. Note these failures *do* carry a reset timestamp, so the gate is the error type, not the presence of a timestamp |
 
 **Bounds.** At most **2** waits per issue, and `--auto-wait` is a **total** budget across the whole issue, not a per-occurrence allowance. Two 20-minute waits spend 40 minutes of a 60-minute budget; a third window rejection halts with the usual labeled message. A window still closed on wake can therefore never produce an unbounded pause loop.
 
@@ -645,6 +645,19 @@ Example:
 PHASE_TIMEOUT=3600 npx sequant run 42  # 1 hour timeout
 SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 ```
+
+### Phase agent environment
+
+`sequant run` sets these for every phase agent it starts. Skills read them; you do not set them.
+
+| Variable | Value |
+|----------|-------|
+| `SEQUANT_ORCHESTRATOR` | `sequant-run` |
+| `SEQUANT_PHASE` | The phase being run (`spec`, `exec`, `qa`, ...) |
+| `SEQUANT_WORKTREE` | The issue worktree path (worktree phases only) |
+| `SEQUANT_ISSUE` | The issue number (worktree phases only) |
+| `SEQUANT_ISSUE_TYPE` | The issue type, when known |
+| `SEQUANT_BASE_BRANCH` | The base branch name, without `origin/` (#1460). It is the base recorded for the worktree, or the repository's default branch (`origin/HEAD`) when none is recorded, as for spec. On a repository whose default branch is `master`, it is `master`. |
 
 ## MCP Server Support
 

@@ -10,8 +10,10 @@ import { join } from "path";
 import { createHash } from "crypto";
 import {
   getManifest,
+  getInstallScope,
   updateManifest,
   getPackageVersion,
+  type InstallScope,
 } from "../lib/manifest.js";
 import {
   copyTemplates,
@@ -80,6 +82,39 @@ function filterToSkillsOnly(changes: TemplateChange[]): TemplateChange[] {
   return changes.filter((c) => c.path.startsWith(".claude/skills/"));
 }
 
+/**
+ * `changes` filtered to the groups the install holds (#1409). A full install
+ * keeps every change; a partial one keeps only its groups' paths, so a file
+ * the install never wrote is not counted as drift.
+ */
+function filterToInstallScope(
+  changes: TemplateChange[],
+  scope: InstallScope,
+): TemplateChange[] {
+  if (scope.kind === "full") return changes;
+  return scope.groups.includes("skills") ? filterToSkillsOnly(changes) : [];
+}
+
+/**
+ * The command that brings a partial install back in line with the package,
+ * without installing the groups it left out (#1409). `null` for a full
+ * install: the caller keeps its own full-install remedy.
+ *
+ * Content drift needs `--force`: at a matching version a plain sync is
+ * report-only (#708). Skills paths are all `sequant-owned`, so `--force`
+ * widens nothing inside `.claude/skills/**`.
+ */
+export function scopedRemedy(
+  scope: InstallScope | undefined,
+  cli: string,
+  outdated: boolean,
+): string | null {
+  if (!scope || scope.kind === "full") return null;
+  return outdated
+    ? `${cli} sync --only skills`
+    : `${cli} sync --only skills --force`;
+}
+
 interface DriftCache {
   fingerprint: string;
   contentDrift: number;
@@ -116,6 +151,11 @@ export interface SkillsOutdatedStatus {
    * don't register as drift.
    */
   contentDrift: number;
+  /**
+   * What the manifest says is installed (#1409). Absent reads as full; the
+   * warning names a scoped remedy for a partial install.
+   */
+  installScope?: InstallScope;
 }
 
 /**
@@ -228,7 +268,10 @@ async function computeContentDrift(
     if (!manifest) return 0;
     const config = await getConfig();
     const tokens = config?.tokens || {};
-    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const changes = filterToInstallScope(
+      await computeTemplateChanges(manifest.stack, tokens),
+      getInstallScope(manifest),
+    );
     const contentDrift = changes.filter(
       (c) => c.status === "new" || c.status === "modified",
     ).length;
@@ -275,7 +318,21 @@ export async function areSkillsOutdated(
     );
   }
 
-  return { outdated, currentVersion, packageVersion, contentDrift };
+  let installScope: InstallScope = { kind: "full" };
+  try {
+    const manifest = await getManifest();
+    if (manifest) installScope = getInstallScope(manifest);
+  } catch {
+    // The scope only picks the remedy text; never fail the pre-flight on it.
+  }
+
+  return {
+    outdated,
+    currentVersion,
+    packageVersion,
+    contentDrift,
+    installScope,
+  };
 }
 
 /**
@@ -518,10 +575,11 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         ...(drifted.length > 0 ? [`${drifted.length} file(s) differ`] : []),
         ...(fastPathShim === "refresh" ? ["the opencode shim is stale"] : []),
       ].join(" and ");
+      const remedy = skillsOnly
+        ? `\`sync --only skills --force\``
+        : `\`update\` or \`sync --force\``;
       console.log(
-        chalk.yellow(
-          `!  Version current, but ${what} — run \`update\` or \`sync --force\``,
-        ),
+        chalk.yellow(`!  Version current, but ${what} — run ${remedy}`),
       );
     }
     // Signal drift with a non-zero exit code even under --quiet. The exit code
@@ -763,7 +821,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
   // Update version markers
   await updateSkillsVersion();
-  await updateManifest();
+  // Record what this run installed (#1409): `--only skills` adds the skills
+  // group to a partial scope; a full sync wrote every group, so it records a
+  // full install.
+  await updateManifest(skillsOnly ? { addGroup: "skills" } : { full: true });
 
   // Regenerate AGENTS.md if it exists and is eligible: unmodified sequant
   // output, or --force. A user-owned file (unmarked or hash-mismatched) is
@@ -857,8 +918,13 @@ export function warnUncommittedSkills(cwd: string = process.cwd()): void {
 export async function checkAndWarnSkillsOutdated(
   status?: SkillsOutdatedStatus,
 ): Promise<boolean> {
-  const { outdated, currentVersion, packageVersion, contentDrift } =
-    status ?? (await areSkillsOutdated());
+  const {
+    outdated,
+    currentVersion,
+    packageVersion,
+    contentDrift,
+    installScope,
+  } = status ?? (await areSkillsOutdated());
 
   // Name the invocation that reaches *this* build rather than assuming the
   // documented `npm install sequant` shape — see resolveCliInvocation.
@@ -870,7 +936,8 @@ export async function checkAndWarnSkillsOutdated(
         `\n!  Skills are outdated (${currentVersion || "unknown"} → ${packageVersion})`,
       ),
     );
-    console.log(chalk.yellow(`   Run: ${cli} sync\n`));
+    const remedy = scopedRemedy(installScope, cli, true) ?? `${cli} sync`;
+    console.log(chalk.yellow(`   Run: ${remedy}\n`));
     return true;
   }
 
@@ -883,9 +950,10 @@ export async function checkAndWarnSkillsOutdated(
         `\n!  Version current, but ${contentDrift} file(s) differ from bundled content`,
       ),
     );
-    console.log(
-      chalk.yellow(`   Run: ${cli} sync --force (or ${cli} update)\n`),
-    );
+    const remedy =
+      scopedRemedy(installScope, cli, false) ??
+      `${cli} sync --force (or ${cli} update)`;
+    console.log(chalk.yellow(`   Run: ${remedy}\n`));
     return true;
   }
 

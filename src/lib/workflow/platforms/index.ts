@@ -22,6 +22,7 @@ export type {
   PRMergeStatus,
   ClosedIssueRaw,
   CreatePRCliResult,
+  OpenPRFiles,
 } from "./github.js";
 
 const PLATFORMS: Record<string, () => PlatformProvider> = {

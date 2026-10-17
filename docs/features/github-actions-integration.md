@@ -254,6 +254,8 @@ sequant:solving (in progress)     — both trigger labels are removed at start
     +---> sequant:failed (failure, findings posted)
 ```
 
+Adding `sequant:assess` (or the deprecated `sequant:solve`) starts a run, which removes both trigger labels and adds `sequant:solving`. The run ends with `sequant:done` when a PR is created, or `sequant:failed` with the findings posted.
+
 ## Repo-Level Configuration
 
 Set defaults for all Sequant CI runs without editing workflow files.

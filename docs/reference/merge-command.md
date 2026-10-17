@@ -24,7 +24,7 @@ sequant merge --check         # verify (this command)
 npx sequant merge 265 298 299 300 --check
 ```
 
-Runs Phase 1 deterministic checks: combined branch test, template mirroring, and file overlap detection.
+Runs Phase 1 deterministic checks: combined branch test, template mirroring, file overlap detection, and external PR overlap.
 
 ### Auto-Detect Issues from Last Run
 
@@ -93,13 +93,13 @@ known-broken).
 | `--watch` | Wait for each PR's CI checks to reach a terminal state before running merge-check (never merges) | - |
 | `--interval <seconds>` | Watch poll interval (whole seconds, minimum `1`) | `30` |
 | `--timeout <seconds>` | Watch give-up timeout (whole seconds, minimum `1`) | `1800` (30 min) |
+| `--json` | Output as JSON (for scripting) | - |
+| `-v, --verbose` | Enable verbose output | - |
 
 `--interval` and `--timeout` accept whole seconds only. A value that is not a
 positive integer is rejected with an error rather than silently coerced — note
 that `--timeout 30m` is **not** 30 minutes and is refused, so write
 `--timeout 1800`.
-| `--json` | Output as JSON (for scripting) | - |
-| `-v, --verbose` | Enable verbose output | - |
 
 ### Exit Codes
 
@@ -119,6 +119,9 @@ that `--timeout 30m` is **not** 30 minutes and is refused, so write
 | **Combined Branch Test** | Creates temp branch, merges all feature branches, reinstalls dependencies if the merge moved a lockfile, then runs the detected package manager's `test` and `build` scripts | FAIL if merge conflict, dependency install failure, or test/build failure |
 | **Template Mirroring** | Verifies `.claude/skills/` changes have matching `templates/skills/` updates (and vice versa for `hooks/`) | WARN if unmirrored changes found |
 | **File Overlap Detection** | Flags files modified by multiple issues in the batch, classifies as additive vs conflicting | WARN if overlaps found |
+| **External PR Overlap** | Lists open PRs on origin that are not in the batch but change files the batch changes. One warning per PR names the PR number, head branch and shared paths. PRs whose head branch is in the batch are excluded, and `CHANGELOG.md` and lockfiles don't count as shared paths | Warning only: never changes a verdict or the exit code |
+
+**External PR overlap** covers peer PRs from another session, another machine, Dependabot or a human. A peer that merges first can leave a batch PR `CONFLICTING`, so the warning tells you to settle the merge order. The file lists come from one `gh pr list --state open --json number,headRefName,files --limit 100` call. `gh` returns at most 100 files per PR, so a larger PR can be under-reported. When `gh` is missing, unauthenticated or the call fails, the report shows one line, `Open-PR overlap check skipped: <reason>` (the first line of the error), and every other check runs as usual. `CHANGELOG.md`, `package-lock.json`, `yarn.lock` and `pnpm-lock.yaml` are left out of the comparison, the same list `/assess` uses for collisions, because nearly every PR touches them.
 
 ### Phase 2: Residual Pattern Detection (`--scan`)
 
@@ -206,11 +209,14 @@ Each PR receives a per-issue report showing its specific findings and the batch-
 ## Overlap Detection
 - src/commands/run.ts modified by issues #298, #299 (additive)
 
+## External Pr Overlap
+- External PR overlap: PR #310 (dependabot/npm_and_yarn/zod-3.25.0) shares package.json with this batch
+
 ## Summary
 - Errors: 0
-- Warnings: 2
+- Warnings: 3
 - Issues in batch: 4
-- Checks run: 3
+- Checks run: 4
 ```
 
 ### JSON Output (`--json`)
