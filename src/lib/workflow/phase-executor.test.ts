@@ -41,6 +41,7 @@ import {
   mapAgentSuccessToPhaseResult,
   mapAgentFailureToPhaseResult,
   resolveBaseRef,
+  recordWorktreeBaseRef,
   createThrottledReporter,
   SPEC_EXTRA_RETRIES,
   SPEC_RETRY_BACKOFF_MS,
@@ -3110,5 +3111,71 @@ describe("#986 normalizeModelUsage", () => {
         costUSD: 0,
       },
     ]);
+  });
+});
+
+describe("recordWorktreeBaseRef (#1469)", () => {
+  const LOCKED = {
+    status: 255,
+    stdout: Buffer.from(""),
+    stderr: Buffer.from(
+      "error: could not lock config file .git/config: File exists\n",
+    ),
+  };
+  const OK = { status: 0, stdout: Buffer.from(""), stderr: Buffer.from("") };
+
+  beforeEach(() => {
+    mockSpawnSync.mockReset();
+  });
+
+  it("recordWorktreeBaseRef retries a lost config lock and succeeds", () => {
+    mockSpawnSync.mockReturnValueOnce(LOCKED).mockReturnValueOnce(OK);
+    const sleep = vi.fn();
+
+    const result = recordWorktreeBaseRef("/wt", "feature/1-x", "origin/main", {
+      sleep,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+    expect(mockSpawnSync.mock.calls[1][1]).toEqual([
+      "config",
+      "branch.feature/1-x.sequantBaseRef",
+      "origin/main",
+    ]);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("recordWorktreeBaseRef reports the final failure instead of swallowing it", () => {
+    mockSpawnSync.mockReturnValue(LOCKED);
+    const sleep = vi.fn();
+
+    const result = recordWorktreeBaseRef("/wt", "feature/1-x", "origin/main", {
+      backoffMs: [1, 1],
+      sleep,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "error: could not lock config file .git/config: File exists",
+    });
+    // Bounded: one attempt plus one per backoff step, then it gives up.
+    expect(mockSpawnSync).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("recordWorktreeBaseRef does not retry a failure that is not a lock", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal: not a git repository"),
+    });
+    const sleep = vi.fn();
+
+    const result = recordWorktreeBaseRef("/wt", "b", "origin/main", { sleep });
+
+    expect(result).toEqual({ ok: false, error: "fatal: not a git repository" });
+    expect(mockSpawnSync).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 });
