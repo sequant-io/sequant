@@ -583,6 +583,8 @@ export async function executeBatch(
     options,
     issueInfoMap,
     worktreeMap,
+    worktreeRequired,
+    worktreeFailures,
     logWriter,
     stateManager,
     shutdownManager,
@@ -621,6 +623,8 @@ export async function executeBatch(
       worktree: worktreeInfo
         ? { path: worktreeInfo.path, branch: worktreeInfo.branch }
         : undefined,
+      worktreeRequired,
+      worktreeError: worktreeFailures?.get(issueNumber),
       packageManager,
       baseBranch,
       onProgress,
@@ -1112,6 +1116,8 @@ export async function runIssueWithLogging(
     labels,
     services: { logWriter, stateManager, shutdownManager },
     worktree,
+    worktreeRequired,
+    worktreeError,
     chain,
     packageManager,
     baseBranch,
@@ -1147,6 +1153,25 @@ export async function runIssueWithLogging(
   log(chalk.blue(`\n  Issue #${issueNumber}`));
   if (worktreePath) {
     log(chalk.gray(`    Worktree: ${worktreePath}`));
+  }
+
+  // #1469: under isolation an issue without a worktree would run every phase
+  // in the main checkout (the executor falls back to process.cwd()). Fail it
+  // here, before state init and before any phase.
+  if (worktreeRequired && !worktree) {
+    const abortReason = `worktree provisioning failed: ${worktreeError ?? "no worktree was created"}`;
+    bracketedConsoleLog(
+      phasePauseHandle,
+      chalk.red(`  ✖ #${issueNumber}: ${abortReason}`),
+    );
+    return {
+      issueNumber,
+      success: false,
+      phaseResults: [],
+      durationSeconds: (Date.now() - startTime) / 1000,
+      loopTriggered: false,
+      abortReason,
+    };
   }
 
   // Initialize state tracking for this issue

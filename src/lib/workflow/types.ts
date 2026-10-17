@@ -885,6 +885,14 @@ export interface BatchExecutionContext {
   options: RunOptions;
   issueInfoMap: Map<number, { title: string; labels: string[] }>;
   worktreeMap: Map<number, WorktreeInfo>;
+  /**
+   * #1469: worktree isolation is on, so every issue must have an entry in
+   * `worktreeMap`. An issue without one is failed, never run in the main
+   * checkout.
+   */
+  worktreeRequired?: boolean;
+  /** #1469: why provisioning failed, per issue (git stderr). */
+  worktreeFailures?: Map<number, string>;
   logWriter: LogWriter | null;
   stateManager: StateManager | null;
   shutdownManager?: ShutdownManager;
@@ -930,6 +938,15 @@ export interface IssueExecutionContext {
     path: string;
     branch: string;
   };
+  /**
+   * #1469: isolation is on, so `worktree` must be set. `undefined` worktree
+   * alone means both "isolation off" and "provisioning failed"; this flag
+   * tells them apart, and `runIssueWithLogging` fails the issue for the
+   * second before any phase runs.
+   */
+  worktreeRequired?: boolean;
+  /** #1469: why provisioning failed (git stderr), when it did. */
+  worktreeError?: string;
   /** Chain mode settings */
   chain?: {
     enabled: boolean;
