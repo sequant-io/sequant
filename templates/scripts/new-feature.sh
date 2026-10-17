@@ -24,9 +24,47 @@ branch_name_for() {
     printf 'feature/%s-%s\n' "$1" "$slug"
 }
 
-# Network-free entry point: print the branch name and exit (used by the parity test)
+# The ref a new worktree branch starts from (#1486): origin/<branch> when the
+# remote already has the issue's branch and it is not merged into <base-ref>,
+# else <base-ref>. A pushed PR branch thus keeps its commits.
+#
+# SOURCE OF TRUTH: resolveBranchStartRef() in src/lib/workflow/worktree-manager.ts.
+# Keep the steps in the same order; __tests__/new-feature-start-ref.integration.test.ts
+# compares the two on every merge shape. Local git only, no gh. Runs in the cwd repo.
+resolve_branch_start_ref() {
+    local branch="$1" base_ref="$2" remote_ref fetch_err merged_tree base_tree
+    remote_ref="origin/${branch}"
+    # LC_ALL=C: the match below is git's English message, translated otherwise.
+    # A failed fetch must not abort under `set -e`: offline falls through to
+    # the tracking ref already present.
+    fetch_err="$(LC_ALL=C git fetch origin "$branch" 2>&1 >/dev/null || true)"
+    case "$fetch_err" in
+        *"couldn't find remote ref"*) echo "$base_ref"; return 0 ;;
+    esac
+    if ! git rev-parse --verify --quiet "refs/remotes/${remote_ref}" >/dev/null 2>&1; then
+        echo "$base_ref"; return 0
+    fi
+    # Merge commit: the branch is already an ancestor of the base.
+    if git merge-base --is-ancestor "$remote_ref" "$base_ref" 2>/dev/null; then
+        echo "$base_ref"; return 0
+    fi
+    # Squash merge: merging the branch into the base leaves the base's tree.
+    # merge-tree --write-tree needs git >= 2.38; on error only the ancestor test applies.
+    if merged_tree="$(git merge-tree --write-tree "$base_ref" "$remote_ref" 2>/dev/null | head -n 1)" \
+        && base_tree="$(git rev-parse "${base_ref}^{tree}" 2>/dev/null)" \
+        && [ "$merged_tree" = "$base_tree" ]; then
+        echo "$base_ref"; return 0
+    fi
+    echo "$remote_ref"
+}
+
+# Network-free entry points (used by the parity tests)
 if [ "$1" = "--print-branch" ]; then
     branch_name_for "$2" "$3"
+    exit 0
+fi
+if [ "$1" = "--print-start-ref" ]; then
+    resolve_branch_start_ref "$2" "$3"
     exit 0
 fi
 
@@ -193,8 +231,15 @@ git fetch origin "$BASE_BRANCH"
 # `git worktree add -b <new> <path> <start-point>` resolves <start-point>
 # without changing the main checkout, and `origin/<base>` is exactly the
 # up-to-date commit the old `checkout`+`pull` used to land on.
-echo -e "${BLUE}🌿 Creating new worktree from ${BASE_BRANCH}...${NC}"
-git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "origin/${BASE_BRANCH}"
+# When the remote already has the issue's branch (a pushed PR), start from it so
+# its commits are kept (#1486). -B matches the TS path and tolerates a stale ref.
+START_REF="$(resolve_branch_start_ref "$BRANCH_NAME" "origin/${BASE_BRANCH}")"
+echo -e "${BLUE}🌿 Creating new worktree from ${START_REF}...${NC}"
+if [ "$START_REF" = "origin/${BRANCH_NAME}" ]; then
+    git worktree add "$WORKTREE_DIR" -B "$BRANCH_NAME" "$START_REF"
+else
+    git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "$START_REF"
+fi
 
 # Record the base branch on the new branch so downstream tooling
 # (e.g. phase-executor zero-diff guard, see #537) can resolve the

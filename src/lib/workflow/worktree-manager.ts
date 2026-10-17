@@ -16,6 +16,11 @@ import {
   resolvePackageManagerConfig,
 } from "../stacks.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
+import {
+  CONFIG_LOCK_ERROR,
+  retryOnConfigLock,
+  type ConfigLockRetryOptions,
+} from "./git-config-lock.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
   parseMutationMarkers,
@@ -963,11 +968,35 @@ export function resolvePrBase(
   return bare === detectedDefault() ? undefined : bare;
 }
 
+/** Say when the #1234 base ref could not be recorded (#1469). */
+function warnBaseRefNotRecorded(
+  branch: string,
+  result: { ok: true } | { ok: false; error: string },
+): void {
+  if (result.ok) return;
+  console.log(
+    chalk.yellow(
+      `    !  Could not record the base ref for ${branch}: ${result.error} — the exec guard and pre-PR rebase fall back to the default base`,
+    ),
+  );
+}
+
+/**
+ * Provisioning side-channel (#1469). `failures` collects, per issue, why its
+ * worktree could not be created, so the run can fail that issue instead of
+ * running its phases in the main checkout.
+ */
+export interface WorktreeProvisioning {
+  failures?: Map<number, string>;
+  lockRetry?: ConfigLockRetryOptions;
+}
+
 /**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
  * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - failure sink and lock-retry options (#1469)
  */
 export async function ensureWorktree(
   issueNumber: number,
@@ -977,10 +1006,12 @@ export async function ensureWorktree(
   baseBranch?: string,
   chainMode?: boolean,
   worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
 ): Promise<WorktreeInfo | null> {
   const gitRoot = getGitRoot();
   if (!gitRoot) {
     console.log(chalk.red("    ❌ Not in a git repository"));
+    provisioning?.failures?.set(issueNumber, "not in a git repository");
     return null;
   }
 
@@ -1103,14 +1134,18 @@ export async function ensureWorktree(
     // #1234: a worktree created before the base was recorded gets it now;
     // one that already has it keeps the ref it was actually cut from.
     if (!readRecordedBaseRef(existingPath, branch)) {
-      recordWorktreeBaseRef(
-        existingPath,
+      warnBaseRefNotRecorded(
         branch,
-        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
-          chainMode,
-          hasRemote:
-            !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
-        }),
+        recordWorktreeBaseRef(
+          existingPath,
+          branch,
+          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+            chainMode,
+            hasRemote:
+              !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+          }),
+          provisioning?.lockRetry,
+        ),
       );
     }
 
@@ -1234,46 +1269,80 @@ export async function ensureWorktree(
     spawnSync("mkdir", ["-p", worktreesDir], { stdio: "pipe" });
   }
 
-  // Create the worktree
-  let createResult;
-  let needsRebase = false;
-
-  if (recreateFrom) {
-    // #1380/#1405: build the local branch from origin/<branch>, never from
-    // the base, so the worktree keeps the PR's commits and tracks the remote.
-    createResult = spawnSync(
-      "git",
-      ["worktree", "add", "-B", branch, worktreePath, recreateFrom],
-      { stdio: "pipe" },
-    );
-  } else if (branchExists) {
-    // Use existing branch
-    createResult = spawnSync("git", ["worktree", "add", worktreePath, branch], {
-      stdio: "pipe",
-    });
-
-    // In chain mode with existing branch, mark for rebase onto previous chain link
-    if (chainMode && baseBranch) {
-      needsRebase = true;
+  // Create the worktree. #1469: a lost `.git/config` lock (another CLI
+  // provisioning in this repo) is retried. A failed `-b` attempt can still
+  // have created the branch, so each retry re-checks and adds it as existing.
+  let cutNewBranch = false;
+  const addWorktree = (attempt: number) => {
+    if (recreateFrom) {
+      // #1380/#1405: build the local branch from origin/<branch>, never from
+      // the base, so the worktree keeps the PR's commits and tracks the remote.
+      return spawnSync(
+        "git",
+        ["worktree", "add", "-B", branch, worktreePath, recreateFrom],
+        { stdio: "pipe" },
+      );
     }
-  } else {
+    if (attempt > 0) {
+      spawnSync("git", ["worktree", "prune"], { stdio: "pipe" });
+    }
+    const branchNowExists =
+      branchExists ||
+      (attempt > 0 &&
+        spawnSync(
+          "git",
+          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+          { stdio: "pipe" },
+        ).status === 0);
+    if (branchNowExists) {
+      // Use existing branch
+      return spawnSync("git", ["worktree", "add", worktreePath, branch], {
+        stdio: "pipe",
+      });
+    }
     // Create new branch from base reference (origin/main or previous branch in chain)
-    createResult = spawnSync(
+    cutNewBranch = true;
+    return spawnSync(
       "git",
       ["worktree", "add", worktreePath, "-b", branch, baseRef],
       { stdio: "pipe" },
     );
-  }
+  };
+  const createResult = retryOnConfigLock(
+    addWorktree,
+    (r) => (r.status === 0 ? null : r.stderr.toString()),
+    provisioning?.lockRetry,
+  );
+
+  // In chain mode with an existing branch, rebase onto the previous chain link
+  const needsRebase =
+    branchExists && !recreateFrom && !!chainMode && !!baseBranch;
 
   if (createResult.status !== 0) {
-    const error = createResult.stderr.toString();
+    const error = createResult.stderr.toString().trim();
     console.log(chalk.red(`    ❌ Failed to create worktree: ${error}`));
+    const lockNote =
+      CONFIG_LOCK_ERROR.test(error) && cutNewBranch
+        ? ` (branch ${branch} may exist without a worktree; the next run reuses it)`
+        : "";
+    provisioning?.failures?.set(
+      issueNumber,
+      `git worktree add failed: ${error || `exit ${createResult.status}`}${lockNote}`,
+    );
     return null;
   }
 
   // #1234: record the exact base so the exec guard and the pre-PR rebase
   // compare against what the worktree was actually cut from.
-  recordWorktreeBaseRef(worktreePath, branch, baseRef);
+  warnBaseRefNotRecorded(
+    branch,
+    recordWorktreeBaseRef(
+      worktreePath,
+      branch,
+      baseRef,
+      provisioning?.lockRetry,
+    ),
+  );
 
   // Rebase existing branch onto chain base if needed
   let rebased = false;
@@ -1381,6 +1450,7 @@ export async function ensureWorktree(
  * Ensure worktrees exist for all issues before execution
  * @param baseBranch - Optional base branch for worktree creation (default: main)
  * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - receives each failed issue's reason (#1469)
  */
 export async function ensureWorktrees(
   issues: Array<{ number: number; title: string }>,
@@ -1388,6 +1458,7 @@ export async function ensureWorktrees(
   packageManager?: string,
   baseBranch?: string,
   worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
@@ -1403,6 +1474,7 @@ export async function ensureWorktrees(
       baseBranch,
       false, // Non-chain mode: don't rebase existing branches
       worktreeRoot,
+      provisioning,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -1413,10 +1485,14 @@ export async function ensureWorktrees(
     (w) => !w.existed,
   ).length;
   const reused = Array.from(worktrees.values()).filter((w) => w.existed).length;
+  const failed = issues.length - worktrees.size;
 
-  if (created > 0 || reused > 0) {
+  if (created > 0 || reused > 0 || failed > 0) {
     console.log(
-      chalk.gray(`  Worktrees: ${created} created, ${reused} reused`),
+      chalk.gray(
+        `  Worktrees: ${created} created, ${reused} reused` +
+          (failed > 0 ? `, ${failed} failed` : ""),
+      ),
     );
   }
 
@@ -1428,6 +1504,7 @@ export async function ensureWorktrees(
  * Each issue branches from the previous issue's branch
  * @param baseBranch - Optional starting base branch for the chain (default: main)
  * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - receives each failed issue's reason (#1469)
  */
 export async function ensureWorktreesChain(
   issues: Array<{ number: number; title: string }>,
@@ -1435,6 +1512,7 @@ export async function ensureWorktreesChain(
   packageManager?: string,
   baseBranch?: string,
   worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
@@ -1446,7 +1524,7 @@ export async function ensureWorktreesChain(
   // First issue starts from the specified base branch (or main)
   let previousBranch: string | undefined = baseBranch;
 
-  for (const issue of issues) {
+  for (const [index, issue] of issues.entries()) {
     const worktree = await ensureWorktree(
       issue.number,
       issue.title,
@@ -1455,6 +1533,7 @@ export async function ensureWorktreesChain(
       previousBranch, // Chain from previous branch (or base branch for first issue)
       true, // Chain mode: rebase existing branches onto previous chain link
       worktreeRoot,
+      provisioning,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -1466,6 +1545,12 @@ export async function ensureWorktreesChain(
           `  ❌ Chain broken: could not create worktree for #${issue.number}`,
         ),
       );
+      for (const successor of issues.slice(index + 1)) {
+        provisioning?.failures?.set(
+          successor.number,
+          `chain broken: #${issue.number} has no worktree`,
+        );
+      }
       break;
     }
   }
