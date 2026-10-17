@@ -174,15 +174,19 @@ function findExistingWorktree(branch: string): string | null {
  * 3. Fallback to "main"
  *
  * @param verbose - Log which branch was detected
+ * @param cwd - Repository to read; defaults to `process.cwd()` (#1460)
  * @returns The detected default branch name (e.g., "main", "master")
  * @internal Exported for testing
  */
-export function detectDefaultBranch(verbose: boolean = false): string {
+export function detectDefaultBranch(
+  verbose: boolean = false,
+  cwd: string = process.cwd(),
+): string {
   // Try reading the symbolic ref (no network call)
   const result = spawnSync(
     "git",
     ["symbolic-ref", "refs/remotes/origin/HEAD"],
-    { stdio: "pipe" },
+    { cwd, stdio: "pipe" },
   );
   if (result.status === 0) {
     const branch = result.stdout
@@ -201,13 +205,13 @@ export function detectDefaultBranch(verbose: boolean = false): string {
   const autoResult = spawnSync(
     "git",
     ["remote", "set-head", "origin", "--auto"],
-    { stdio: "pipe" },
+    { cwd, stdio: "pipe" },
   );
   if (autoResult.status === 0) {
     const retry = spawnSync(
       "git",
       ["symbolic-ref", "refs/remotes/origin/HEAD"],
-      { stdio: "pipe" },
+      { cwd, stdio: "pipe" },
     );
     if (retry.status === 0) {
       const branch = retry.stdout
