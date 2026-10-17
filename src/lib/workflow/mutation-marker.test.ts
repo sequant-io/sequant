@@ -1,11 +1,86 @@
 import { describe, it, expect } from "vitest";
 import {
   parseMutationMarkers,
+  parseMutationMarkersFromExecOutput,
+  renderMutationMarker,
   latestMutationMarkerPerAc,
   classifyMutationMarker,
 } from "./mutation-marker.js";
 
 describe("mutation-marker", () => {
+  describe("renderMutationMarker round-trip (#1305)", () => {
+    const base = { ac: "AC-2", mutation: "m", failedTest: "a.test.ts > d > c" };
+    const cases = [
+      [
+        "mutation holds a regex quantifier",
+        { ...base, mutation: "regex changed to /x{9}/" },
+      ],
+      ["ac holds a brace", { ...base, ac: "AC-2}" }],
+      [
+        "failedTest holds braces",
+        { ...base, failedTest: "a.test.ts > {d} > c}" },
+      ],
+      ["mutation holds -->", { ...base, mutation: "dropped } --> tail" }],
+      [
+        "mutation holds an HTML comment with braces",
+        { ...base, mutation: "dropped the <!-- guards:{count} slot" },
+      ],
+      [
+        "mutation holds the marker opener",
+        { ...base, mutation: "x <!-- SEQUANT_MUTATION: {} --> y" },
+      ],
+    ] as const;
+
+    it.each(cases)("%s: round-trips through both entry points", (_n, m) => {
+      const rendered = renderMutationMarker(m);
+      expect(parseMutationMarkers(rendered)).toEqual([m]);
+      expect(parseMutationMarkersFromExecOutput(rendered)).toEqual([m]);
+    });
+
+    it("never lets a rendered value end the comment early", () => {
+      const rendered = renderMutationMarker({ ...base, mutation: "a --> b" });
+      expect(rendered.indexOf("-->")).toBe(rendered.length - 3);
+    });
+
+    it("renders the failedTest ` > ` separators literally", () => {
+      expect(renderMutationMarker(base)).toBe(
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"m","failedTest":"a.test.ts > d > c"} -->',
+      );
+    });
+
+    it("still parses a marker whose JSON spans lines", () => {
+      const body =
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-3",\n"mutation":"m {x}",\n"failedTest":"a.test.ts > t"} -->';
+      expect(parseMutationMarkers(body)).toEqual([
+        { ac: "AC-3", mutation: "m {x}", failedTest: "a.test.ts > t" },
+      ]);
+    });
+
+    it("parses a hand-written marker holding an HTML comment (PR #1035)", () => {
+      const body =
+        '<!-- SEQUANT_MUTATION: {"ac": "AC-4", "mutation": "changed the doc\'s guards:count slot from the computed 16 to 18", "failedTest": "src/lib/__tests__/security-docs.test.ts > matches the number in the doc\'s <!-- guards:count --> slot"} -->';
+      expect(parseMutationMarkers(body)).toEqual([
+        {
+          ac: "AC-4",
+          mutation:
+            "changed the doc's guards:count slot from the computed 16 to 18",
+          failedTest:
+            "src/lib/__tests__/security-docs.test.ts > matches the number in the doc's <!-- guards:count --> slot",
+        },
+      ]);
+    });
+
+    it("does not let an unterminated marker swallow the next one", () => {
+      const body = [
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-1","mutation":"m","failedTest":"x"}',
+        '<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"m","failedTest":"y"} -->',
+      ].join("\n");
+      expect(parseMutationMarkers(body)).toEqual([
+        { ac: "AC-2", mutation: "m", failedTest: "y" },
+      ]);
+    });
+  });
+
   describe("parseMutationMarkers", () => {
     it("parses a valid SEQUANT_MUTATION marker", () => {
       const body = `Some PR description.

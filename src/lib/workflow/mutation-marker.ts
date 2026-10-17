@@ -14,9 +14,14 @@
  *
  * Same durable-marker idiom as `SEQUANT_SPEC` (spec-recommendation.ts) and
  * `SEQUANT_PHASE` (phase-detection.ts): a flat-JSON HTML comment, matched
- * with the `{[^}]+}` regex family. That regex stops at the FIRST `}`, so the
- * payload must stay flat — a nested object would truncate mid-JSON and fail
- * to parse. Unlike those two markers (one recommendation / one status per
+ * with a regex. The payload stays flat, and the match runs lazily to the
+ * first `} -->` without crossing into the next `SEQUANT_MUTATION` marker, so
+ * `{`, `}` and `<!-- … -->` inside a value are safe and a marker may still
+ * span lines (#1305). {@link renderMutationMarker} escapes `-->` and `<!--`
+ * inside a value (as `--\u003e` and `\u003c!--`), so a rendered value can
+ * neither end the comment early nor look like the next marker; every other
+ * character, including the `>` separators in `failedTest`, renders as written.
+ * Unlike the sibling markers (one recommendation / one status per
  * comment, latest-wins), a PR body carries one `SEQUANT_MUTATION` marker per
  * AC, so all markers are collected, not just the latest.
  */
@@ -25,7 +30,8 @@ import { z } from "zod";
 import { stripMarkdownCode } from "./phase-detection.js";
 
 /** Regex to extract mutation-verification marker JSON from HTML comments. */
-const MUTATION_MARKER_REGEX = /<!-- SEQUANT_MUTATION: (\{[^}]+\}) -->/g;
+const MUTATION_MARKER_REGEX =
+  /<!-- SEQUANT_MUTATION: (\{(?:(?!<!-- SEQUANT_MUTATION:)[\s\S])*?\}) -->/g;
 
 const MutationMarkerSchema = z.object({
   ac: z.string().min(1),
@@ -85,7 +91,15 @@ export function parseMutationMarkersFromExecOutput(
  */
 export function renderMutationMarker(marker: MutationMarker): string {
   const { ac, mutation, failedTest } = marker;
-  return `<!-- SEQUANT_MUTATION: ${JSON.stringify({ ac, mutation, failedTest })} -->`;
+  // JSON decodes `\u003e` / `\u003c` back to ">" / "<", so a value holding
+  // "-->" cannot end the comment early and one holding "<!--" cannot start
+  // what the parser reads as the next marker. Only those two sequences are
+  // escaped: `failedTest` uses ` > ` as its separator, and rendered markers
+  // must stay byte-identical otherwise.
+  const json = JSON.stringify({ ac, mutation, failedTest })
+    .replace(/-->/g, "--\\u003e")
+    .replace(/<!--/g, "\\u003c!--");
+  return `<!-- SEQUANT_MUTATION: ${json} -->`;
 }
 
 /**

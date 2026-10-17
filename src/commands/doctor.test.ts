@@ -404,6 +404,20 @@ describe("doctor command", () => {
       expect(output()).not.toContain("Core skills are committed");
     });
 
+    it("warns when only a tracked hook has uncommitted changes (#1456)", async () => {
+      vi.mocked(getSkillsCommitState).mockReturnValueOnce({
+        committedVersion: "2.15.1",
+        modified: [".claude/hooks/pre-tool.sh"],
+      });
+
+      await doctorCommand();
+
+      expect(output()).toContain(
+        "1 tracked file under .claude/hooks/ has uncommitted changes",
+      );
+      expect(output()).not.toContain("Core skills are committed");
+    });
+
     it("does not flag skills that are absent from disk", async () => {
       mockFileExists.mockImplementation(
         async (p: string) => !p.startsWith(".claude/skills/"),

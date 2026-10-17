@@ -121,6 +121,22 @@ describe("ClaudeCodeDriver", () => {
       expect(callOptions.mcpServers).toBeUndefined();
     });
 
+    it.each([true, false])(
+      "passes settings.disableClaudeAiConnectors to query() (mcp: %s) (#1396 AC-2)",
+      async (mcp) => {
+        getPhaseMcpServersConfigMock.mockReturnValue({});
+        queryMock.mockReturnValue(mockStream([INIT, RESULT_ERROR]));
+
+        const driver = new ClaudeCodeDriver();
+        await driver.executePhase("prompt", { ...baseConfig(), mcp });
+
+        const callOptions = queryMock.mock.calls[0][0].options;
+        expect(callOptions.settings).toEqual({
+          disableClaudeAiConnectors: true,
+        });
+      },
+    );
+
     it("forwards config.mcpAllowlist as the desktopAllowlist option (settings.run.mcpAllowlist)", async () => {
       queryMock.mockReturnValue(mockStream([INIT, RESULT_ERROR]));
 

@@ -10,8 +10,11 @@ vi.mock("../lib/fs.js", async (importOriginal) => ({
   isDirectory: vi.fn().mockResolvedValue(false),
 }));
 
-// Mock manifest
-vi.mock("../lib/manifest.js", () => ({
+// Mock manifest. `getInstallScope` is a pure read of the manifest object and
+// comes through unmocked, so drift is scoped by the real rule (#1409).
+vi.mock("../lib/manifest.js", async (importOriginal) => ({
+  getInstallScope: ((await importOriginal()) as Record<string, unknown>)
+    .getInstallScope,
   getManifest: vi.fn(),
   updateManifest: vi.fn(),
   getPackageVersion: vi.fn(() => "1.1.0"),
@@ -70,7 +73,11 @@ import {
   syncCommand,
 } from "./sync.js";
 import { fileExists, readFile, writeFile, getFileStats } from "../lib/fs.js";
-import { getManifest, getPackageVersion } from "../lib/manifest.js";
+import {
+  getManifest,
+  getPackageVersion,
+  updateManifest,
+} from "../lib/manifest.js";
 import {
   copyTemplates,
   computeTemplateChanges,
@@ -1211,6 +1218,44 @@ describe("sync command", () => {
         expect(output).not.toContain("opencode shim");
         expect(output).not.toContain("scripts/dev link targets");
         expect(mockWriteFile).not.toHaveBeenCalled();
+      });
+
+      it("records the skills group in the manifest; a full sync records a full install (#1409)", async () => {
+        await syncCommand({ only: "skills" });
+        expect(vi.mocked(updateManifest)).toHaveBeenLastCalledWith({
+          addGroup: "skills",
+        });
+
+        await syncCommand({});
+        expect(vi.mocked(updateManifest)).toHaveBeenLastCalledWith({
+          full: true,
+        });
+      });
+
+      it("the version-current drift report names the skills-scoped remedy (#1409)", async () => {
+        // Given: skills at the package version, one skill drifted
+        mockFileExists.mockImplementation(
+          async (p: string) => p === ".claude/skills/.sequant-version",
+        );
+        mockReadFile.mockResolvedValue("1.1.0");
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/skills/qa/SKILL.md",
+            templatePath: "templates/skills/qa/SKILL.md",
+            status: "modified",
+            rendered: "new",
+            diff: "diff",
+          },
+        ]);
+        const logSpy = vi.spyOn(console, "log");
+
+        await syncCommand({ only: "skills" });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("1 file(s) differ");
+        expect(output).toContain("sync --only skills --force");
+        expect(output).not.toContain("`update`");
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
       });
 
       // === FAILURE PATHS ===
