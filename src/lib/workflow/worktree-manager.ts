@@ -163,11 +163,67 @@ function findExistingWorktree(branch: string): string | null {
   for (const line of lines) {
     if (line.startsWith("worktree ")) {
       currentPath = line.substring(9);
-    } else if (line.startsWith("branch refs/heads/") && line.includes(branch)) {
+    } else if (line === `branch refs/heads/${branch}`) {
       return currentPath;
     }
   }
   return null;
+}
+
+/**
+ * Every branch name that belongs to an issue (#1487): local
+ * `refs/heads/feature/<n>-*` (which covers this repo's worktrees) and
+ * `refs/remotes/origin/feature/<n>-*`, deduplicated and sorted. The dash in
+ * the prefix keeps issue 1 from claiming `feature/12-*`.
+ *
+ * @internal Exported for testing
+ */
+export function findIssueBranches(
+  issueNumber: number,
+  cwd: string = process.cwd(),
+): string[] {
+  const result = spawnSync(
+    "git",
+    [
+      "for-each-ref",
+      "--format=%(refname)",
+      "refs/heads/feature/",
+      "refs/remotes/origin/feature/",
+    ],
+    { cwd, stdio: "pipe" },
+  );
+  if (result.status !== 0) return [];
+  const prefix = `feature/${issueNumber}-`;
+  const names = new Set<string>();
+  for (const ref of result.stdout.toString().split("\n")) {
+    const name = ref
+      .trim()
+      .replace(/^refs\/heads\//, "")
+      .replace(/^refs\/remotes\/origin\//, "");
+    if (name.startsWith(prefix)) names.add(name);
+  }
+  return [...names].sort();
+}
+
+/**
+ * Pick the branch `ensureWorktree` uses for an issue (#1487). The issue
+ * number is the branch's identity, not the title: a failed `gh issue view`
+ * (title `Issue #N`) or a retitle must not cut a second branch from the base.
+ *
+ * - No branch for the issue: the title-derived name (first creation).
+ * - Exactly one: that branch, whatever the title.
+ * - Several: the title-derived name if it is one of them, else `null`
+ *   (ambiguous; the caller reports `candidates` and creates nothing).
+ *
+ * @internal Exported for testing
+ */
+export function selectIssueBranch(
+  titleBranch: string,
+  candidates: string[],
+): string | null {
+  if (candidates.length === 0) return titleBranch;
+  if (candidates.length === 1) return candidates[0];
+  return candidates.includes(titleBranch) ? titleBranch : null;
 }
 
 /**
@@ -1016,7 +1072,34 @@ export async function ensureWorktree(
   }
 
   const slug = slugify(title);
-  const branch = `feature/${issueNumber}-${slug}`;
+  // #1487: reuse the issue's branch, found by number, before the title.
+  const candidates = findIssueBranches(issueNumber, gitRoot);
+  const branch = selectIssueBranch(
+    `feature/${issueNumber}-${slug}`,
+    candidates,
+  );
+  if (!branch) {
+    console.log(
+      chalk.red(
+        `    ❌ Issue #${issueNumber} has ${candidates.length} branches and none matches its title; not creating another:`,
+      ),
+    );
+    for (const candidate of candidates) {
+      console.log(chalk.red(`       ${candidate}`));
+    }
+    console.log(
+      chalk.yellow(
+        `    ℹ️  Delete or rename the branches that are not the issue's, then re-run.`,
+      ),
+    );
+    // The run fails this issue with this reason (#1469) rather than running
+    // it in the main checkout.
+    provisioning?.failures?.set(
+      issueNumber,
+      `${candidates.length} branches for #${issueNumber} and none matches its title: ${candidates.join(", ")}`,
+    );
+    return null;
+  }
   const worktreesDir = resolveWorktreeRoot(gitRoot, worktreeRoot);
   const worktreePath = path.join(worktreesDir, branch);
 
