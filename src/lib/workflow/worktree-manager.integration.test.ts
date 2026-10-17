@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   existsSync,
   mkdtempSync,
-  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -201,9 +200,14 @@ process.exit(info ? 0 : 1);
     const list = worktreeList(clone);
     expect(list).toContain("branch refs/heads/feature/201-concurrent-201");
     expect(list).toContain("branch refs/heads/feature/202-concurrent-202");
-    // Each branch kept the upstream `worktree add -b` writes.
-    const config = readFileSync(join(clone, ".git", "config"), "utf8");
-    expect(config).toContain('[branch "feature/201-concurrent-201"]');
-    expect(config).toContain('[branch "feature/202-concurrent-202"]');
+    // What provisioning guarantees after the race is the #1234 base ref
+    // (recordWorktreeBaseRef, retried the same way). The upstream that
+    // `worktree add -b` writes is NOT guaranteed: when the `-b` attempt lost
+    // the lock, the retry adds the already-created branch without `-b`, and
+    // the PR push sets the upstream later (`push -u`). Read the keys, not the
+    // `[branch]` section header, which either writer creates.
+    for (const branch of ["feature/201-concurrent-201", "feature/202-concurrent-202"]) {
+      expect(git(clone, "config", "--get", `branch.${branch}.sequantBaseRef`).trim()).toBe("origin/main");
+    }
   }, 60_000);
 });
