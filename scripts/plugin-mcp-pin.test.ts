@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { compareVersions } from "../src/lib/version-check.js";
 
 const PROJECT_ROOT = resolve(__dirname, "..");
 
@@ -270,7 +271,11 @@ describe("marketplace version", () => {
     const pkg = JSON.parse(
       readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
     ) as { version: string };
-    if (entry.version !== pkg.version) {
+    if (
+      entry.version === undefined ||
+      entry.version !== pkg.version ||
+      compareVersions(entry.version, pkg.version) !== 0
+    ) {
       throw new Error(
         `.claude-plugin/marketplace.json sequant version (${entry.version}) != package.json version (${pkg.version})`,
       );
