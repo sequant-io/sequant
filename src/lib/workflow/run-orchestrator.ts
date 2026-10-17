@@ -112,6 +112,7 @@ function isWorktreeDirty(worktreePath: string): boolean {
 }
 import {
   getIssueInfo,
+  issueTitleWarning,
   sortByDependencies,
   parseBatches,
   runIssueWithLogging,
@@ -1160,6 +1161,13 @@ export class RunOrchestrator {
     for (const issueNumber of issueNumbers) {
       const info = await getIssueInfo(issueNumber);
       if (info.notFound) missingIssues.push(issueNumber);
+      // #1487: say so before worktree setup when the title is a placeholder.
+      const titleWarning = config.dryRun
+        ? null
+        : issueTitleWarning(issueNumber, info);
+      if (titleWarning) {
+        bracketedConsoleLog(phasePauseHandle, chalk.yellow(titleWarning));
+      }
       issueInfoMap.set(issueNumber, { title: info.title, labels: info.labels });
     }
 
