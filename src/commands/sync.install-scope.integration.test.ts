@@ -238,8 +238,24 @@ describe("#1409 skills-only install scope", () => {
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
   });
 
-  /** Every file plus the `.mcp.json` pin, before/after an `update` run. */
+  /**
+   * Every file, before/after an `update` run. The root gets a `.mcp.json` with
+   * a stale `sequant@` pin first, so a pin write shows up in the snapshot
+   * (without the file, `syncSequantMcpPin` returns `no-file` and writes nothing).
+   */
   async function runUpdate(opts: Parameters<typeof updateCommand>[0]) {
+    fs.writeFileSync(
+      path.join(root, ".mcp.json"),
+      JSON.stringify(
+        {
+          mcpServers: {
+            sequant: { command: "npx", args: ["-y", STALE_PIN, "serve"] },
+          },
+        },
+        null,
+        2,
+      ),
+    );
     const before = snapshot(root);
     const log = captureLog();
     process.exitCode = 0;
@@ -252,6 +268,8 @@ describe("#1409 skills-only install scope", () => {
     }
     return { before, after: snapshot(root), out };
   }
+
+  const STALE_PIN = "sequant@0.0.1";
 
   describe("update refuses on a skills-only install", () => {
     for (const opts of [{ yes: true }, { force: true }] as const) {
@@ -292,6 +310,11 @@ describe("#1409 skills-only install scope", () => {
 
     const { out } = await runUpdate({ yes: true });
     const onDisk = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    // The same stale pin the refusal tests leave untouched is rewritten here,
+    // so those tests would see a pin write if one happened.
+    expect(fs.readFileSync(path.join(root, ".mcp.json"), "utf8")).not.toContain(
+      STALE_PIN,
+    );
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
     expect("groups" in onDisk).toBe(false);
     expect(out).not.toContain("sync --only skills");
