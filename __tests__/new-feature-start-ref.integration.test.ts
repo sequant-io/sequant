@@ -202,9 +202,7 @@ describe("new-feature.sh start ref (#1486)", () => {
       ["fetch", "/nonexistent-1486-repo", "nope"],
       { encoding: "utf8", env: { ...process.env, LC_ALL: GERMAN } },
     );
-    const gitIsGerman = !(germanProbe.stderr ?? "").includes(
-      "does not appear to be a git repository",
-    );
+    const gitIsGerman = !(germanProbe.stderr ?? "").includes("fatal:");
     if (!gitIsGerman) {
       console.warn(
         `SKIPPED parity under ${GERMAN}: git prints English here, so the case would pass vacuously`,
