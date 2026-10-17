@@ -1092,6 +1092,12 @@ export async function ensureWorktree(
         `    ℹ️  Delete or rename the branches that are not the issue's, then re-run.`,
       ),
     );
+    // The run fails this issue with this reason (#1469) rather than running
+    // it in the main checkout.
+    provisioning?.failures?.set(
+      issueNumber,
+      `${candidates.length} branches for #${issueNumber} and none matches its title: ${candidates.join(", ")}`,
+    );
     return null;
   }
   const worktreesDir = resolveWorktreeRoot(gitRoot, worktreeRoot);

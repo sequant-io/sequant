@@ -1324,13 +1324,16 @@ describe("#1487 ensureWorktree finds the issue's branch by number", () => {
   ): {
     out: string;
     info: { path: string; branch: string; existed: boolean } | null;
+    failure: string | null;
   } => {
     const script = join(root, `run-${Math.random().toString(36).slice(2)}.mts`);
     const modPath = join(__dirname, "worktree-manager.ts");
     writeFileSync(
       script,
       `import { ensureWorktree } from ${JSON.stringify(modPath)};
-const info = await ensureWorktree(${issue}, ${JSON.stringify(title)}, false, undefined, undefined, false, ".trees");
+const failures = new Map();
+const info = await ensureWorktree(${issue}, ${JSON.stringify(title)}, false, undefined, undefined, false, ".trees", { failures });
+process.stdout.write("\\nFAILURE=" + JSON.stringify(failures.get(${issue}) ?? null));
 process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
     );
     const env = { ...process.env };
@@ -1340,8 +1343,11 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
       env,
       encoding: "utf8",
     });
-    const line = out.split("\n").find((l) => l.startsWith("RESULT="));
-    return { out, info: JSON.parse(line!.slice("RESULT=".length)) };
+    const field = (name: string) => {
+      const line = out.split("\n").find((l) => l.startsWith(`${name}=`));
+      return JSON.parse(line!.slice(name.length + 1));
+    };
+    return { out, info: field("RESULT"), failure: field("FAILURE") };
   };
 
   // The PR shape: a worktree cut under the real title, a commit pushed with -u.
@@ -1406,10 +1412,14 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
     git(clone, "branch", "feature/40-a", "main");
     git(clone, "branch", "feature/40-b", "main");
 
-    const { out, info } = ensure(40, "Issue #40");
+    const { out, info, failure } = ensure(40, "Issue #40");
     expect(info).toBeNull();
     expect(out).toContain("feature/40-a");
     expect(out).toContain("feature/40-b");
+    // The run fails the issue with this reason (#1469's worktreeRequired
+    // guard) instead of running it in the main checkout.
+    expect(failure).toContain("feature/40-a");
+    expect(failure).toContain("feature/40-b");
     expect(branchList(clone, "feature/40-*").split("\n")).toHaveLength(2);
     expect(branchList(clone, "feature/40-issue-40")).toBe("");
   }, 90_000);
