@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { compareVersions } from "../src/lib/version-check.js";
 
 const PROJECT_ROOT = resolve(__dirname, "..");
 
@@ -102,18 +103,26 @@ describe("#1265: shipped plugin .mcp.json runs the launcher file the plugin ship
   // checked (developer portal, 2026-10-01).
   const shipped = JSON.parse(readFileSync(shippedMcpJsonPath(), "utf8")) as {
     mcpServers?: {
-      sequant?: { command?: string; args?: unknown[]; env?: Record<string, string> };
+      sequant?: {
+        command?: string;
+        args?: unknown[];
+        env?: Record<string, string>;
+      };
     };
   };
   const sequant = shipped.mcpServers?.sequant;
 
   it("is `node ${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs sequant@<version>`", async () => {
-    const { PLUGIN_LAUNCHER_ARG } = await import("./generate-mcp-launch-inline.mjs");
+    const { PLUGIN_LAUNCHER_ARG } =
+      await import("./generate-mcp-launch-inline.mjs");
     const pkg = JSON.parse(
       readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
     ) as { version: string };
     expect(sequant?.command).toBe("node");
-    expect(sequant?.args).toEqual([PLUGIN_LAUNCHER_ARG, `sequant@${pkg.version}`]);
+    expect(sequant?.args).toEqual([
+      PLUGIN_LAUNCHER_ARG,
+      `sequant@${pkg.version}`,
+    ]);
     expect(PLUGIN_LAUNCHER_ARG).toBe("${CLAUDE_PLUGIN_ROOT}/mcp-launch.mjs");
     expect(sequant?.env).toBeUndefined();
   });
@@ -125,7 +134,10 @@ describe("#1265: shipped plugin .mcp.json runs the launcher file the plugin ship
   });
 
   it("stays far below the directory's 1,024-part command limit", () => {
-    const parts = [sequant?.command ?? "", ...((sequant?.args ?? []) as string[])]
+    const parts = [
+      sequant?.command ?? "",
+      ...((sequant?.args ?? []) as string[]),
+    ]
       .join(" ")
       .split(/[\s,{}|&;]+/)
       .filter(Boolean);
@@ -133,7 +145,9 @@ describe("#1265: shipped plugin .mcp.json runs the launcher file the plugin ship
   });
 
   it("plugin/mcp-launch.mjs is byte-identical to scripts/mcp-launch.mjs", () => {
-    expect(readFileSync(join(PROJECT_ROOT, "plugin", "mcp-launch.mjs"), "utf8")).toBe(
+    expect(
+      readFileSync(join(PROJECT_ROOT, "plugin", "mcp-launch.mjs"), "utf8"),
+    ).toBe(
       readFileSync(join(PROJECT_ROOT, "scripts", "mcp-launch.mjs"), "utf8"),
     );
   });
@@ -239,5 +253,33 @@ describe("#1089 AC-3: generated launcher module and templates/mcp.json match mcp
     const { generateInlineLauncherSource } =
       await import("./generate-mcp-launch-inline.mjs");
     expect(generateInlineLauncherSource()).not.toContain("sequant@");
+  });
+});
+
+describe("marketplace version", () => {
+  it("marketplace.json sequant entry version matches package.json version", () => {
+    const marketplace = JSON.parse(
+      readFileSync(
+        join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"),
+        "utf8",
+      ),
+    ) as { plugins: Array<{ name: string; version?: string }> };
+    const entry = marketplace.plugins.find((p) => p.name === "sequant");
+    if (!entry) {
+      throw new Error("marketplace.json must list the sequant plugin");
+    }
+    const pkg = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
+    if (
+      entry.version === undefined ||
+      entry.version !== pkg.version ||
+      compareVersions(entry.version, pkg.version) !== 0
+    ) {
+      throw new Error(
+        `.claude-plugin/marketplace.json sequant version (${entry.version}) != package.json version (${pkg.version})`,
+      );
+    }
+    expect(entry.version).toBe(pkg.version);
   });
 });
