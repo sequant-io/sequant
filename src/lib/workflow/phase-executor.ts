@@ -9,9 +9,13 @@
  */
 
 import chalk from "chalk";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
+import {
+  retryOnConfigLock,
+  type ConfigLockRetryOptions,
+} from "./git-config-lock.js";
 // ESM cycle with worktree-manager (it imports this module): safe, both sides
 // are function declarations called at run time, not at module load (#1460).
 import { detectDefaultBranch } from "./worktree-manager.js";
@@ -825,23 +829,35 @@ export const SEQUANT_BASE_REF_KEY = "sequantBaseRef";
 
 /**
  * Record the exact ref a worktree's branch was cut from (#1234), for
- * {@link resolveBaseRef} to read verbatim. Best-effort: a failed write leaves
- * the legacy/`origin/main` resolution in place, never fails the caller.
+ * {@link resolveBaseRef} to read verbatim. Retries a lost `.git/config` lock
+ * (#1469). A final failure never fails the caller, but it is returned so the
+ * caller can say the legacy/`origin/main` resolution is in effect.
  */
 export function recordWorktreeBaseRef(
   cwd: string,
   branch: string,
   baseRef: string,
-): void {
-  try {
-    execFileSync(
-      "git",
-      ["config", `branch.${branch}.${SEQUANT_BASE_REF_KEY}`, baseRef],
-      { cwd, stdio: "pipe" },
-    );
-  } catch {
-    // Best-effort — see doc comment.
-  }
+  lockRetry?: ConfigLockRetryOptions,
+): { ok: true } | { ok: false; error: string } {
+  const errorOf = (r: ReturnType<typeof spawnSync>): string | null =>
+    r.status === 0
+      ? null
+      : (r.stderr?.toString() ?? "").trim() ||
+        r.error?.message ||
+        `git config exited ${r.status}`;
+  const error = errorOf(
+    retryOnConfigLock(
+      () =>
+        spawnSync(
+          "git",
+          ["config", `branch.${branch}.${SEQUANT_BASE_REF_KEY}`, baseRef],
+          { cwd, stdio: "pipe" },
+        ),
+      errorOf,
+      lockRetry,
+    ),
+  );
+  return error === null ? { ok: true } : { ok: false, error };
 }
 
 /**
