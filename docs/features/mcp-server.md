@@ -224,7 +224,7 @@ What this means in practice:
 
 ## MCP vs CLI
 
-|                | CLI (`sequant run 42`)    | MCP (from your editor)                                      |
+| Aspect         | CLI (`sequant run 42`)    | MCP (from your editor)                                      |
 | -------------- | ------------------------- | ----------------------------------------------------------- |
 | **Context**    | Separate terminal window  | Your AI already has file context                            |
 | **Invocation** | Exact commands and flags  | Natural language                                            |

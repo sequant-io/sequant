@@ -180,7 +180,7 @@ Base branch is resolved in this order (highest priority first):
 
 ### Visual Comparison
 
-**Standard Workflow (no --base)**
+#### Standard Workflow (no --base)
 
 ```
 origin/main
@@ -191,7 +191,7 @@ origin/main
 
 All issues branch independently from main.
 
-**Feature Branch Workflow (--base)**
+#### Feature Branch Workflow (--base)
 
 ```
 origin/main
@@ -203,7 +203,7 @@ origin/main
 
 All issues branch from the integration branch.
 
-**Chain Mode with --base**
+#### Chain Mode with --base
 
 ```
 origin/main

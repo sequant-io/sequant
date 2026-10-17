@@ -93,13 +93,13 @@ known-broken).
 | `--watch` | Wait for each PR's CI checks to reach a terminal state before running merge-check (never merges) | - |
 | `--interval <seconds>` | Watch poll interval (whole seconds, minimum `1`) | `30` |
 | `--timeout <seconds>` | Watch give-up timeout (whole seconds, minimum `1`) | `1800` (30 min) |
+| `--json` | Output as JSON (for scripting) | - |
+| `-v, --verbose` | Enable verbose output | - |
 
 `--interval` and `--timeout` accept whole seconds only. A value that is not a
 positive integer is rejected with an error rather than silently coerced — note
 that `--timeout 30m` is **not** 30 minutes and is refused, so write
 `--timeout 1800`.
-| `--json` | Output as JSON (for scripting) | - |
-| `-v, --verbose` | Enable verbose output | - |
 
 ### Exit Codes
 
