@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`update` refuses on a skills-only install (#1482).** It read no install scope, so it wrote hooks, agents and `settings.json` over an install that chose skills only. On a partial scope it now writes nothing, exits non-zero and names `sequant sync --only skills`. Full installs are unchanged. ADR-0015 amended.
+
 ### Fixed
 
 - **Phase agents get `SEQUANT_BASE_BRANCH` (#1460).** `sequant run` never set it, so skills that read `${SEQUANT_BASE_BRANCH:-main}` always used `main`, and on a repository whose default branch is `master` every `origin/main` in a phase's git commands failed. Every phase, spec included, now gets the base branch name from `resolveBaseRef`. When no base is recorded, `resolveBaseRef` falls back to `origin/<default branch>` of the repository it reads, not a literal `origin/main`.

@@ -238,21 +238,62 @@ describe("#1409 skills-only install scope", () => {
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
   });
 
-  it("an update on a skills-only install records a full install", async () => {
-    // `update` writes every new template file, hooks and settings included.
-    // A manifest still saying "skills" would hide drift in those files.
+  /** Every file plus the `.mcp.json` pin, before/after an `update` run. */
+  async function runUpdate(opts: Parameters<typeof updateCommand>[0]) {
+    const before = snapshot(root);
     const log = captureLog();
+    process.exitCode = 0;
+    let out = "";
     try {
-      await updateCommand({ yes: true });
+      await updateCommand(opts);
     } finally {
+      out = log.output();
       log.restore();
     }
+    return { before, after: snapshot(root), out };
+  }
 
-    const onDisk = JSON.parse(
-      fs.readFileSync(path.join(root, MANIFEST), "utf8"),
-    );
+  describe("update refuses on a skills-only install", () => {
+    for (const opts of [{ yes: true }, { force: true }] as const) {
+      it(`update refuses on a skills-only install (${Object.keys(opts)[0]})`, async () => {
+        const { before, after, out } = await runUpdate(opts);
+        expect(changedPaths(before, after)).toEqual([]);
+        expect(after.get(MANIFEST)).toBe(before.get(MANIFEST));
+        expect(process.exitCode).toBe(1);
+        expect(out).toContain("sync --only skills");
+        expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(false);
+      });
+    }
+
+    it("update refuses on a skills-only install (groups: [])", async () => {
+      const manifestPath = path.join(root, MANIFEST);
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.groups = [];
+      fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+      const { before, after, out } = await runUpdate({ yes: true });
+      expect(changedPaths(before, after)).toEqual([]);
+      expect(process.exitCode).toBe(1);
+      expect(out).toContain("sync --only skills");
+    });
+  });
+
+  it("update --dry-run refuses on a skills-only install", async () => {
+    const { before, after, out } = await runUpdate({ dryRun: true });
+    expect(changedPaths(before, after)).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    expect(out).toContain("sync --only skills");
+  });
+
+  it("update on a full install applies every group and writes no groups field", async () => {
+    const manifestPath = path.join(root, MANIFEST);
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    delete m.groups;
+    fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+
+    const { out } = await runUpdate({ yes: true });
+    const onDisk = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
     expect("groups" in onDisk).toBe(false);
-    expect(getInstallScope((await getManifest())!)).toEqual({ kind: "full" });
+    expect(out).not.toContain("sync --only skills");
   });
 });
