@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`update` refuses on a skills-only install (#1482).** It read no install scope, so it wrote hooks, agents and `settings.json` over an install that chose skills only. On a partial scope it now writes nothing, exits non-zero and names `sequant sync --only skills`. Full installs are unchanged. ADR-0015 amended.
+
 ### Fixed
 
 - **`new-feature.sh` starts from `origin/<branch>` when the remote already has the issue's branch (#1486).** It always cut the worktree from `origin/<base>`, so a pushed PR branch lost its commits and a push from the new worktree diverged. The script now ports `resolveBranchStartRef`: it uses `origin/<branch>` unless that branch is merged into the base (merge commit or squash), and `--print-start-ref <branch> <base-ref>` exposes the result for the parity test.

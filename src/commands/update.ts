@@ -9,6 +9,7 @@ import {
   getManifest,
   updateManifest,
   getPackageVersion,
+  getInstallScope,
 } from "../lib/manifest.js";
 import { computeTemplateChanges } from "../lib/templates.js";
 import { getConfig, saveConfig } from "../lib/config.js";
@@ -81,6 +82,26 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   if (!manifest) {
     console.log(
       chalk.red("❌ Sequant is not initialized. Run `sequant init` first."),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  // A partial install (#1409) chose not to have hooks, agents or settings.json.
+  // `update` writes the whole template set, so it would widen that scope
+  // without a prompt. Refuse before any write (config, MCP pin, templates) and
+  // name the command that upgrades a scoped install (#1482, ADR-0015).
+  const scope = getInstallScope(manifest);
+  if (scope.kind === "partial") {
+    console.log(
+      chalk.red(
+        `❌ This install is scoped to: ${scope.groups.join(", ") || "(nothing yet)"}. \`update\` installs every group, so it would add hooks, agents and settings.json you opted out of.`,
+      ),
+    );
+    console.log(
+      chalk.yellow(
+        "   To upgrade the scoped install, run: sequant sync --only skills",
+      ),
     );
     process.exitCode = 1;
     return;
@@ -369,8 +390,8 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     console.log(chalk.blue("Refreshed opencode shim"));
   }
 
-  // `update` writes every new template file, whatever groups the install
-  // skipped, so the manifest now records a full install (#1409).
+  // Only a full install reaches here (a partial scope is refused above), so
+  // this keeps `groups` absent (#1409, #1482).
   await updateManifest({ full: true });
 
   console.log(chalk.green(`\n✔ Updated ${updated} files`));

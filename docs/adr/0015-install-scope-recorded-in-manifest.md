@@ -12,13 +12,13 @@ The manifest kept `"files": {}` after `sync --only skills`, so nothing recorded 
 
 ## Decision
 
-The manifest records the install scope in an optional `groups` field. `init --manifest-only` writes `groups: []`, `sync --only skills` adds `"skills"`, and a full sync or `update` removes the field. A manifest without the field is a full install. `src/lib/manifest.ts` owns the field; consumers read it through `getInstallScope`. Drift and the remedy text are scoped to it.
+The manifest records the install scope in an optional `groups` field. `init --manifest-only` writes `groups: []`, `sync --only skills` adds `"skills"`, and a full sync removes the field. On a partial scope `update` refuses and points to `sync --only skills`; only a full install is rewritten by `update` (amended 2026-10-17, #1482). A manifest without the field is a full install. `src/lib/manifest.ts` owns the field; consumers read it through `getInstallScope`. Drift and the remedy text are scoped to it.
 
 ## Options
 
 ### Option A: Record the scope in the manifest (chosen)
 
-An optional `groups` field written by the commands that choose the scope. **Pros:** says what the user chose; tells "never installed" apart from "deleted by accident"; old manifests need no migration because absence means full. **Cons:** one more field every manifest writer must keep correct; `update` (no `--only`) installs every group, so it removes the field too.
+An optional `groups` field written by the commands that choose the scope. **Pros:** says what the user chose; tells "never installed" apart from "deleted by accident"; old manifests need no migration because absence means full. **Cons:** one more field every manifest writer must keep correct; `update` installs every group, so on a partial scope it refuses rather than widen the install (#1482).
 
 ### Option B: Infer the scope from what exists on disk
 
@@ -36,4 +36,4 @@ Option A costs an optional field and keeps the old behaviour for every existing 
 
 - A skills-only install reports drift only under `.claude/skills/**`, and its remedy is `sync --only skills --force` (content drift) or `sync --only skills` (version mismatch), which never writes outside the skills tree.
 - Widening a partial install is a full `sync` or `init`; both record a full install.
-- `update` and `doctor` do not read the scope yet. Revisit when `update` gains a scope (`update --only` is out of scope for #1409).
+- `update` reads the scope and refuses on a partial install (#1482); it has no `--only` flag. `doctor` does not read the scope yet.

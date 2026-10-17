@@ -22,6 +22,10 @@ vi.mock("../lib/manifest.js", () => ({
     files: {},
     packageManager: "npm",
   })),
+  getInstallScope: (m: { groups?: string[] }) =>
+    Array.isArray(m.groups)
+      ? { kind: "partial", groups: [...m.groups] }
+      : { kind: "full" },
   updateManifest: vi.fn(async () => {}),
   getPackageVersion: vi.fn(() => "2.6.1"),
 }));
