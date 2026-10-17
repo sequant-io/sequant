@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`new-feature.sh` starts from `origin/<branch>` when the remote already has the issue's branch (#1486).** It always cut the worktree from `origin/<base>`, so a pushed PR branch lost its commits and a push from the new worktree diverged. The script now ports `resolveBranchStartRef`: it uses `origin/<branch>` unless that branch is merged into the base (merge commit or squash), and `--print-start-ref <branch> <base-ref>` exposes the result for the parity test.
 - **Phase agents get `SEQUANT_BASE_BRANCH` (#1460).** `sequant run` never set it, so skills that read `${SEQUANT_BASE_BRANCH:-main}` always used `main`, and on a repository whose default branch is `master` every `origin/main` in a phase's git commands failed. Every phase, spec included, now gets the base branch name from `resolveBaseRef`. When no base is recorded, `resolveBaseRef` falls back to `origin/<default branch>` of the repository it reads, not a literal `origin/main`.
 - **Uncommitted changes to `.claude/hooks/` now trigger the same warning as uncommitted skills (#1456).** Phase worktrees check out the committed hooks, so a `sync` that rewrote `pre-tool.sh` and was never committed left every phase on the old guard logic with no signal. `getSkillsCommitState` lists tracked-but-modified files under both directories, and the shared warning names each directory. Untracked hooks stay silent. `run`, `doctor` and `sync` print it through their existing call sites.
 
