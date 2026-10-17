@@ -4,11 +4,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // base-ref lookup (`branch.<b>.sequantBaseRef`) reads as unset here so the
 // queued sequences stay as written; the recorded case is covered with real
 // git in phase-executor.integration.test.ts.
-const { innerExecFileSync } = vi.hoisted(() => ({
+// #1460: `resolveBaseRef`'s no-recorded-base fallback asks
+// `detectDefaultBranch` (spawnSync). It reads origin/HEAD as unset here, so the
+// fallback stays `origin/main`; a test can queue a `master` answer instead.
+const { innerExecFileSync, mockSpawnSync } = vi.hoisted(() => ({
   innerExecFileSync: vi.fn(),
+  mockSpawnSync: vi.fn(),
 }));
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
+  spawnSync: (...args: unknown[]) =>
+    mockSpawnSync(...args) ?? { status: 1, stdout: Buffer.from("") },
   execFileSync: (...args: unknown[]) => {
     const argv = args[1];
     if (
@@ -2070,6 +2076,7 @@ describe("executePhaseWithRetry", () => {
 describe("resolveBaseRef", () => {
   beforeEach(() => {
     mockExecFileSync.mockReset();
+    mockSpawnSync.mockReset();
   });
 
   it("returns the recorded base prefixed with origin/", () => {
@@ -2120,6 +2127,21 @@ describe("resolveBaseRef", () => {
       throw new Error("not a git repo");
     });
     expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/<default branch> of cwd when nothing is recorded (#1460)", () => {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("master\n"));
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("exit code 1");
+    });
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from("refs/remotes/origin/master\n"),
+    });
+    expect(resolveBaseRef("/tmp/repo")).toBe("origin/master");
+    expect(mockSpawnSync.mock.calls[0]?.[2]).toMatchObject({
+      cwd: "/tmp/repo",
+    });
   });
 
   it("falls back to origin/main when HEAD is detached", () => {

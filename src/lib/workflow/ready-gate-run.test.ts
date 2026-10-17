@@ -34,6 +34,8 @@ vi.mock("./worktree-manager.js", () => ({
   createPR: vi.fn(() => ({ attempted: true, success: false })),
   readCacheMetrics: vi.fn(),
   filterResumedPhases: vi.fn(),
+  // #1460: resolveBaseRef's no-recorded-base fallback reads the default branch.
+  detectDefaultBranch: vi.fn(() => "main"),
 }));
 
 vi.mock("./log-writer.js", () => ({

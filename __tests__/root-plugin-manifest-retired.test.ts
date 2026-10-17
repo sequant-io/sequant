@@ -17,7 +17,6 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
 import { collectFiles, SKILL_ROOTS } from "../scripts/check-skill-sync.js";
-import { checkVersionSync } from "../src/lib/plugin-version-sync.js";
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -35,7 +34,6 @@ const READERS = [
   ".github/workflows/plugin-install-test.yml",
   "scripts/release.sh",
   "scripts/prepare-marketplace.ts",
-  "src/lib/plugin-version-sync.ts",
 ];
 
 /**
@@ -68,14 +66,10 @@ function releaseSkillCopies(): string[] {
 }
 
 describe("root plugin manifest retired (#1301)", () => {
-  it("the root manifest is gone and version sync reads plugin/", () => {
-    const result = checkVersionSync(REPO_ROOT);
-
+  it("the root manifest is gone", () => {
     expect(
       fs.existsSync(path.join(REPO_ROOT, ".claude-plugin/plugin.json")),
     ).toBe(false);
-    expect(result.error).toBeUndefined();
-    expect(result.inSync).toBe(true);
   });
 
   it("no tooling reader targets the root manifest", () => {

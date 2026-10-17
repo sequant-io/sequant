@@ -33,6 +33,8 @@ Example output:
 
 **Note:** These lines detect MCPs from your Claude Desktop config — a different source than the `.mcp.json` phase agents actually use for `sequant run` (#936), so a server present here may still be unavailable headlessly, and vice versa. Doctor's separate "MCP Servers (headless)" line reports what a phase actually gets (sequant + `.mcp.json` + any `mcpAllowlist` names) — check that line for headless availability.
 
+**claude.ai connectors are off for phase agents (#1396).** The account's claude.ai connectors (Gmail, Docs, Calendar, …) are not part of the `.mcp.json` allowlist, but the SDK would add them to a phase agent. The driver passes `settings: { disableClaudeAiConnectors: true }` to `query()`, so a phase agent sees only the `sequant` server, `.mcp.json` servers and any `mcpAllowlist` names. Interactive Claude Code is unaffected. `strictMcpConfig` is not used, because it would also drop `.mcp.json`, plugin and agent MCP servers.
+
 ## Installation
 
 Add these to the project's `.mcp.json` (the same file `sequant init` already writes a `sequant` entry into) — not your Claude Desktop config. `sequant run` phase agents read only `.mcp.json` and never pass through your Claude Desktop config (#936), so a server configured only in Claude Desktop is invisible to `/test`, `/exec`, and `/fullsolve` when they run headlessly.

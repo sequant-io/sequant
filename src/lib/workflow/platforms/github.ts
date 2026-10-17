@@ -128,6 +128,13 @@ function runGhOrThrow(args: string[]): string {
   return String(result.stdout ?? "");
 }
 
+/** An open PR on origin and the paths it changes (#1454). */
+export interface OpenPRFiles {
+  number: number;
+  headRefName: string;
+  files: string[];
+}
+
 /** PR mergeability as reported by `gh pr view --json mergeable`. */
 export type MergeableState = "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
 
@@ -793,6 +800,45 @@ export class GitHubProvider implements PlatformProvider {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * List open PRs on origin with their changed file paths (#1454).
+   *
+   * Throws when `gh` is missing, unauthenticated, exits non-zero or returns
+   * unparseable output. An empty array means "no open PRs", so a failure must
+   * not collapse to `[]`: callers report it as a skipped check. `gh` returns
+   * at most 100 files per PR, so a larger PR is under-reported.
+   */
+  listOpenPRFilesSync(limit: number = 100): OpenPRFiles[] {
+    const stdout = runGhOrThrow([
+      "pr",
+      "list",
+      "--state",
+      "open",
+      "--limit",
+      String(limit),
+      "--json",
+      "number,headRefName,files",
+    ]);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stdout);
+    } catch {
+      throw new Error("gh pr list returned output that is not JSON");
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error("gh pr list returned output that is not a JSON array");
+    }
+    return parsed.map((pr: Record<string, unknown>) => ({
+      number: Number(pr.number),
+      headRefName: String(pr.headRefName ?? ""),
+      files: Array.isArray(pr.files)
+        ? (pr.files as Array<{ path?: unknown }>)
+            .map((f) => f?.path)
+            .filter((p): p is string => typeof p === "string")
+        : [],
+    }));
   }
 
   /**

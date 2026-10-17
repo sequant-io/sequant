@@ -82,14 +82,15 @@ The GitHub Action runs every Monday at 9am UTC:
 2. Compares against last assessed version
 3. Runs `--since` to catch any missed releases
 4. Creates issues for actionable findings
-5. Commits updated baseline and reports
+5. Opens a report PR (`upstream/<version>`) with the reports and the baseline bump. **Merge it after triage.** The baseline moves only when that PR merges; an unmerged report leaves `lastAssessedVersion` where it was, so the next run assesses the same releases again and re-files every finding (#1339 → #1410–#1421). Dedupe does not see closed issues.
 
 ### Manual Assessment After Major Release
 
 1. Run `/upstream v2.x.x --dry-run` to preview
 2. Review findings in console output
 3. Run `/upstream v2.x.x` to create issues
-4. Triage created issues (remove `needs-triage` label)
+4. Triage created issues (remove `needs-triage` label). Read every changelog line, not only the Actionable section: the classifier misses real impacts and flags cosmetic ones. See [upstream-triage.md](upstream-triage.md) for the procedure and agent prompt.
+5. Merge the report PR, or the next run repeats steps 3–4 for the same releases.
 
 ### Updating the Baseline
 

@@ -13,6 +13,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
   execFileSync: vi.fn(),
+  // #1460: detectDefaultBranch (resolveBaseRef's fallback) reads origin/HEAD.
+  spawnSync: vi.fn(() => ({ status: 1, stdout: Buffer.from("") })),
 }));
 
 vi.mock("../agents-md.js", () => ({
