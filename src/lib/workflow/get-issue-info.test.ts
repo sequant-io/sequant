@@ -72,7 +72,11 @@ describe("title unreadable warning (#1487)", () => {
 
   it("names the issue and the gh error when gh fails with HTTP 502", async () => {
     vi.mocked(spawnSync).mockReturnValue(
-      ghResult(1, "", "HTTP 502: Bad Gateway (https://api.github.com/graphql)\n"),
+      ghResult(
+        1,
+        "",
+        "HTTP 502: Bad Gateway (https://api.github.com/graphql)\n",
+      ),
     );
     const warning = issueTitleWarning(1305, await getIssueInfo(1305));
     expect(warning).toContain("#1305");

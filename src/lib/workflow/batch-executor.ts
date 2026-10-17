@@ -322,7 +322,7 @@ export async function getIssueInfo(issueNumber: number): Promise<{
   /** #1487: why the title could not be read (any gh failure but not-found) */
   error?: string;
 }> {
-  let error = "gh issue view failed";
+  let error: string;
   try {
     const result = spawnSync(
       "gh",
