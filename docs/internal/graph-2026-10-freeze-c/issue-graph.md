@@ -50,7 +50,7 @@ All merges were squashes, each with the owner's consent and I-1 checked first.
 | B #1482 | #1494 | 96990daab | a stale `.mcp.json` pin in the test; `getInstallScope` added to the `manifest.js` mock in `unmanaged-skill-safety.integration.test.ts` |
 | D #1487 | #1497 | e6935b745 | the ambiguous-branch failure reason recorded; mutation records |
 | A #1485 | #1498 | e80353212 | AC-4's test now checks doctor's message through the real `scopedRemedy`; the sync summary no longer names `--only skills` when the user did not pass it |
-| F #1484 | — | — | in flight |
+| F #1484 | #1500 | 74703cb46 | the `filesModified` diff uses the worktree's HEAD when a worktree holds the branch; cleanup restores the base branch, not a hardcoded `main` |
 
 #1493 (#1469, outside the graph) merged as 73d007860 before #1495. D's AC-2 clause "the issue fails" relies on it.
 
