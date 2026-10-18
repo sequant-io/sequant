@@ -27,6 +27,7 @@ function getChangedLineRanges(
   branchRef: string,
   file: string,
   repoRoot: string,
+  baseRef: string,
 ): Array<[number, number]> {
   const result = spawnSync(
     "git",
@@ -35,7 +36,7 @@ function getChangedLineRanges(
       repoRoot,
       "diff",
       "--unified=0",
-      `origin/main...${branchRef}`,
+      `${baseRef}...${branchRef}`,
       "--",
       file,
     ],
@@ -82,10 +83,11 @@ function classifyOverlap(
   file: string,
   issueBranches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
 ): "additive" | "conflicting" {
   const rangesByIssue = issueBranches.map((b) => ({
     issueNumber: b.issueNumber,
-    ranges: getChangedLineRanges(getBranchRef(b), file, repoRoot),
+    ranges: getChangedLineRanges(getBranchRef(b), file, repoRoot, baseRef),
   }));
 
   for (let i = 0; i < rangesByIssue.length; i++) {
@@ -108,6 +110,7 @@ function classifyOverlap(
 export function runOverlapDetection(
   branches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
 ): CheckResult {
   const startTime = Date.now();
   const branchResults: BranchCheckResult[] = [];
@@ -133,7 +136,7 @@ export function runOverlapDetection(
       overlaps.push({
         file,
         issues,
-        type: classifyOverlap(file, issueBranches, repoRoot),
+        type: classifyOverlap(file, issueBranches, repoRoot, baseRef),
       });
     }
   }

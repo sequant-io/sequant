@@ -123,6 +123,8 @@ that `--timeout 30m` is **not** 30 minutes and is refused, so write
 
 **External PR overlap** covers peer PRs from another session, another machine, Dependabot or a human. A peer that merges first can leave a batch PR `CONFLICTING`, so the warning tells you to settle the merge order. The file lists come from one `gh pr list --state open --json number,headRefName,files --limit 100` call. `gh` returns at most 100 files per PR, so a larger PR can be under-reported. When `gh` is missing, unauthenticated or the call fails, the report shows one line, `Open-PR overlap check skipped: <reason>` (the first line of the error), and every other check runs as usual. `CHANGELOG.md`, `package-lock.json`, `yarn.lock` and `pnpm-lock.yaml` are left out of the comparison, the same list `/assess` uses for collisions, because nearly every PR touches them.
 
+**Base branch.** Every check compares against `origin/<default branch>`, read once per run from `origin/HEAD` (`main` when it cannot be read), so a repo whose default is `master` works. `--base` is not supported. If a branch's `filesModified` diff fails, the report shows an error finding for that branch naming the git command and the batch is `BLOCKED`, rather than treating the branch as having no changes.
+
 ### Phase 2: Residual Pattern Detection (`--scan`)
 
 | Check | What It Does | Verdict |

@@ -51,6 +51,7 @@ const IGNORE_PATTERNS = [
 export function extractPatternsFromDiff(
   branch: BranchInfo,
   repoRoot: string,
+  baseRef: string,
 ): ExtractedPattern[] {
   const diffResult = spawnSync(
     "git",
@@ -58,7 +59,7 @@ export function extractPatternsFromDiff(
       "-C",
       repoRoot,
       "diff",
-      `origin/main...${getBranchRef(branch)}`,
+      `${baseRef}...${getBranchRef(branch)}`,
       "--unified=0",
     ],
     { stdio: "pipe", encoding: "utf-8" },
@@ -192,6 +193,7 @@ export function findResiduals(
 export function runResidualPatternScan(
   branches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
 ): CheckResult {
   const startTime = Date.now();
   const branchResults: BranchCheckResult[] = [];
@@ -201,7 +203,7 @@ export function runResidualPatternScan(
     const findings: CheckFinding[] = [];
 
     // Extract patterns from this branch's diff
-    const patterns = extractPatternsFromDiff(branch, repoRoot);
+    const patterns = extractPatternsFromDiff(branch, repoRoot, baseRef);
 
     if (patterns.length === 0) {
       branchResults.push({

@@ -18,6 +18,7 @@ import {
   runMergeChecks,
   formatReportMarkdown,
   resolveBranches,
+  resolveMergeBaseRef,
   findMostRecentLog,
   resolveLogDir,
 } from "../lib/merge-check/index.js";
@@ -76,7 +77,12 @@ function resolveWatchTargets(
   unresolved: number[];
 } {
   const runLog = findMostRecentLog(resolveLogDir());
-  const branches = resolveBranches(issueNumbers, repoRoot, runLog);
+  const branches = resolveBranches(
+    issueNumbers,
+    repoRoot,
+    resolveMergeBaseRef(repoRoot),
+    runLog,
+  );
 
   const targets: { issue: number; pr: number }[] = [];
   const unresolved: number[] = [];

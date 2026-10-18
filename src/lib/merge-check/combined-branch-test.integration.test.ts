@@ -235,6 +235,7 @@ describe.skipIf(process.platform === "win32")(
           branchInfo(111, "feature/111-motion"),
         ],
         repo,
+        "origin/main",
       );
 
       const invocations = pmInvocations();
@@ -264,6 +265,7 @@ describe.skipIf(process.platform === "win32")(
       const result = runCombinedBranchTest(
         [branchInfo(120, "feature/120-docs")],
         repo,
+        "origin/main",
       );
 
       expect(pmInvocations()).not.toContain("ci");
@@ -275,7 +277,7 @@ describe.skipIf(process.platform === "win32")(
       createFeatureBranch("feature/109-audio", "howler", "SLOT_A");
       git(repo, "checkout", "main");
 
-      runCombinedBranchTest([branchInfo(109, "feature/109-audio")], repo);
+      runCombinedBranchTest([branchInfo(109, "feature/109-audio")], repo, "origin/main");
 
       // Original branch restored, temp branch cleaned up.
       expect(git(repo, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
@@ -291,7 +293,7 @@ describe.skipIf(process.platform === "win32")(
     it("leaves the caller's working tree clean", () => {
       createFeatureBranch("feature/109-audio", "howler", "SLOT_A");
 
-      runCombinedBranchTest([branchInfo(109, "feature/109-audio")], repo);
+      runCombinedBranchTest([branchInfo(109, "feature/109-audio")], repo, "origin/main");
 
       // A mutating `npm install` here would have rewritten package-lock.json
       // and left the user's branch dirty.
@@ -317,6 +319,7 @@ describe.skipIf(process.platform === "win32")(
       const result = runCombinedBranchTest(
         [branchInfo(130, "feature/130-a"), branchInfo(131, "feature/131-b")],
         repo,
+        "origin/main",
       );
 
       expect(result.passed).toBe(false);
@@ -336,6 +339,7 @@ describe.skipIf(process.platform === "win32")(
       const result = runCombinedBranchTest(
         [branchInfo(109, "feature/109-audio")],
         repo,
+        "origin/main",
       );
 
       expect(result.passed).toBe(false);
@@ -358,6 +362,7 @@ describe.skipIf(process.platform === "win32")(
       const result = runCombinedBranchTest(
         [branchInfo(120, "feature/120-docs")],
         repo,
+        "origin/main",
       );
 
       const error = result.batchFindings.find(
@@ -374,6 +379,7 @@ describe.skipIf(process.platform === "win32")(
       const result = runCombinedBranchTest(
         [branchInfo(120, "feature/120-docs")],
         repo,
+        "origin/main",
       );
 
       const error = result.batchFindings.find(
