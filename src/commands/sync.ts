@@ -901,7 +901,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     console.log(
       chalk.gray(
         skillsOnly
-          ? "\nSkills have been updated (--only skills: nothing outside .claude/skills/ and the manifest was written)."
+          ? `\nSkills have been updated (${only === "skills" ? "--only skills" : "skills-only install"}: nothing outside .claude/skills/ and the manifest was written).`
           : "\nSkills, hooks, and memory files have been updated.",
       ),
     );

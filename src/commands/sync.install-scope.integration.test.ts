@@ -245,6 +245,23 @@ describe("#1409 skills-only install scope", () => {
     }
   });
 
+  it("plain sync keeps a skills-only scope: the summary names the recorded scope, not a flag the user never passed (#1485 AC-5)", async () => {
+    fs.writeFileSync(
+      path.join(root, ".claude", "skills", ".sequant-version"),
+      "0.0.1",
+    );
+    const log = captureLog();
+    try {
+      await syncCommand();
+      expect(log.output()).toContain(
+        "Skills have been updated (skills-only install:",
+      );
+      expect(log.output()).not.toContain("--only skills:");
+    } finally {
+      log.restore();
+    }
+  });
+
   it("plain sync keeps a skills-only scope: --dry-run previews the same set (#1485 AC-5)", async () => {
     fs.writeFileSync(
       path.join(root, ".claude", "skills", ".sequant-version"),
@@ -352,8 +369,7 @@ describe("#1409 skills-only install scope", () => {
       .join("\n")
       .split("\n")
       .filter(
-        (l) =>
-          !/Plugins/.test(l) && /Run:|run:|run `|differ|^sequant /.test(l),
+        (l) => !/Plugins/.test(l) && /Run:|run:|run `|differ|^sequant /.test(l),
       )
       .join("\n");
     expect(outputs.every((o) => o.length > 0)).toBe(true);
