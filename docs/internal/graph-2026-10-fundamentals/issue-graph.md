@@ -21,6 +21,7 @@
 | #1511 | judgment | sequant_run | classify the 76 prose-gate files (execute / checksum / keep) with commands | #1502 | `prose-gates.md` (new) | — |
 | #1512 | judgment | sequant_run | convert execute-class gates, delete checksum-class per D-3 | #1511, D-3 | the listed test files, fixtures | — |
 | #1513 | judgment | split | postmortem template; D-5 incidents; ADR authority + `lint:adr-status` (owner reclassifies) | #1501 (D-4, D-5) | `docs/incidents/`, `docs/adr/README.md`, 11 ADR status lines, `scripts/lint-adr-status.ts`, `ci.yml` | ci |
+| #1519 | judgment | split | the stranger run: knowledge-free tester in a fresh sandbox, npm install → seeded issue → PR; S1 default, S2 `master` (silent-wrong today, #1461), S3 timeout seed; eight-section report, owner-read rubric (joined 2026-10-18 as F-14) | #1501 | `scripts/stranger/` (new), `.github/workflows/stranger-run.yml` (new), `docs/evidence/stranger-runs/` (new), `release-checklist.md` | — |
 
 ```mermaid
 graph TD
@@ -39,11 +40,13 @@ graph TD
     N11[#1511 prose-gate audit]
     N12[#1512 prose-gate conversion, D-3]
     N13[#1513 incidents + ADR authority, D-4/D-5]
+    N14[#1519 stranger run]
     X1[#1471 log helpers]
     X5[#1475 worktree status]
     C --> T
     T --> N1
     T --> N13
+    T --> N14
     N1 --> N2
     N1 --> N3
     N1 --> N8
@@ -65,7 +68,7 @@ graph TD
 | Wave | Nodes | Condition |
 |---|---|---|
 | W0 | #1501, then #1502 + #1513 (parallel; #1513 waits on D-4/D-5) | #1470 closed |
-| W1 | #1503, #1504, #1509, #1511 (parallel; distinct file scopes) | #1502 merged |
+| W1 | #1503, #1504, #1509, #1511 (parallel; distinct file scopes); #1519 alongside (independent of #1502; needs OQ-11..14 answered) | #1502 merged |
 | W2 | #1505 (after #1471), #1506, #1510, #1512 (after D-3) | #1504, #1503, #1511 merged respectively |
 | W3 | #1507, then #1508 (after #1471 and #1475) | #1506 merged |
 | W4 | F-10 (unfiled) per cluster | D-2 answered; skills cluster after the freeze lifts |
@@ -78,7 +81,7 @@ One `sequant run` per wave for the parallel nodes (D-8 of the consolidation grap
 
 ## Counts
 
-- Files here: 14 (#1501..#1513). Filed at launch: 13; F-10 (unfiled) files when D-2 answers, once per cluster.
+- Files here: 15. Filed: 14 (#1501–#1513 on 2026-10-18 morning; #1519 joined the same afternoon as F-14 after its own parser, Evidence-fails-today and prior-work pass, owner-approved in session). F-10 (unfiled) files when D-2 answers, once per cluster.
 - Folds available at review (OQ-7): #1505 into #1504 (one bigger judgment node, loses the #1471 decoupling), #1509 into #1508 (loses W1 parallelism). Folded: 12 at launch.
 - Open backlog at planning: 66.
 
@@ -118,3 +121,4 @@ One `sequant run` per wave for the parallel nodes (D-8 of the consolidation grap
 | #1512 | #1512 |
 | #1513 | #1513 |
 | F-10 (unfiled) | unfiled until D-2 (template: `issues/10-removals.md`) |
+| #F-14 | #1519 (joined 2026-10-18) |

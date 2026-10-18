@@ -10,7 +10,7 @@ The repo has the fundamentals most solo projects lack (strict TS, ADRs, threat m
 
 The smallest set of changes that makes `main` carry a committed health baseline, a CI job that fails any PR raising a baseline number, a run log that counts the errors it chose to drop, and no function over 200 counted lines in `src/lib/workflow` or `src/commands` — with human approval at exactly: every merge (stop-at-PR), the removal list (D-2), the mutation-mandate scope (D-3), and the incident content (D-5).
 
-Includes: health report + baseline + advisory CI (F-01); lint tightening and dead-export reporting (F-02); suppressed-error trace (F-03, F-04); `gh` seam through one provider with captured fixtures (F-05); function splits (F-06, F-07, F-08); deprecation lifecycle (F-09); prose-gate audit and conversion (F-11, F-12); incidents + ADR authority (F-13). Owner-gated removals (F-10) are in the graph but file only when D-2 answers.
+Includes: health report + baseline + advisory CI (F-01); lint tightening and dead-export reporting (F-02); suppressed-error trace (F-03, F-04); `gh` seam through one provider with captured fixtures (F-05); function splits (F-06, F-07, F-08); deprecation lifecycle (F-09); prose-gate audit and conversion (F-11, F-12); incidents + ADR authority (F-13); the stranger run, the graph's only non-dogfood evidence (F-14, #1519, joined 2026-10-18). Owner-gated removals (F-10) are in the graph but file only when D-2 answers.
 
 ## §3 Non-goals
 
@@ -81,6 +81,7 @@ Measured on `main` 96990daab with `fnlen.mjs` (TypeScript AST), ESLint, grep and
 | F-11 prose-gate audit | 76 files | `prose-gates.md` table: execute / checksum / keep + command per execute row | classification disagreement → owner reads the table (D-3) | every file classified |
 | F-12 prose-gate conversion | F-11 table, D-3 | execute-class gates run the skill's command; checksum-class deleted | mutation record missing on a converted gate | `proseGate.files` ≤ keep + execute; records present |
 | F-13 incidents + ADR authority | D-4, D-5, four memory files | `docs/incidents/TEMPLATE.md`, approved incident docs, ADR README rule, `lint:adr-status` | publishing something confidential → owner reviews every line before the PR is marked ready | template exists; README names the authority; lint green after the owner's reclassification pass |
+| F-14 stranger run (#1519, joined 2026-10-18) | `sequant-example` copied per episode, npm `next`/`latest`, a knowledge-free tester on a non-Claude model, a scoped token | one eight-section report per episode in `docs/evidence/stranger-runs/`; transcripts as CI artifacts only | tester self-reports success → ground truth is `gh pr view`, never the claim; S2 looks green and is not → verdict `silent-wrong` from QA-count vs PR-diff disagreement; cost runaway → per-episode cap | S1–S3 report accepted with the owner's rubric fields filled and S2's silent-wrong recorded |
 
 ## §7 Decisions
 
@@ -117,6 +118,10 @@ Measured on `main` 96990daab with `fnlen.mjs` (TypeScript AST), ESLint, grep and
 | OQ-8 | Golden-run testbed: which repo and issue, and the credit budget for two runs per split node | F-06 | ad-motion, one closed issue re-run with `--phases spec`; owner names it on the tracker |
 | OQ-9 | knip: suppress via `knip.json` ignores or a numeric baseline? | F-02 | numeric baseline in `health-baseline.json` (`unusedExports`), knip output advisory |
 | OQ-10 | Does `sequant logs` show the suppressed count per issue or per run? | F-04 | per run, with by-scope breakdown |
+| OQ-11 | Scratch org for the stranger run's per-episode repo copies | #1519 | a new private org, so a leaked token reaches nothing real |
+| OQ-12 | Tester model through opencode | #1519 | the free probe model the opencode memory names |
+| OQ-13 | Cost cap per stranger episode | #1519 | 15 USD |
+| OQ-14 | Stranger-run cadence | #1519 | every `next` release before `latest` moves, plus on demand |
 
 ## §10 After this graph
 

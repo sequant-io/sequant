@@ -87,3 +87,18 @@ Classes: **fails-today** (command runs, result differs from the expected value),
 | 13 | AC-7 | fails-today | `jq: error: Could not open file scripts/qa/health-baseline.json: No such file or directory` | `0` |
 
 Total ACs: 81.
+
+## #1519 (F-14, joined 2026-10-18)
+
+| Issue | AC | Class | Observed (first line) | Expected |
+|---|---|---|---|---|
+| #1519 | AC-1 | fails-today | `(no output, exit 1)` | `ok` |
+| #1519 | AC-2 | fails-today | `jq: error: Could not open file docs/evidence/stranger-runs/latest.json: No such file or di` | `true` |
+| #1519 | AC-3 | fails-today | `jq: error: Could not open file docs/evidence/stranger-runs/latest.json: No such file or di` | `silent-wrong qa=0 pr=N` |
+| #1519 | AC-4 | fails-today | `jq: error: Could not open file docs/evidence/stranger-runs/latest.json: No such file or di` | `true` |
+| #1519 | AC-5 | fails-today | `jq: error: Could not open file docs/evidence/stranger-runs/latest.json: No such file or di` | `true` |
+| #1519 | AC-6 | fails-today | `jq: error: Could not open file docs/evidence/stranger-runs/latest.json: No such file or di` | `true` |
+| #1519 | AC-7 | fails-today | `jq: error: Could not open file docs/evidence/stranger-runs/latest.json: No such file or di` | `≥ 1` |
+| #1519 | AC-8 | fails-today | `(no output, exit 1)` | `files-ok 0` |
+| #1519 | AC-9 | fails-today | `grep: .github/workflows/stranger-run.yml: No such file or directory` | `2` |
+| #1519 | AC-10 | constraint | `0` | `0` |
