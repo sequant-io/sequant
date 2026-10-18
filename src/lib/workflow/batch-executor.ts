@@ -315,9 +315,14 @@ export function emitRunIdLine(runId: string): void {
 /** gh's error for a number the repo has no issue or PR for (#1257). */
 const ISSUE_NOT_FOUND_RE = /Could not resolve to an issue or pull request/i;
 
-export async function getIssueInfo(
-  issueNumber: number,
-): Promise<{ title: string; labels: string[]; notFound?: true }> {
+export async function getIssueInfo(issueNumber: number): Promise<{
+  title: string;
+  labels: string[];
+  notFound?: true;
+  /** #1487: why the title could not be read (any gh failure but not-found) */
+  error?: string;
+}> {
+  let error: string;
   try {
     const result = spawnSync(
       "gh",
@@ -343,11 +348,34 @@ export async function getIssueInfo(
           : [],
       };
     }
-  } catch {
-    // Ignore errors, use defaults
+    error =
+      result.stderr?.toString().trim() ||
+      result.error?.message ||
+      `gh exited with status ${result.status}`;
+  } catch (err) {
+    // Use defaults; the run warns with the reason (#1487)
+    error = err instanceof Error ? err.message : String(err);
   }
 
-  return { title: `Issue #${issueNumber}`, labels: [] };
+  return { title: `Issue #${issueNumber}`, labels: [], error };
+}
+
+/**
+ * The warning a non-dry run prints when an issue's title could not be read
+ * (#1487), or `null` when it was read. The run still continues: worktree
+ * setup finds the issue's branch by number, so the placeholder title only
+ * names a branch that is created for the first time.
+ */
+export function issueTitleWarning(
+  issueNumber: number,
+  info: { error?: string },
+): string | null {
+  if (!info.error) return null;
+  const reason = info.error.split("\n")[0];
+  return (
+    `  ⚠ Could not read the title of issue #${issueNumber} (gh: ${reason}). ` +
+    `Using "Issue #${issueNumber}"; an existing branch for #${issueNumber} is still reused.`
+  );
 }
 
 /**

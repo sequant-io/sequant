@@ -1291,3 +1291,145 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
     }, 90_000);
   });
 });
+
+// #1487: the issue number, not the title, is a branch's identity. A failed
+// `gh issue view` (title "Issue #N") or a retitle used to cut a second branch,
+// feature/N-issue-n, from the base next to the PR branch.
+describe("#1487 ensureWorktree finds the issue's branch by number", () => {
+  let root: string;
+  let clone: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1487-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    git(clone, "config", "commit.gpgsign", "false");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "a.txt", "init");
+    git(clone, "push", "-q", "-u", "origin", "main");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const ensure = (
+    issue: number,
+    title: string,
+    cwd: string = clone,
+  ): {
+    out: string;
+    info: { path: string; branch: string; existed: boolean } | null;
+    failure: string | null;
+  } => {
+    const script = join(root, `run-${Math.random().toString(36).slice(2)}.mts`);
+    const modPath = join(__dirname, "worktree-manager.ts");
+    writeFileSync(
+      script,
+      `import { ensureWorktree } from ${JSON.stringify(modPath)};
+const failures = new Map();
+const info = await ensureWorktree(${issue}, ${JSON.stringify(title)}, false, undefined, undefined, false, ".trees", { failures });
+process.stdout.write("\\nFAILURE=" + JSON.stringify(failures.get(${issue}) ?? null));
+process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
+    );
+    const env = { ...process.env };
+    delete env.SEQUANT_WORKTREE_ROOT;
+    const out = execFileSync("npx", ["tsx", script], {
+      cwd,
+      env,
+      encoding: "utf8",
+    });
+    const field = (name: string) => {
+      const line = out.split("\n").find((l) => l.startsWith(`${name}=`));
+      return JSON.parse(line!.slice(name.length + 1));
+    };
+    return { out, info: field("RESULT"), failure: field("FAILURE") };
+  };
+
+  // The PR shape: a worktree cut under the real title, a commit pushed with -u.
+  const pushedBranch = (
+    issue: number,
+    title: string,
+  ): { wt: string; branch: string } => {
+    const wt = ensure(issue, title).info!.path;
+    const branch = git(wt, "branch", "--show-current");
+    commitFile(wt, "pr.txt", "pr commit");
+    git(wt, "push", "-q", "-u", "origin", branch);
+    return { wt, branch };
+  };
+
+  const branchList = (cwd: string, pattern: string): string =>
+    git(cwd, "branch", "--list", pattern);
+
+  it("reuses the issue's branch for the fallback title Issue #N", () => {
+    const { wt, branch } = pushedBranch(30, "fix(qa): a real title");
+    expect(branch).toBe("feature/30-fix-qa-a-real-title");
+
+    const { info } = ensure(30, "Issue #30");
+    expect(info!.branch).toBe(branch);
+    expect(info!.path).toBe(wt);
+    expect(info!.existed).toBe(true);
+    expect(branchList(clone, "feature/30-issue-30")).toBe("");
+  }, 90_000);
+
+  it("reuses the issue's branch after the issue is retitled", () => {
+    const { wt, branch } = pushedBranch(31, "the first title");
+
+    const { info } = ensure(31, "a different title");
+    expect(info!.branch).toBe(branch);
+    expect(info!.path).toBe(wt);
+    expect(branchList(clone, "feature/31-a-different-title")).toBe("");
+    expect(branchList(clone, "feature/31-issue-31")).toBe("");
+  }, 90_000);
+
+  it("reuses the issue's branch from origin on a fresh clone", () => {
+    const { branch } = pushedBranch(32, "pushed from elsewhere");
+    const other = join(root, "other");
+    git(root, "clone", "-q", join(root, "remote.git"), other);
+
+    const { info } = ensure(32, "Issue #32", other);
+    expect(info!.branch).toBe(branch);
+    expect(info!.existed).toBe(false);
+    expect(git(info!.path, "branch", "--show-current")).toBe(branch);
+    expect(git(info!.path, "log", "--format=%s")).toContain("pr commit");
+    expect(branchList(other, "feature/32-issue-32")).toBe("");
+  }, 90_000);
+
+  it("reuses the issue's branch, not one for an issue sharing its digits", () => {
+    const { branch } = pushedBranch(1, "issue one");
+    git(clone, "branch", "feature/12-other", "main");
+
+    const { info } = ensure(1, "Issue #1");
+    expect(info!.branch).toBe(branch);
+    expect(branchList(clone, "feature/1-issue-1")).toBe("");
+  }, 90_000);
+
+  it("several branches for one issue: creates none and lists every candidate", () => {
+    git(clone, "branch", "feature/40-a", "main");
+    git(clone, "branch", "feature/40-b", "main");
+
+    const { out, info, failure } = ensure(40, "Issue #40");
+    expect(info).toBeNull();
+    expect(out).toContain("feature/40-a");
+    expect(out).toContain("feature/40-b");
+    // The run fails the issue with this reason (#1469's worktreeRequired
+    // guard) instead of running it in the main checkout.
+    expect(failure).toContain("feature/40-a");
+    expect(failure).toContain("feature/40-b");
+    expect(branchList(clone, "feature/40-*").split("\n")).toHaveLength(2);
+    expect(branchList(clone, "feature/40-issue-40")).toBe("");
+  }, 90_000);
+
+  it("several branches for one issue: uses the one the title names", () => {
+    git(clone, "branch", "feature/41-a", "main");
+    git(clone, "branch", "feature/41-b", "main");
+
+    const { info } = ensure(41, "b");
+    expect(info!.branch).toBe("feature/41-b");
+    expect(branchList(clone, "feature/41-*").split("\n")).toHaveLength(2);
+  }, 90_000);
+});

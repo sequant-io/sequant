@@ -602,3 +602,56 @@ describe("RunOrchestrator.run — dry run on an issue that doesn't exist (#1257)
     expect(runIssueWithLogging).toHaveBeenCalled();
   });
 });
+
+// #1487: a gh failure other than not-found used to leave the placeholder title
+// silent, and the run then cut feature/N-issue-n from the base.
+describe("RunOrchestrator.run — title unreadable warning (#1487)", () => {
+  let originalCwd: string;
+  let repo: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    repo = realpathSync(mkdtempSync(join(tmpdir(), "run-orch-title-")));
+    execSync("git init -q -b main", { cwd: repo, stdio: "pipe" });
+    process.chdir(repo);
+    vi.mocked(runIssueWithLogging).mockResolvedValue({
+      issueNumber: 7,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 0,
+      loopTriggered: false,
+    });
+    vi.mocked(getIssueInfo).mockImplementationOnce(async (n: number) => ({
+      title: `Issue #${n}`,
+      labels: [],
+      error: "HTTP 502: Bad Gateway",
+    }));
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(repo, { recursive: true, force: true });
+    vi.mocked(runIssueWithLogging).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  async function run(dryRun: boolean) {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await RunOrchestrator.run(
+      runInit({ dryRun, phases: "spec", worktreeIsolation: false }),
+      ["7"],
+    );
+    return log.mock.calls.map((c) => String(c[0])).join("\n");
+  }
+
+  it("a real run names the issue and the gh error", async () => {
+    const out = await run(false);
+    expect(out).toContain("Could not read the title of issue #7");
+    expect(out).toContain("HTTP 502");
+  });
+
+  it("a dry run prints no title warning", async () => {
+    const out = await run(true);
+    expect(out).not.toContain("Could not read the title");
+  });
+});
