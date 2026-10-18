@@ -40,7 +40,11 @@ import {
   getVersionWarning,
   resolveCliInvocation,
 } from "../lib/version-check.js";
-import { areSkillsOutdated } from "./sync.js";
+import {
+  areSkillsOutdated,
+  scopedRemedy,
+  type SkillsOutdatedStatus,
+} from "./sync.js";
 import {
   readAgentsMd,
   isAgentsMdSequantOwned,
@@ -542,6 +546,21 @@ export function formatVersionRemediation(warning: string): string {
   return `     ${warning}`;
 }
 
+/**
+ * The `Skills Version` warning for an outdated install. A partial install gets
+ * the scoped remedy; a bare `sync` there would widen it (#1485 AC-4).
+ */
+export function formatSkillsOutdatedMessage(
+  status: Pick<
+    SkillsOutdatedStatus,
+    "currentVersion" | "packageVersion" | "installScope"
+  >,
+  cli: string,
+): string {
+  const remedy = scopedRemedy(status.installScope, cli, true) ?? `${cli} sync`;
+  return `Outdated (${status.currentVersion || "unknown"} → ${status.packageVersion}) - run: ${remedy}`;
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -646,13 +665,30 @@ export async function doctorCommand(
     checks.push({
       name: "Skills Version",
       status: "warn",
-      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: ${resolveCliInvocation()} sync`,
+      message: formatSkillsOutdatedMessage(skillsStatus, resolveCliInvocation()),
     });
   } else {
     checks.push({
       name: "Skills Version",
       status: "pass",
       message: `Up to date (${skillsStatus.packageVersion})`,
+    });
+  }
+
+  // Legacy manifest (no `groups`) reads as a full install by design; when none
+  // of the non-skills groups exist, tell the user the hand edit (#1485).
+  if (
+    manifest &&
+    !Array.isArray(manifest.groups) &&
+    !(await fileExists(".claude/hooks")) &&
+    !(await fileExists(".claude/settings.json")) &&
+    !(await fileExists(".claude/agents"))
+  ) {
+    checks.push({
+      name: "Install Scope",
+      status: "warn",
+      message:
+        'Manifest has no "groups", so this reads as a full install, but .claude/hooks, .claude/settings.json and .claude/agents are absent. If this is a skills-only install, add "groups": ["skills"] to .sequant-manifest.json',
     });
   }
 

@@ -457,7 +457,6 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     agentsMd,
     only,
   } = options;
-  const skillsOnly = only === "skills";
   const agentsMdEnabled = agentsMd !== false;
 
   if (!quiet) {
@@ -494,6 +493,15 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     return;
   }
 
+  // One decision for what this run writes (#1485): `--only skills`, or a
+  // manifest that records a skills-only install. A plain sync keeps a partial
+  // scope; widening to a full install is deliberate, through `sequant init`.
+  // `groups: []` (nothing installed yet) still installs every group.
+  const installScope = getInstallScope(manifest);
+  const keptScope =
+    installScope.kind === "partial" && installScope.groups.includes("skills");
+  const skillsOnly = only === "skills" || keptScope;
+
   const packageVersion = getPackageVersion();
   const skillsVersion = await getSkillsVersion();
 
@@ -501,6 +509,11 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     console.log(chalk.gray(`Skills version: ${skillsVersion || "(unknown)"}`));
     console.log(chalk.gray(`Package version: ${packageVersion}`));
     console.log(chalk.gray(`Stack: ${manifest.stack}\n`));
+    if (keptScope && only !== "skills") {
+      console.log(
+        chalk.gray("Install scope: skills only (widen with `sequant init`)\n"),
+      );
+    }
   }
 
   // Get config tokens for template processing
@@ -575,9 +588,12 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         ...(drifted.length > 0 ? [`${drifted.length} file(s) differ`] : []),
         ...(fastPathShim === "refresh" ? ["the opencode shim is stale"] : []),
       ].join(" and ");
-      const remedy = skillsOnly
-        ? `\`sync --only skills --force\``
-        : `\`update\` or \`sync --force\``;
+      const scoped = scopedRemedy(installScope, "sequant", false);
+      const remedy = scoped
+        ? `\`${scoped.replace(/^sequant /, "")}\``
+        : skillsOnly
+          ? `\`sync --only skills --force\``
+          : `\`update\` or \`sync --force\``;
       console.log(
         chalk.yellow(`!  Version current, but ${what} — run ${remedy}`),
       );
@@ -732,7 +748,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const copyOptions: CopyTemplatesOptions = {
     force: true, // Always overwrite the managed skills/agents/hooks trees
     overwriteCustomizable: force, // Clobber user-owned files only on explicit --force
-    only, // #1209 AC-3: restrict the write-set to .claude/skills/** when set
+    ...(skillsOnly && { only: "skills" as const }), // #1209 AC-3 / #1485: restrict the write-set to .claude/skills/**
   };
 
   // #1090 AC-5: resolve the ownership decision for every file *before* the
@@ -885,7 +901,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     console.log(
       chalk.gray(
         skillsOnly
-          ? "\nSkills have been updated (--only skills: nothing outside .claude/skills/ and the manifest was written)."
+          ? `\nSkills have been updated (${only === "skills" ? "--only skills" : "skills-only install"}: nothing outside .claude/skills/ and the manifest was written).`
           : "\nSkills, hooks, and memory files have been updated.",
       ),
     );

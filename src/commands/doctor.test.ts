@@ -54,6 +54,9 @@ vi.mock("./sync.js", () => ({
       packageVersion: "1.0.0",
     }),
   ),
+  scopedRemedy: vi.fn((scope: { kind: string } | undefined, cli: string) =>
+    scope && scope.kind === "partial" ? `${cli} sync --only skills` : null,
+  ),
 }));
 
 // Mock settings (for Aider CLI check)
@@ -174,6 +177,7 @@ import {
 } from "../lib/fs.js";
 import { readdir } from "fs/promises";
 import { getManifest } from "../lib/manifest.js";
+import { areSkillsOutdated } from "./sync.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -195,6 +199,7 @@ const mockFileExists = vi.mocked(fileExists);
 const mockIsExecutable = vi.mocked(isExecutable);
 const mockReadFile = vi.mocked(readFile);
 const mockGetManifest = vi.mocked(getManifest);
+const mockAreSkillsOutdated = vi.mocked(areSkillsOutdated);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockIsNativeWindows = vi.mocked(isNativeWindows);
@@ -1570,6 +1575,85 @@ describe("doctor command", () => {
       const results = await checkShadowingLocalSequant(cwd, home);
 
       expect(results).toHaveLength(0);
+    });
+  });
+
+  // #1485: the Skills Version check must not steer a skills-only install
+  // into a full one.
+  describe("scoped install remedy (#1485)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const outdated = {
+      outdated: true,
+      currentVersion: "0.0.1",
+      packageVersion: "2.19.0",
+      contentDrift: 0,
+    };
+
+    it("names sync --only skills on a skills-only install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...outdated,
+        installScope: { kind: "partial", groups: ["skills"] },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(/Outdated \(0\.0\.1.*run: .*sync --only skills/);
+    });
+
+    it("keeps the bare sync message on a full install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...outdated,
+        installScope: { kind: "full" },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(/Outdated \(0\.0\.1.*run: .* sync(?! --only)/);
+    });
+  });
+
+  describe("legacy skills-only manifest (#1485)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const legacy = {
+      version: "0.1.0",
+      stack: "nextjs",
+      installedAt: "2024-01-01T00:00:00.000Z",
+      files: {},
+    };
+    const nonSkills = [
+      ".claude/hooks",
+      ".claude/settings.json",
+      ".claude/agents",
+    ];
+
+    it("advises the groups edit when hooks, settings and agents are all absent", async () => {
+      mockGetManifest.mockResolvedValue(legacy as never);
+      mockFileExists.mockImplementation(
+        async (p: string) => !nonSkills.includes(p),
+      );
+      await doctorCommand();
+      expect(output()).toContain('"groups": ["skills"]');
+    });
+
+    it("stays quiet when any of the three exists", async () => {
+      mockGetManifest.mockResolvedValue(legacy as never);
+      for (const present of nonSkills) {
+        consoleLogSpy.mockClear();
+        mockFileExists.mockImplementation(
+          async (p: string) => p === present || !nonSkills.includes(p),
+        );
+        await doctorCommand();
+        expect(output()).not.toContain('"groups": ["skills"]');
+      }
+    });
+
+    it("stays quiet when the manifest records groups", async () => {
+      mockGetManifest.mockResolvedValue({ ...legacy, groups: [] } as never);
+      mockFileExists.mockImplementation(
+        async (p: string) => !nonSkills.includes(p),
+      );
+      await doctorCommand();
+      expect(output()).not.toContain('"groups": ["skills"]');
     });
   });
 });
