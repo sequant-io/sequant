@@ -2,7 +2,12 @@
  * Tests for merge-check modules
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { spawnSync } from "child_process";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { runMergeChecks } from "./index.js";
 import { runMirroringCheck } from "./mirroring-check.js";
 import { runOverlapDetection } from "./overlap-detection.js";
 import {
@@ -13,6 +18,30 @@ import {
 } from "./report.js";
 import type { BranchInfo, CheckResult, MirrorPair } from "./types.js";
 import { DEFAULT_MIRROR_PAIRS } from "./types.js";
+
+vi.mock("../workflow/worktree-manager.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../workflow/worktree-manager.js")>()),
+  detectDefaultBranch: () => "no-such-default",
+}));
+vi.mock("../workflow/platforms/github.js", () => ({
+  GitHubProvider: class {
+    fetchIssueTitleSync(n: string) {
+      return `Issue ${n}`;
+    }
+    listOpenPRFilesSync() {
+      return [];
+    }
+  },
+}));
+vi.mock("./combined-branch-test.js", () => ({
+  runCombinedBranchTest: () => ({
+    name: "combined-branch-test",
+    passed: true,
+    branchResults: [],
+    batchFindings: [],
+    durationMs: 0,
+  }),
+}));
 
 // ============================================================================
 // Mirroring Check Tests (AC-2)
@@ -155,7 +184,7 @@ describe("overlap-detection", () => {
       },
     ];
 
-    const result = runOverlapDetection(branches, "");
+    const result = runOverlapDetection(branches, "", "origin/main");
     expect(result.passed).toBe(true);
     expect(result.batchFindings[0].message).toContain("No file overlaps");
   });
@@ -176,7 +205,7 @@ describe("overlap-detection", () => {
       },
     ];
 
-    const result = runOverlapDetection(branches, "");
+    const result = runOverlapDetection(branches, "", "origin/main");
     expect(result.passed).toBe(false);
     expect(result.batchFindings).toHaveLength(1);
     expect(result.batchFindings[0].message).toContain("src/commands/run.ts");
@@ -200,7 +229,7 @@ describe("overlap-detection", () => {
       },
     ];
 
-    const result = runOverlapDetection(branches, "");
+    const result = runOverlapDetection(branches, "", "origin/main");
     expect(result.branchResults[0].verdict).toBe("WARN");
     expect(result.branchResults[1].verdict).toBe("WARN");
     expect(result.branchResults[0].findings[0].message).toContain("#299");
@@ -229,7 +258,7 @@ describe("overlap-detection", () => {
       },
     ];
 
-    const result = runOverlapDetection(branches, "");
+    const result = runOverlapDetection(branches, "", "origin/main");
     expect(result.passed).toBe(false);
     expect(result.batchFindings[0].message).toContain("#1, #2, #3");
   });
@@ -413,5 +442,43 @@ describe("report", () => {
       expect(markdown).toContain("## Mirroring");
       expect(markdown).toContain("## Summary");
     });
+  });
+});
+
+// ============================================================================
+// Failed filesModified diff (#1484, AC-3)
+// ============================================================================
+
+describe("filesModified diff failure", () => {
+  it("base ref does not resolve: reports an error finding naming the git command", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sequant-nobase-"));
+    try {
+      const run = (cwd: string, ...args: string[]) =>
+        spawnSync("git", ["-C", cwd, ...args], { encoding: "utf-8" });
+      run(root, "init", "--bare", "--initial-branch=other", "origin.git");
+      const repo = join(root, "repo");
+      spawnSync("git", ["clone", join(root, "origin.git"), repo]);
+      run(repo, "config", "user.email", "t@sequant.test");
+      run(repo, "config", "user.name", "T");
+      run(repo, "config", "commit.gpgsign", "false");
+      run(repo, "checkout", "-b", "feature/7-x");
+      run(repo, "commit", "--allow-empty", "-m", "x");
+      run(repo, "push", "-u", "origin", "feature/7-x");
+      // Off the feature branch, so no worktree holds it and the remote diff runs.
+      run(repo, "checkout", "-b", "elsewhere");
+
+      const report = await runMergeChecks([7], {}, repo);
+
+      expect(report.branches[0].filesModified).toEqual([]);
+      const errors = report.findings.filter((f) => f.severity === "error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0].issueNumber).toBe(7);
+      expect(errors[0].message).toContain(
+        "diff --name-only origin/no-such-default...origin/feature/7-x",
+      );
+      expect(report.batchVerdict).toBe("BLOCKED");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

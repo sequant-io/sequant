@@ -53,9 +53,6 @@ const LOCKFILES = [
 const INSTALL_TIMEOUT_MS = 300_000; // 5 min
 const TEST_BUILD_TIMEOUT_MS = 600_000; // 10 min
 
-/** Ref the combined state is built on top of, and compared against. */
-const BASE_REF = "origin/main";
-
 /**
  * Result from merging a branch into the temp branch
  */
@@ -162,6 +159,7 @@ export function hasScript(root: string, scriptName: string): boolean {
 export function runCombinedBranchTest(
   branches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
 ): CheckResult {
   const startTime = Date.now();
   const tempBranch = `merge-check/temp-${Date.now()}`;
@@ -194,6 +192,7 @@ export function runCombinedBranchTest(
     runChecks(
       branches,
       repoRoot,
+      baseRef,
       tempBranch,
       pm,
       branchResults,
@@ -249,6 +248,7 @@ interface InstallState {
 function runChecks(
   branches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
   tempBranch: string,
   pm: PackageManager,
   branchResults: BranchCheckResult[],
@@ -260,8 +260,8 @@ function runChecks(
   // Fetch latest from remote
   git(["fetch", "origin"], repoRoot);
 
-  // Create temp branch from main
-  const createResult = git(["checkout", "-b", tempBranch, BASE_REF], repoRoot);
+  // Create temp branch from the base ref
+  const createResult = git(["checkout", "-b", tempBranch, baseRef], repoRoot);
   if (!createResult.ok) {
     batchFindings.push({
       check: "combined-branch-test",
@@ -361,7 +361,7 @@ function runChecks(
   // break the checkout during cleanup), and it fails loudly on a lockfile that
   // is inconsistent with package.json.
   if (
-    lockfileChanged(repoRoot, BASE_REF) &&
+    lockfileChanged(repoRoot, baseRef) &&
     pmConfig.ciInstall !== CI_INSTALL_SKIP
   ) {
     // Marked before the install runs, not after: a frozen install deletes
