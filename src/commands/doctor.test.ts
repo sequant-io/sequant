@@ -1712,7 +1712,7 @@ describe("doctor command", () => {
       const banner = output();
       const remedy = banner.match(/Run: (.*)/)?.[1]?.trim();
       expect(remedy).toBeTruthy();
-      expect(doctorLine).toContain(`run: ${remedy}`);
+      expect(doctorLine.match(/run: (.*)/)?.[1]?.trim()).toBe(remedy);
     });
   });
 
