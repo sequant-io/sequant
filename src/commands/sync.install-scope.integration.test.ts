@@ -238,21 +238,85 @@ describe("#1409 skills-only install scope", () => {
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
   });
 
-  it("an update on a skills-only install records a full install", async () => {
-    // `update` writes every new template file, hooks and settings included.
-    // A manifest still saying "skills" would hide drift in those files.
+  /**
+   * Every file, before/after an `update` run. The root gets a `.mcp.json` with
+   * a stale `sequant@` pin first, so a pin write shows up in the snapshot
+   * (without the file, `syncSequantMcpPin` returns `no-file` and writes nothing).
+   */
+  async function runUpdate(opts: Parameters<typeof updateCommand>[0]) {
+    fs.writeFileSync(
+      path.join(root, ".mcp.json"),
+      JSON.stringify(
+        {
+          mcpServers: {
+            sequant: { command: "npx", args: ["-y", STALE_PIN, "serve"] },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    const before = snapshot(root);
     const log = captureLog();
+    process.exitCode = 0;
+    let out = "";
     try {
-      await updateCommand({ yes: true });
+      await updateCommand(opts);
     } finally {
+      out = log.output();
       log.restore();
     }
+    return { before, after: snapshot(root), out };
+  }
 
-    const onDisk = JSON.parse(
-      fs.readFileSync(path.join(root, MANIFEST), "utf8"),
+  const STALE_PIN = "sequant@0.0.1";
+
+  describe("update refuses on a skills-only install", () => {
+    for (const opts of [{ yes: true }, { force: true }] as const) {
+      it(`update refuses on a skills-only install (${Object.keys(opts)[0]})`, async () => {
+        const { before, after, out } = await runUpdate(opts);
+        expect(changedPaths(before, after)).toEqual([]);
+        expect(after.get(MANIFEST)).toBe(before.get(MANIFEST));
+        expect(process.exitCode).toBe(1);
+        expect(out).toContain("sync --only skills");
+        expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(false);
+      });
+    }
+
+    it("update refuses on a skills-only install (groups: [])", async () => {
+      const manifestPath = path.join(root, MANIFEST);
+      const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      m.groups = [];
+      fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+      const { before, after, out } = await runUpdate({ yes: true });
+      expect(changedPaths(before, after)).toEqual([]);
+      expect(process.exitCode).toBe(1);
+      expect(out).toContain("sync --only skills");
+    });
+  });
+
+  it("update --dry-run refuses on a skills-only install", async () => {
+    const { before, after, out } = await runUpdate({ dryRun: true });
+    expect(changedPaths(before, after)).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    expect(out).toContain("sync --only skills");
+  });
+
+  it("update on a full install applies every group and writes no groups field", async () => {
+    const manifestPath = path.join(root, MANIFEST);
+    const m = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    delete m.groups;
+    fs.writeFileSync(manifestPath, JSON.stringify(m, null, 2));
+
+    const { out } = await runUpdate({ yes: true });
+    const onDisk = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    // The same stale pin the refusal tests leave untouched is rewritten here,
+    // so those tests would see a pin write if one happened.
+    expect(fs.readFileSync(path.join(root, ".mcp.json"), "utf8")).not.toContain(
+      STALE_PIN,
     );
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
     expect("groups" in onDisk).toBe(false);
-    expect(getInstallScope((await getManifest())!)).toEqual({ kind: "full" });
+    expect(out).not.toContain("sync --only skills");
   });
 });

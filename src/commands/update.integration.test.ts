@@ -11,6 +11,10 @@ import { tmpdir } from "os";
 
 // Mock manifest (initialized project; version match is irrelevant to apply logic)
 vi.mock("../lib/manifest.js", () => ({
+  getInstallScope: (m: { groups?: string[] }) =>
+    Array.isArray(m.groups)
+      ? { kind: "partial", groups: [...m.groups] }
+      : { kind: "full" },
   getManifest: vi.fn(async () => ({
     version: "2.6.1",
     stack: "generic",

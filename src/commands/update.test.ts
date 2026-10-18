@@ -22,6 +22,10 @@ vi.mock("../lib/stacks.js", async (importActual) => {
 // driven by `computeTemplateChanges` — no real filesystem or templates needed.
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
+  getInstallScope: (m: { groups?: string[] }) =>
+    Array.isArray(m.groups)
+      ? { kind: "partial", groups: [...m.groups] }
+      : { kind: "full" },
   updateManifest: vi.fn(async () => {}),
   getPackageVersion: vi.fn(() => "2.6.1"),
 }));

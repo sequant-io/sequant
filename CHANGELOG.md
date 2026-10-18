@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`update` refuses on a skills-only install (#1482).** It read no install scope, so it wrote hooks, agents and `settings.json` over an install that chose skills only. On a partial scope it now writes nothing, exits non-zero and names `sequant sync --only skills`. Full installs are unchanged. ADR-0015 amended.
+
 ### Fixed
 
 - **`sequant run` reuses an issue's existing branch whatever the issue's title (#1487).** The branch was looked up by a name rebuilt from the title. A failed `gh issue view` (title `Issue #N`) or a retitled issue therefore cut a second branch, `feature/N-issue-n`, from the base, and QA reviewed the base instead of the PR. `ensureWorktree` now finds the issue's branch by number: a local `feature/N-*` (which covers worktrees) or `origin/feature/N-*`. One match is reused. With several matches, the one the title names is used. Otherwise no worktree is created and every candidate is listed. When the title could not be read, a non-dry run now prints a warning that names the issue and the `gh` error.
