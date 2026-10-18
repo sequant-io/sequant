@@ -200,7 +200,7 @@ describe("extractPatternsFromDiff", () => {
     });
 
     const branch = makeBranch(1, "feature/1-test");
-    const patterns = extractPatternsFromDiff(branch, "/tmp");
+    const patterns = extractPatternsFromDiff(branch, "/tmp", "origin/main");
     expect(patterns.length).toBeGreaterThanOrEqual(1);
     const patternTexts = patterns.map((p) => p.pattern);
     expect(patternTexts.some((p) => p.includes("oldFunction"))).toBe(true);
@@ -226,7 +226,7 @@ describe("extractPatternsFromDiff", () => {
     });
 
     const branch = makeBranch(2, "feature/2-test");
-    const patterns = extractPatternsFromDiff(branch, "/tmp");
+    const patterns = extractPatternsFromDiff(branch, "/tmp", "origin/main");
     const patternTexts = patterns.map((p) => p.pattern);
     expect(patternTexts.some((p) => p.includes("import"))).toBe(false);
     expect(patternTexts.some((p) => p === "x")).toBe(false);
@@ -245,7 +245,7 @@ describe("extractPatternsFromDiff", () => {
     });
 
     const branch = makeBranch(3, "feature/3-test");
-    const patterns = extractPatternsFromDiff(branch, "/tmp");
+    const patterns = extractPatternsFromDiff(branch, "/tmp", "origin/main");
     expect(patterns).toEqual([]);
   });
 
@@ -265,7 +265,7 @@ describe("extractPatternsFromDiff", () => {
     });
 
     const branch = makeBranch(4, "feature/4-test");
-    const patterns = extractPatternsFromDiff(branch, "/tmp");
+    const patterns = extractPatternsFromDiff(branch, "/tmp", "origin/main");
     const unique = new Set(patterns.map((p) => p.pattern));
     expect(unique.size).toBe(patterns.length);
     // Verify issueNumber propagation

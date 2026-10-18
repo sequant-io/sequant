@@ -22,6 +22,8 @@ export interface BranchInfo {
   prNumber?: number;
   /** Files modified compared to base branch */
   filesModified: string[];
+  /** Git command that failed while computing `filesModified` (then `[]` is a payload, not a signal) */
+  filesModifiedError?: string;
 }
 
 /**
