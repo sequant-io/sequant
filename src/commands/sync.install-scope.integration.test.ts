@@ -12,6 +12,7 @@ import * as path from "node:path";
 import { initCommand } from "./init.js";
 import { areSkillsOutdated, syncCommand } from "./sync.js";
 import { updateCommand } from "./update.js";
+import { formatSkillsOutdatedMessage } from "./doctor.js";
 import {
   getSkillsInstallStatus,
   runVersionPreflight,
@@ -341,19 +342,27 @@ describe("#1409 skills-only install scope", () => {
       log.restore();
     }
     outputs.push((await getSkillsInstallStatus())?.remediation ?? "");
+    // doctor's `Skills Version` warning (it prints a remedy only when outdated).
+    outputs.push(
+      formatSkillsOutdatedMessage(await areSkillsOutdated(), "sequant"),
+    );
 
     // Only the fix-message lines: the banner's plugin note says "update".
     const text = outputs
       .join("\n")
       .split("\n")
       .filter(
-        (l) => !/Plugins/.test(l) && /Run:|run `|differ|^sequant /.test(l),
+        (l) =>
+          !/Plugins/.test(l) && /Run:|run:|run `|differ|^sequant /.test(l),
       )
       .join("\n");
     expect(outputs.every((o) => o.length > 0)).toBe(true);
+    expect(text).toContain("- run: sequant sync");
     expect(text).not.toMatch(/\bupdate\b/);
     expect(text).not.toMatch(/sync --force/);
-    for (const line of text.split("\n").filter((l) => /Run:|run `/.test(l))) {
+    for (const line of text
+      .split("\n")
+      .filter((l) => /Run:|run:|run `/.test(l))) {
       expect(line).toContain("--only skills");
     }
   });

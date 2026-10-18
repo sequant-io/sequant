@@ -40,7 +40,11 @@ import {
   getVersionWarning,
   resolveCliInvocation,
 } from "../lib/version-check.js";
-import { areSkillsOutdated, scopedRemedy } from "./sync.js";
+import {
+  areSkillsOutdated,
+  scopedRemedy,
+  type SkillsOutdatedStatus,
+} from "./sync.js";
 import {
   readAgentsMd,
   isAgentsMdSequantOwned,
@@ -542,6 +546,21 @@ export function formatVersionRemediation(warning: string): string {
   return `     ${warning}`;
 }
 
+/**
+ * The `Skills Version` warning for an outdated install. A partial install gets
+ * the scoped remedy; a bare `sync` there would widen it (#1485 AC-4).
+ */
+export function formatSkillsOutdatedMessage(
+  status: Pick<
+    SkillsOutdatedStatus,
+    "currentVersion" | "packageVersion" | "installScope"
+  >,
+  cli: string,
+): string {
+  const remedy = scopedRemedy(status.installScope, cli, true) ?? `${cli} sync`;
+  return `Outdated (${status.currentVersion || "unknown"} → ${status.packageVersion}) - run: ${remedy}`;
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -646,10 +665,7 @@ export async function doctorCommand(
     checks.push({
       name: "Skills Version",
       status: "warn",
-      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: ${
-        scopedRemedy(skillsStatus.installScope, resolveCliInvocation(), true) ??
-        `${resolveCliInvocation()} sync`
-      }`,
+      message: formatSkillsOutdatedMessage(skillsStatus, resolveCliInvocation()),
     });
   } else {
     checks.push({
