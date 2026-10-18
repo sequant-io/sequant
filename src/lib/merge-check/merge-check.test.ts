@@ -481,4 +481,37 @@ describe("filesModified diff failure", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("base ref does not resolve: a branch held by a worktree reports the same error", async () => {
+    const root = mkdtempSync(join(tmpdir(), "sequant-nobase-wt-"));
+    try {
+      const run = (cwd: string, ...args: string[]) =>
+        spawnSync("git", ["-C", cwd, ...args], { encoding: "utf-8" });
+      run(root, "init", "--bare", "--initial-branch=other", "origin.git");
+      const repo = join(root, "repo");
+      spawnSync("git", ["clone", join(root, "origin.git"), repo]);
+      run(repo, "config", "user.email", "t@sequant.test");
+      run(repo, "config", "user.name", "T");
+      run(repo, "config", "commit.gpgsign", "false");
+      run(repo, "checkout", "-b", "feature/7-x");
+      run(repo, "commit", "--allow-empty", "-m", "x");
+      run(repo, "push", "-u", "origin", "feature/7-x");
+      // Left on the feature branch: the checkout itself is the branch's
+      // worktree, so the worktree diff runs.
+
+      const report = await runMergeChecks([7], {}, repo);
+
+      expect(report.branches[0].worktreePath).toBeTruthy();
+      expect(report.branches[0].filesModified).toEqual([]);
+      const errors = report.findings.filter((f) => f.severity === "error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0].issueNumber).toBe(7);
+      expect(errors[0].message).toContain(
+        "diff --name-only origin/no-such-default...HEAD",
+      );
+      expect(report.batchVerdict).toBe("BLOCKED");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

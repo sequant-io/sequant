@@ -201,7 +201,9 @@ export function runCombinedBranchTest(
     );
   } finally {
     // Restore original branch and delete temp branch
-    const restoreBranch = originalBranch.ok ? originalBranch.stdout : "main";
+    const restoreBranch = originalBranch.ok
+      ? originalBranch.stdout
+      : baseRef.replace(/^origin\//, "");
     git(["checkout", restoreBranch], repoRoot);
     git(["branch", "-D", tempBranch], repoRoot);
 

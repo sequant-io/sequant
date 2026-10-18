@@ -427,6 +427,23 @@ describe("runCombinedBranchTest — failure messages (#803 AC-3)", () => {
   });
 });
 
+describe("runCombinedBranchTest — cleanup restore (#1484)", () => {
+  it("restores the base branch when the original branch cannot be read, not a hardcoded main", () => {
+    mockRun({
+      lockfileChanged: false,
+      overrides: { "git rev-parse": spawnResult({ status: 128 }) },
+    });
+
+    runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/master");
+
+    const checkouts = spawnedCommands().filter(
+      (c) => c.startsWith("git checkout") && !c.includes(" -b "),
+    );
+    expect(checkouts).toContain("git checkout master");
+    expect(checkouts).not.toContain("git checkout main");
+  });
+});
+
 describe("resolveFailureReason (#803 AC-3, AC-5b)", () => {
   const base: CommandResult = {
     ok: false,

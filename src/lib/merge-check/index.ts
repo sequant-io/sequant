@@ -15,7 +15,6 @@ import {
   type RunLog,
   LOG_PATHS,
 } from "../workflow/run-log-schema.js";
-import { getGitDiffStats } from "../workflow/git-diff-utils.js";
 import { detectDefaultBranch } from "../workflow/worktree-manager.js";
 import type {
   BranchInfo,
@@ -167,32 +166,25 @@ export function resolveBranches(
     let filesModified: string[] = [];
     let filesModifiedError: string | undefined;
 
-    if (worktreePath) {
-      // Use worktree for diff
-      const diffStats = getGitDiffStats(
-        worktreePath,
-        baseRef.replace(/^origin\//, ""),
-      );
-      filesModified = diffStats.filesModified;
+    // The worktree's HEAD when one holds the branch, else the remote branch.
+    const diffArgs = worktreePath
+      ? ["-C", worktreePath, "diff", "--name-only", `${baseRef}...HEAD`]
+      : [
+          "-C",
+          repoRoot,
+          "diff",
+          "--name-only",
+          `${baseRef}...origin/${branch}`,
+        ];
+    const diffResult = spawnSync("git", diffArgs, {
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+    if (diffResult.status === 0) {
+      filesModified = diffResult.stdout.split("\n").filter(Boolean);
     } else {
-      // Use remote branch diff
-      const diffArgs = [
-        "-C",
-        repoRoot,
-        "diff",
-        "--name-only",
-        `${baseRef}...origin/${branch}`,
-      ];
-      const diffResult = spawnSync("git", diffArgs, {
-        stdio: "pipe",
-        encoding: "utf-8",
-      });
-      if (diffResult.status === 0) {
-        filesModified = diffResult.stdout.split("\n").filter(Boolean);
-      } else {
-        // An empty list here would read as "no changes" to every overlap check.
-        filesModifiedError = `git ${diffArgs.join(" ")}`;
-      }
+      // An empty list here would read as "no changes" to every overlap check.
+      filesModifiedError = `git ${diffArgs.join(" ")}`;
     }
 
     const info = issueInfo.get(issueNumber);
