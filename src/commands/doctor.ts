@@ -40,7 +40,7 @@ import {
   getVersionWarning,
   resolveCliInvocation,
 } from "../lib/version-check.js";
-import { areSkillsOutdated } from "./sync.js";
+import { areSkillsOutdated, scopedRemedy } from "./sync.js";
 import {
   readAgentsMd,
   isAgentsMdSequantOwned,
@@ -646,13 +646,33 @@ export async function doctorCommand(
     checks.push({
       name: "Skills Version",
       status: "warn",
-      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: ${resolveCliInvocation()} sync`,
+      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: ${
+        scopedRemedy(skillsStatus.installScope, resolveCliInvocation(), true) ??
+        `${resolveCliInvocation()} sync`
+      }`,
     });
   } else {
     checks.push({
       name: "Skills Version",
       status: "pass",
       message: `Up to date (${skillsStatus.packageVersion})`,
+    });
+  }
+
+  // Legacy manifest (no `groups`) reads as a full install by design; when none
+  // of the non-skills groups exist, tell the user the hand edit (#1485).
+  if (
+    manifest &&
+    !Array.isArray(manifest.groups) &&
+    !(await fileExists(".claude/hooks")) &&
+    !(await fileExists(".claude/settings.json")) &&
+    !(await fileExists(".claude/agents"))
+  ) {
+    checks.push({
+      name: "Install Scope",
+      status: "warn",
+      message:
+        'Manifest has no "groups", so this reads as a full install, but .claude/hooks, .claude/settings.json and .claude/agents are absent. If this is a skills-only install, add "groups": ["skills"] to .sequant-manifest.json',
     });
   }
 

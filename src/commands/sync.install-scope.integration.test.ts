@@ -222,9 +222,9 @@ describe("#1409 skills-only install scope", () => {
     expect("groups" in onDisk).toBe(false);
   });
 
-  it("AC-4: a full sync on a skills-only install records a full install", async () => {
-    // Version mismatch, so the plain sync takes the apply path and writes
-    // every group — the manifest must then say so.
+  it("plain sync keeps a skills-only scope (#1485 AC-5)", async () => {
+    // Version mismatch, so the plain sync takes the apply path. It must write
+    // only the skills group and keep the recorded scope.
     fs.writeFileSync(
       path.join(root, ".claude", "skills", ".sequant-version"),
       "0.0.1",
@@ -234,8 +234,128 @@ describe("#1409 skills-only install scope", () => {
     const onDisk = JSON.parse(
       fs.readFileSync(path.join(root, MANIFEST), "utf8"),
     );
-    expect("groups" in onDisk).toBe(false);
+    expect(onDisk.groups).toEqual(["skills"]);
+    for (const skipped of [
+      ".claude/hooks",
+      ".claude/agents",
+      ".claude/settings.json",
+    ]) {
+      expect(fs.existsSync(path.join(root, skipped))).toBe(false);
+    }
+  });
+
+  it("plain sync keeps a skills-only scope: --dry-run previews the same set (#1485 AC-5)", async () => {
+    fs.writeFileSync(
+      path.join(root, ".claude", "skills", ".sequant-version"),
+      "0.0.1",
+    );
+    const log = captureLog();
+    try {
+      await syncCommand({ dryRun: true });
+      expect(log.output()).not.toContain(".claude/hooks");
+      expect(log.output()).not.toContain(".claude/settings.json");
+    } finally {
+      log.restore();
+    }
+  });
+
+  it("plain sync keeps a skills-only scope: a manifest without groups still gets a full sync (#1485 AC-5)", async () => {
+    const manifestPath = path.join(root, MANIFEST);
+    const legacy = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    delete legacy.groups;
+    fs.writeFileSync(manifestPath, JSON.stringify(legacy));
+    fs.writeFileSync(
+      path.join(root, ".claude", "skills", ".sequant-version"),
+      "0.0.1",
+    );
+    await syncCommand({ quiet: true });
     expect(fs.existsSync(path.join(root, ".claude", "hooks"))).toBe(true);
+  });
+
+  function editOneSkill(): void {
+    const skillsDir = path.join(root, ".claude", "skills");
+    const skill = fs
+      .readdirSync(skillsDir, { withFileTypes: true })
+      .find(
+        (e) =>
+          e.isDirectory() &&
+          fs.existsSync(path.join(skillsDir, e.name, "SKILL.md")),
+      );
+    const p = path.join(skillsDir, skill!.name, "SKILL.md");
+    fs.writeFileSync(p, fs.readFileSync(p, "utf8") + "\nlocal edit\n");
+  }
+
+  it("plain sync on a skills-only install counts drift only inside the scope (#1485 AC-1)", async () => {
+    let log = captureLog();
+    process.exitCode = 0;
+    try {
+      await syncCommand();
+      expect(log.output()).toContain("already up to date");
+    } finally {
+      log.restore();
+    }
+    expect(process.exitCode).toBe(0);
+
+    editOneSkill();
+    log = captureLog();
+    try {
+      await syncCommand();
+      expect(log.output()).toContain("1 file(s) differ");
+      expect(log.output()).toContain("sync --only skills --force");
+    } finally {
+      log.restore();
+    }
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("no remedy widens a partial install (#1485 AC-4)", async () => {
+    editOneSkill();
+    const outputs: string[] = [];
+
+    let log = captureLog();
+    try {
+      await syncCommand();
+      outputs.push(log.output());
+    } finally {
+      log.restore();
+    }
+    log = captureLog();
+    try {
+      await runVersionPreflight("status");
+      outputs.push(log.output());
+    } finally {
+      log.restore();
+    }
+    outputs.push((await getSkillsInstallStatus())?.remediation ?? "");
+
+    // Outdated variant of the same producers.
+    fs.writeFileSync(
+      path.join(root, ".claude", "skills", ".sequant-version"),
+      "0.0.1",
+    );
+    log = captureLog();
+    try {
+      await runVersionPreflight("status");
+      outputs.push(log.output());
+    } finally {
+      log.restore();
+    }
+    outputs.push((await getSkillsInstallStatus())?.remediation ?? "");
+
+    // Only the fix-message lines: the banner's plugin note says "update".
+    const text = outputs
+      .join("\n")
+      .split("\n")
+      .filter(
+        (l) => !/Plugins/.test(l) && /Run:|run `|differ|^sequant /.test(l),
+      )
+      .join("\n");
+    expect(outputs.every((o) => o.length > 0)).toBe(true);
+    expect(text).not.toMatch(/\bupdate\b/);
+    expect(text).not.toMatch(/sync --force/);
+    for (const line of text.split("\n").filter((l) => /Run:|run `/.test(l))) {
+      expect(line).toContain("--only skills");
+    }
   });
 
   /**

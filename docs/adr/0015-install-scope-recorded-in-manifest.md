@@ -12,7 +12,7 @@ The manifest kept `"files": {}` after `sync --only skills`, so nothing recorded 
 
 ## Decision
 
-The manifest records the install scope in an optional `groups` field. `init --manifest-only` writes `groups: []`, `sync --only skills` adds `"skills"`, and a full sync removes the field. On a partial scope `update` refuses and points to `sync --only skills`; only a full install is rewritten by `update` (amended 2026-10-17, #1482). A manifest without the field is a full install. `src/lib/manifest.ts` owns the field; consumers read it through `getInstallScope`. Drift and the remedy text are scoped to it.
+The manifest records the install scope in an optional `groups` field. `init --manifest-only` writes `groups: []`, `sync --only skills` adds `"skills"`, and a full sync (a manifest with no `groups`, or `groups: []`) removes the field. A plain `sync` on a skills-only scope keeps that scope and writes only the skills group; `sequant init` is the way to widen it to a full install (#1485). On a partial scope `update` refuses and points to `sync --only skills`; only a full install is rewritten by `update` (amended 2026-10-17, #1482). A manifest without the field is a full install. `src/lib/manifest.ts` owns the field; consumers read it through `getInstallScope`. Drift and the remedy text are scoped to it.
 
 ## Options
 
