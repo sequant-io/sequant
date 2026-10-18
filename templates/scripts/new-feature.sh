@@ -247,7 +247,6 @@ else
     else
         git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "$START_REF"
     fi
-
 fi
 
 # Record the base branch on the new branch so downstream tooling
