@@ -919,6 +919,21 @@ export function warnUncommittedSkills(cwd: string = process.cwd()): void {
 }
 
 /**
+ * The remedy for content drift at a matching version. One producer for the
+ * pre-flight banner and `doctor`, so the two cannot name different commands
+ * (#1490).
+ */
+export function formatSkillsDriftRemedy(
+  installScope: SkillsOutdatedStatus["installScope"],
+  cli: string,
+): string {
+  return (
+    scopedRemedy(installScope, cli, false) ??
+    `${cli} sync --force (or ${cli} update)`
+  );
+}
+
+/**
  * Check and warn if skills are outdated (for use by other commands).
  *
  * Warns on either signal: a version-marker mismatch, or in-place content drift at
@@ -966,9 +981,7 @@ export async function checkAndWarnSkillsOutdated(
         `\n!  Version current, but ${contentDrift} file(s) differ from bundled content`,
       ),
     );
-    const remedy =
-      scopedRemedy(installScope, cli, false) ??
-      `${cli} sync --force (or ${cli} update)`;
+    const remedy = formatSkillsDriftRemedy(installScope, cli);
     console.log(chalk.yellow(`   Run: ${remedy}\n`));
     return true;
   }

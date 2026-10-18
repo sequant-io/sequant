@@ -46,18 +46,24 @@ vi.mock("../lib/agents-md.js", () => ({
 }));
 
 // Mock sync module
-vi.mock("./sync.js", () => ({
-  areSkillsOutdated: vi.fn(() =>
-    Promise.resolve({
-      outdated: false,
-      currentVersion: "1.0.0",
-      packageVersion: "1.0.0",
-    }),
-  ),
-  scopedRemedy: vi.fn((scope: { kind: string } | undefined, cli: string) =>
-    scope && scope.kind === "partial" ? `${cli} sync --only skills` : null,
-  ),
-}));
+vi.mock("./sync.js", async (importActual) => {
+  const actual = await importActual<typeof import("./sync.js")>();
+  return {
+    areSkillsOutdated: vi.fn(() =>
+      Promise.resolve({
+        outdated: false,
+        currentVersion: "1.0.0",
+        packageVersion: "1.0.0",
+      }),
+    ),
+    scopedRemedy: vi.fn((scope: { kind: string } | undefined, cli: string) =>
+      scope && scope.kind === "partial" ? `${cli} sync --only skills` : null,
+    ),
+    // The real producer: doctor and the banner must share it (#1490)
+    formatSkillsDriftRemedy: actual.formatSkillsDriftRemedy,
+    checkAndWarnSkillsOutdated: actual.checkAndWarnSkillsOutdated,
+  };
+});
 
 // Mock settings (for Aider CLI check)
 vi.mock("../lib/settings.js", () => ({
@@ -1654,6 +1660,73 @@ describe("doctor command", () => {
       );
       await doctorCommand();
       expect(output()).not.toContain('"groups": ["skills"]');
+    });
+  });
+
+  describe("Skills Version reports content drift (#1490)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const drift = {
+      outdated: false,
+      currentVersion: "2.19.0",
+      packageVersion: "2.19.0",
+      contentDrift: 3,
+    };
+
+    it("warns with the count and the scoped remedy on a partial install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...drift,
+        installScope: { kind: "partial", groups: ["skills"] },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(
+        /3 file\(s\) differ from bundled content.*run: .*sync --only skills/,
+      );
+      expect(output()).not.toContain("Up to date (2.19.0)");
+    });
+
+    it("warns with the full-install drift remedy on a full install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...drift,
+        installScope: { kind: "full" },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(
+        /3 file\(s\) differ from bundled content.*sync --force \(or .* update\)/,
+      );
+    });
+
+    it("uses the same remedy the pre-flight banner prints", async () => {
+      const { checkAndWarnSkillsOutdated } =
+        await vi.importActual<typeof import("./sync.js")>("./sync.js");
+      const status = {
+        ...drift,
+        installScope: { kind: "full" },
+      } as never;
+      mockAreSkillsOutdated.mockResolvedValue(status);
+      await doctorCommand();
+      const doctorLine = output();
+      consoleLogSpy.mockClear();
+      await checkAndWarnSkillsOutdated(status);
+      const banner = output();
+      const remedy = banner.match(/Run: (.*)/)?.[1]?.trim();
+      expect(remedy).toBeTruthy();
+      expect(doctorLine).toContain(`run: ${remedy}`);
+    });
+  });
+
+  describe("Skills Version passes with no drift (#1490)", () => {
+    it("stays Up to date at a matching version with contentDrift 0", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        outdated: false,
+        currentVersion: "2.19.0",
+        packageVersion: "2.19.0",
+        contentDrift: 0,
+      } as never);
+      await doctorCommand();
+      const out = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(out).toContain("Up to date (2.19.0)");
     });
   });
 });

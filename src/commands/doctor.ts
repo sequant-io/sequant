@@ -42,6 +42,7 @@ import {
 } from "../lib/version-check.js";
 import {
   areSkillsOutdated,
+  formatSkillsDriftRemedy,
   scopedRemedy,
   type SkillsOutdatedStatus,
 } from "./sync.js";
@@ -561,6 +562,20 @@ export function formatSkillsOutdatedMessage(
   return `Outdated (${status.currentVersion || "unknown"} → ${status.packageVersion}) - run: ${remedy}`;
 }
 
+/**
+ * The `Skills Version` warning for content drift at a matching version. The
+ * remedy comes from the same producer as the pre-flight banner (#1490).
+ */
+export function formatSkillsDriftMessage(
+  status: Pick<
+    SkillsOutdatedStatus,
+    "packageVersion" | "installScope" | "contentDrift"
+  >,
+  cli: string,
+): string {
+  return `${status.contentDrift} file(s) differ from bundled content (version ${status.packageVersion}) - run: ${formatSkillsDriftRemedy(status.installScope, cli)}`;
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -665,7 +680,16 @@ export async function doctorCommand(
     checks.push({
       name: "Skills Version",
       status: "warn",
-      message: formatSkillsOutdatedMessage(skillsStatus, resolveCliInvocation()),
+      message: formatSkillsOutdatedMessage(
+        skillsStatus,
+        resolveCliInvocation(),
+      ),
+    });
+  } else if ((skillsStatus.contentDrift ?? 0) > 0) {
+    checks.push({
+      name: "Skills Version",
+      status: "warn",
+      message: formatSkillsDriftMessage(skillsStatus, resolveCliInvocation()),
     });
   } else {
     checks.push({
