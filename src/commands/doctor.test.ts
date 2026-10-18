@@ -1706,13 +1706,17 @@ describe("doctor command", () => {
       } as never;
       mockAreSkillsOutdated.mockResolvedValue(status);
       await doctorCommand();
-      const doctorLine = output();
+      // Only the Skills Version line: another check's `run:` must not be compared.
+      const doctorLine = output()
+        .split("\n")
+        .find((l) => l.includes("differ from bundled content"));
+      expect(doctorLine).toBeTruthy();
       consoleLogSpy.mockClear();
       await checkAndWarnSkillsOutdated(status);
       const banner = output();
       const remedy = banner.match(/Run: (.*)/)?.[1]?.trim();
       expect(remedy).toBeTruthy();
-      expect(doctorLine.match(/run: (.*)/)?.[1]?.trim()).toBe(remedy);
+      expect(doctorLine?.match(/run: (.*)/)?.[1]?.trim()).toBe(remedy);
     });
   });
 
