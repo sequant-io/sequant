@@ -105,7 +105,10 @@ describe("master-default", () => {
   });
 
   it("reads the branches' hunk ranges for overlap", () => {
-    const branches = resolveBranches([101, 102], repo, "origin/master");
+    // filesModified is fixed here so only the hunk-range site is under test.
+    const branches = resolveBranches([101, 102], repo, "origin/master").map(
+      (b) => ({ ...b, filesModified: [FILE] }),
+    );
     const result = runOverlapDetection(branches, repo, "origin/master");
     expect(result.batchFindings.map((f) => f.message).join("\n")).toContain(
       "(conflicting)",
