@@ -86,7 +86,7 @@ export function findMostRecentLog(logDir: string): RunLog | null {
 
 /**
  * The base every merge-check diff and the combined branch are taken against:
- * the repo's default branch on origin (`origin/main`, `origin/master`, ...).
+ * the repo's default branch on origin (`origin/<default>`).
  * Resolved at the repo root, not per branch, because a batch check has one base.
  */
 export function resolveMergeBaseRef(repoRoot: string): string {
