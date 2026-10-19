@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **One Non-Goals scanner for the ready gate and the scope analyzer (#1474).** `src/lib/non-goals.ts` now holds the only `parseNonGoals`; `ready-gate.ts` re-exports it and the scope analyzer wraps it as `assessNonGoals` (same `NonGoals { items, found, warning }` shape). The gate's heading rules are now the rules for both: any heading level, trailing text after `Non-Goals`/`Out of scope`, several sections unioned, items starting with `#` kept. Scope assessment therefore now finds Non-Goals in issues it used to report as missing (e.g. `## Out of scope (deferred, not rejected)`). The gate now ignores Non-Goals examples inside fenced code blocks and strips `[ ]`/`[x]` checkboxes from items. `Scope Boundaries` and `Non Goals` (with a space) are no longer recognised headings.
+
 ## [2.20.0] - 2026-10-18
 
 ### Added

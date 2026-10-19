@@ -332,37 +332,13 @@ export function gapTouchesNonGoals(gap: string, nonGoals: string[]): boolean {
 }
 
 /**
- * Parse the issue body's Non-Goals section into a list of bullet items.
- *
- * Recognizes `## Non-goals`, `## Non-Goals`, `### Out of scope`, etc. Captures
- * markdown bullet items until the next heading. Returns `[]` when no section is
- * present.
+ * Parse the issue body's Non-Goals sections into a list of bullet items —
+ * the shared scanner in `../non-goals.ts` (#1474), re-exported here for the
+ * gate's callers.
  *
  * @internal Exported for testing only.
  */
-export function parseNonGoals(issueBody: string): string[] {
-  if (!issueBody) return [];
-  const lines = issueBody.split("\n");
-  const items: string[] = [];
-  let inSection = false;
-  const headingRe = /^#{1,6}\s+(.*)$/;
-  const nonGoalHeadingRe = /^(non-?goals?|out[ -]of[ -]scope)\b/i;
-  for (const line of lines) {
-    const heading = line.match(headingRe);
-    if (heading) {
-      inSection = nonGoalHeadingRe.test(heading[1].trim());
-      continue;
-    }
-    if (!inSection) continue;
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    if (bullet) {
-      // Strip surrounding markdown emphasis/backticks for cleaner matching.
-      const text = bullet[1].replace(/[`*]/g, "").trim();
-      if (text) items.push(text);
-    }
-  }
-  return items;
-}
+export { parseNonGoals } from "../non-goals.js";
 
 /**
  * Classify each gap description for the report, enriching with structured
