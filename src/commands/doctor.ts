@@ -17,7 +17,7 @@ import {
   getSymlinkTarget,
 } from "../lib/fs.js";
 import { checkSkillsInstalled } from "../lib/skills-check.js";
-import { getManifest } from "../lib/manifest.js";
+import { getInstallScope, getManifest } from "../lib/manifest.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -735,6 +735,14 @@ export async function doctorCommand(
           "user-owned (preserved by sync) - customized or predates the ownership marker",
       });
     }
+  } else if (manifest && getInstallScope(manifest).kind === "partial") {
+    // A skills-only install never writes AGENTS.md; `init --force` would widen it (#1489).
+    checks.push({
+      name: "AGENTS.md",
+      status: "pass",
+      message:
+        "Not part of the skills-only install (AGENTS.md is outside this install scope)",
+    });
   } else if (manifest) {
     checks.push({
       name: "AGENTS.md",

@@ -36,6 +36,11 @@ vi.mock("fs/promises", () => ({
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
   getPackageVersion: vi.fn(() => "1.0.0"),
+  getInstallScope: vi.fn((m: { groups?: unknown }) =>
+    Array.isArray(m.groups)
+      ? { kind: "partial", groups: [...m.groups] }
+      : { kind: "full" },
+  ),
 }));
 
 // Mock agents-md module
@@ -1731,6 +1736,56 @@ describe("doctor command", () => {
       await doctorCommand();
       const out = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(out).toContain("Up to date (2.19.0)");
+    });
+  });
+
+  describe("AGENTS.md on a skills-only install (#1489)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const base = {
+      version: "0.1.0",
+      stack: "nextjs",
+      installedAt: "2024-01-01T00:00:00.000Z",
+      files: {},
+    };
+
+    it("missing AGENTS.md on a skills-only install is not a warning and names no command", async () => {
+      mockGetManifest.mockResolvedValue({
+        ...base,
+        groups: ["skills"],
+      } as never);
+      mockReadAgentsMd.mockResolvedValue(null as never);
+      await doctorCommand();
+      const line = output()
+        .split("\n")
+        .find((l) => l.includes("AGENTS.md"));
+      expect(line).toContain("outside this install scope");
+      expect(line).not.toContain("init --force");
+      expect(line).not.toContain("run:");
+      expect(line).not.toMatch(/!/);
+    });
+
+    it("missing AGENTS.md on a full install keeps the init --force warning", async () => {
+      mockGetManifest.mockResolvedValue(base as never);
+      mockReadAgentsMd.mockResolvedValue(null as never);
+      await doctorCommand();
+      expect(output()).toContain("run: sequant init --force");
+    });
+
+    it("existing AGENTS.md on a skills-only install gets the ownership result", async () => {
+      mockGetManifest.mockResolvedValue({
+        ...base,
+        groups: ["skills"],
+      } as never);
+      mockReadAgentsMd.mockResolvedValue("# AGENTS.md\n" as never);
+      mockIsAgentsMdSequantOwned.mockReturnValue(true);
+      await doctorCommand();
+      expect(output()).toContain("Present and up to date");
+      consoleLogSpy.mockClear();
+      mockIsAgentsMdSequantOwned.mockReturnValue(false);
+      await doctorCommand();
+      expect(output()).toContain("user-owned (preserved by sync)");
     });
   });
 });
