@@ -24,7 +24,7 @@ Disagreement on any criterion reopens #RS-02 (the producer), not the renderers; 
 
 ## Acceptance Criteria
 
-- [ ] AC-1: The run log carries both new records. Evidence: `jq -e '.issues[0].acs | length >= 1' "$RUNLOG" > /dev/null && jq -e '.issues[0].cost.usd > 0' "$RUNLOG" > /dev/null && echo ok` → `ok` (`$RUNLOG` is the run-log path the runner names on this issue)
+- [ ] AC-1: The run log carries both new records (`acs[]` per issue, `cost` per run). Evidence: `jq -e '.issues[0].acs | length >= 1' "$RUNLOG" > /dev/null && jq -e '.cost.usd > 0' "$RUNLOG" > /dev/null && echo ok` → `ok` (`$RUNLOG` is the run-log path the runner names on this issue)
 - [ ] AC-2: The terminal summary shows the table and the cost line. Evidence: `grep -cE '^\s+AC-[0-9]+ (met|not_met|pending|blocked|unknown)' "$SUMMARY"` → `≥ 1` and `grep -c 'SDK estimate' "$SUMMARY"` → `1` (`$SUMMARY` is the captured output file)
 - [ ] AC-3: The verdict comment carries the attribution line (#1521). Evidence: `gh api repos/sequant-io/sequant/issues/$ISSUE/comments --jq '[.[].body | select(test("^## QA Verdict"))] | last' | grep -c '^_Reviewed in a separate session by '` → `1`
 - [ ] AC-4: The owner's read is recorded with the route taken. Evidence: `gh issue view $(gh issue list --label graph-2026-10-review-surface --search 'smoke' --state all --json number --jq '.[0].number') --json comments --jq '[.comments[].body | select(test("^Verdict: (agree|reopen-RS-02|reopen-RS-04)"))] | length'` → `1`

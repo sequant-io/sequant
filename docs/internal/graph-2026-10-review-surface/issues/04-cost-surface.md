@@ -1,9 +1,10 @@
 feat(cli): cost per run where a user looks — one line in the run summary, cost in the run log and sequant logs, from the metrics record, labelled "SDK estimate"
 
-**Epic:** graph-2026-10-review-surface   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #RS-00, #1504
+**Epic:** graph-2026-10-review-surface   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #RS-00, #1504, #1507
 
 - **Blocked by**: #RS-00
 - **Blocked by**: #1504
+- **Blocked by**: #1507
 
 ## Problem
 
@@ -12,7 +13,7 @@ feat(cli): cost per run where a user looks — one line in the run summary, cost
 ## Acceptance Criteria
 
 - [ ] AC-1: The summary prints the cost line from the metrics record. Evidence: `npx vitest run src/lib/cli-ui/run-renderer.cost.test.ts` → `≥ 3 passed, 0 failed` (a run with `costUSD: 6.45, tokensUsed: 69641` prints `cost $6.45 (SDK estimate) · 69,641 tokens`; a run with no record prints `cost unrecorded`; a run with tokens but no cost prints tokens and `cost unrecorded`)
-- [ ] AC-2: The run log carries `cost` as an optional field and the version is unchanged. Evidence: `grep -cE 'cost' src/lib/workflow/run-log-schema.ts` → `≥ 1` and `grep -c 'version: z.literal(1)' src/lib/workflow/run-log-schema.ts` → `1`
+- [ ] AC-2: The run log carries `cost` as an optional **run-level** field (metrics are per run, not per issue) and the version is unchanged. Evidence: `grep -cE 'cost: ' src/lib/workflow/run-log-schema.ts` → `≥ 1` and `grep -c 'version: z.literal(1)' src/lib/workflow/run-log-schema.ts` → `1`
 - [ ] AC-3: `sequant logs <run>` prints it. Evidence: `npx vitest run src/commands/logs.cost.test.ts` → `≥ 2 passed, 0 failed`
 - [ ] AC-4: One source (I-2, RD-C). Evidence: `grep -rlE 'total_cost_usd|costUSD' src/lib/cli-ui src/commands/logs.ts | wc -l | tr -d ' '` → `0` (renderers take the number from the run-log or summary input; only `metrics-writer.ts` and `log-writer.ts` read the SDK's figure)
 - [ ] AC-5: The wording is the stats wording. Evidence: `grep -rc 'SDK estimate' src/lib/cli-ui/*.ts | awk -F: '{s+=$2} END{print s+0}'` → `≥ 1`
@@ -25,7 +26,7 @@ feat(cli): cost per run where a user looks — one line in the run summary, cost
 
 ## May touch
 
-`src/lib/workflow/log-writer.ts`, `run-log-schema.ts` (optional `cost`, after #1504's block), `src/lib/cli-ui/run-renderer-types.ts` (optional `cost` on the summary input), the renderer implementations, `src/commands/logs.ts`, tests, `docs/reference/run-command.md`, CHANGELOG.
+`src/lib/workflow/log-writer.ts`, `run-log-schema.ts` (optional `cost`, after #1504's block), `src/lib/cli-ui/run-renderer-types.ts` (optional `cost` on the summary input), the renderer implementations, `src/commands/run-display.ts` (where the summary input is assembled), the summary assembly in `batch-executor.ts` (`toIssueSummary`, after #1507, or the module #1507 extracts), `src/commands/logs.ts`, tests, `docs/reference/run-command.md`, CHANGELOG.
 
 ## Non-Goals
 

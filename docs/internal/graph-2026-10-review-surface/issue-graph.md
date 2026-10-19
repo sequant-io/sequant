@@ -8,10 +8,10 @@
 | Node | Tier | Execution | Title | Blocked by | May touch | Cluster |
 |---|---|---|---|---|---|---|
 | #RS-00 | judgment | runner | tracker; docs-only PR; label; RD-1, OQ-2..5 recorded | #1502 | `docs/internal/graph-2026-10-review-surface/` | — |
-| #RS-01 | judgment | sequant_run | per-AC parse coverage on ≥ 60 QA comments; 10 hand-labelled fixtures; RD-1 line | #RS-00 | `scripts/qa/ac-status-parse-coverage.ts`, `__tests__/fixtures/qa-comments/`, `docs/evidence/review-surface/` | — |
+| #RS-01 | judgment | split | per-AC parse coverage on all QA-marked comments since 2026-08-01 (49 at planning); 10 hand-labelled fixtures; RD-1 line; owner adds the blind re-read | #RS-00 | `scripts/qa/ac-status-parse-coverage.ts`, `__tests__/fixtures/qa-comments/`, `docs/evidence/review-surface/` | — |
 | #RS-02 | judgment | sequant_run | AC-status producer: parse at the QA summary hook, `updateACStatus`, run-log `acs[]`, `unknown` is a status | #RS-01, #1504, #1471, #1507 | `ac-status.ts` (new), one call line at the hook, `log-writer.ts`, `run-log-schema.ts` | log |
 | #RS-03 | mechanical | sequant_run | AC lines in the run summary; `ACs` column in `status`; block in `logs` | #RS-02, #RS-04, #1505 | `run-renderer-types.ts`, renderers, `commands/status.ts`, `commands/logs.ts`, two docs pages | log, renderer |
-| #RS-04 | mechanical | sequant_run | cost line in the summary; run-log `cost`; `logs` line; "SDK estimate" wording | #RS-00, #1504 | `log-writer.ts`, `run-log-schema.ts`, `run-renderer-types.ts`, renderers, `commands/logs.ts`, `run-command.md` | log, renderer |
+| #RS-04 | mechanical | sequant_run | cost line in the summary; run-log `cost` (run-level); `logs` line; "SDK estimate" wording | #RS-00, #1504, #1507 | `log-writer.ts`, `run-log-schema.ts`, `run-renderer-types.ts`, renderers, `commands/run-display.ts`, `toIssueSummary` (batch-executor, after #1507), `commands/logs.ts`, `run-command.md` | log, renderer |
 | #RS-05 | mechanical | sequant_run | `init` writes the issue form from one template file; guide links it; `doctor` info line | #RS-00 | `templates/github/ISSUE_TEMPLATE/sequant-task.yml` (new), `commands/init.ts`, `commands/doctor.ts`, `docs/guides/writing-issues.md` | — |
 | #1521 | mechanical | split | verdict comment names reviewer driver + model; docs name `phases.qa.agent` | none (coordinate with #1507) | `qa-verdict-attribution.ts` (new), one call in `buildQaVerdictComment`, `run-command.md` | — |
 | #1520 | judgment | split | computed "Read first" PR comment: residue / tests by seam / AC-explained | #1507 (file scope) | `review-residue.ts` (new), one post call, `scripts/qa/ac-attribution-rate.ts`, `residue-outcomes.ts`, `docs/reference/review-residue.md` | — |
@@ -42,6 +42,7 @@ graph TD
     X1 --> S2
     X7 --> S2
     F4 --> S4
+    X7 --> S4
     S2 --> S3
     S4 --> S3
     X5 --> S3
@@ -56,12 +57,12 @@ graph TD
 | Wave | Nodes | Condition |
 |---|---|---|
 | W0 | #RS-00; then #RS-01, #RS-05, #1521 in one `sequant run` | #1502 merged (D-1) |
-| W1 | #RS-04 | #1504 merged |
+| W1 | #RS-04 | #1504 and #1507 merged (the summary input is assembled in batch-executor's `toIssueSummary`) |
 | W2 | #RS-02 | #RS-01's RD-1 line on the tracker; #1504, #1471, #1507 merged |
 | W3 | #RS-03, #1520 | #RS-02 and #1505 merged; #1507 merged |
 | W4 | #RS-06 | #RS-03, #RS-04, #1521 merged; OQ-5 names the testbed |
 
-**Critical path:** #1502 → #RS-00 → #RS-01 → #RS-02 (also behind #1504, #1471, #1507) → #RS-03 (also behind #1505) → #RS-06. Six merges in this graph, four of them also gated on consolidation and fundamentals nodes.
+**Critical path:** #1502 → #RS-00 → #RS-01 → #RS-02 (also behind #1504, #1471, #1507) → #RS-03 (also behind #1505) → #RS-06. Six merges in this graph, four of them also gated on consolidation and fundamentals nodes. **What lands early:** only #RS-01, #RS-05 and #1521 (W0). The cost line, the AC table and the Read-first comment all sit behind #1507, which sits behind consolidation's launch gate (#1370, 2.20.0).
 
 **Clusters (serialize, §8):** log: #RS-04 → #RS-02 → #RS-03 (`log-writer.ts`, `run-log-schema.ts`, `commands/logs.ts`; optional fields only, one block per node, after #1504's and #1505's). renderer: #RS-04 → #RS-03 (`run-renderer-types.ts`, renderer implementations; one optional field per node).
 

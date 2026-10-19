@@ -27,8 +27,8 @@ Target shape, one line per AC, in the summary:
 - [ ] AC-2: `sequant status` has an `ACs` column. Evidence: `npx vitest run src/commands/status.acs.test.ts` → `≥ 2 passed, 0 failed` (a tracked issue with 3 of 5 met shows `3/5`; one with no record shows `—`)
 - [ ] AC-3: `sequant logs <run>` prints the block. Evidence: `npx vitest run src/commands/logs.acs.test.ts` → `≥ 2 passed, 0 failed` (a run-log fixture with `acs[]` prints the lines; one without prints nothing extra)
 - AC-3 is classified as a gate test by `isGateTestEvidence`; the PR body carries its `SEQUANT_MUTATION` record (remove `acs[]` from the run-log fixture → the "prints the lines" case fails; restore).
-- [ ] AC-4: The built CLI shows the column. Evidence: `npm run build > /dev/null 2>&1 && node dist/bin/cli.js status 2>/dev/null | grep -c 'ACs'` → `≥ 1`
-- [ ] AC-5: No renderer parses prose (I-2). Evidence: `grep -rlE 'MET\|NOT_MET|\(MET\|' src/lib/cli-ui src/commands | grep -v test | wc -l | tr -d ' '` → `0`
+- [ ] AC-4: The docs describe the column and the lines. Evidence: `grep -c 'ACs' docs/reference/state-command.md` → `≥ 1` and `grep -cE 'AC-1 met' docs/reference/run-command.md` → `≥ 1`
+- [ ] AC-5: No renderer imports the parser (I-2; constraint: holds today, binding on every later PR). Evidence: `grep -rl 'ac-status' src/lib/cli-ui src/commands | grep -v test | wc -l | tr -d ' '` → `0`
 - [ ] AC-6: No skill directory is touched. Evidence: `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0` (constraint)
 
 ## Prior fixes / producers
@@ -38,7 +38,7 @@ Target shape, one line per AC, in the summary:
 
 ## May touch
 
-`src/lib/cli-ui/run-renderer-types.ts` (optional `acs` on `IssueSummary`), the renderer implementations, `src/commands/status.ts`, `src/commands/logs.ts` (one block, after #1505's), their tests, `docs/reference/run-command.md` and `state-command.md` (one paragraph each), CHANGELOG.
+`src/lib/cli-ui/run-renderer-types.ts` (optional `acs` on `IssueSummary`), the renderer implementations, `src/commands/run-display.ts` and `toIssueSummary` in `batch-executor.ts` (after #1507, via RS-02's edge), `src/commands/status.ts`, `src/commands/logs.ts` (one block, after #1505's), their tests, `docs/reference/run-command.md` and `state-command.md` (one paragraph each), CHANGELOG.
 
 ## Non-Goals
 

@@ -20,7 +20,7 @@ The hook lives in a new sibling module called from one line, because `phase-exec
 - [ ] AC-2: The state record is written through the existing updater against a real temp state file. Evidence: `npx vitest run src/lib/workflow/ac-status.integration.test.ts` → `≥ 3 passed, 0 failed` (real `StateManager` on a temp dir, no fs mock; after a QA phase result, `getAcceptanceCriteria(issue).items` carry the parsed statuses and evidence; an AC in the comment but not in the issue is ignored and counted; a `chmod 0444` state file makes the write fail and `suppressed.byScope.state` increments)
 - [ ] AC-3: The updater has a caller. Evidence: `grep -rn 'updateACStatus(' src --include='*.ts' | grep -v test | grep -vc 'state-manager.ts'` → `≥ 1`
 - [ ] AC-4: The run log carries `acs[]` as an optional field and the schema version is unchanged. Evidence: `grep -c 'acs' src/lib/workflow/run-log-schema.ts` → `≥ 1` and `grep -c 'version: z.literal(1)' src/lib/workflow/run-log-schema.ts` → `1`
-- [ ] AC-5: Renderers do not re-parse prose (I-2). Evidence: `grep -rlE 'MET\|NOT_MET|\(MET\|' src/lib/cli-ui src/commands | grep -v test | wc -l | tr -d ' '` → `0`
+- [ ] AC-5: Renderers do not import the parser (I-2; constraint: holds today, binding on every later PR). Evidence: `grep -rl 'ac-status' src/lib/cli-ui src/commands | grep -v test | wc -l | tr -d ' '` → `0`
 - [ ] AC-6: No test lines are added beyond the two files above and no skill directory is touched. Evidence: `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0` (constraint)
 
 ## Prior fixes / producers
