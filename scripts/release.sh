@@ -60,8 +60,9 @@ npm run lint
 # Update CHANGELOG
 echo "📝 Updating CHANGELOG.md..."
 if grep -q "## \[Unreleased\]" CHANGELOG.md; then
-  # macOS sed syntax
-  sed -i '' "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $DATE/" CHANGELOG.md
+  # Fragments in changelog.d/ become the version section (#1351); also carries
+  # any bullets still under [Unreleased]. Exits non-zero on a malformed fragment.
+  npm run --silent changelog:collate -- "$VERSION" --date "$DATE"
 
   # Update comparison links at bottom
   if grep -q "\[Unreleased\]:.*compare" CHANGELOG.md; then

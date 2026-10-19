@@ -1,0 +1,3 @@
+kind: Changed
+
+**Each PR adds a changelog fragment instead of editing `## [Unreleased]` (#1351).** 121 of 192 `main` commits since 2026-09-01 touched `CHANGELOG.md`, so every squash-merge made the next PR conflict. A PR now adds `changelog.d/<issue>-<slug>.md` (`kind: Added|Changed|Fixed|Removed|Security`, then the entry). `npm run changelog:collate -- <version>` (used by `/release` and `scripts/release.sh`) builds the version section grouped by kind, carries over any entries still under `[Unreleased]`, and deletes the fragments; a malformed fragment exits non-zero and changes nothing. `/exec` writes the fragment and `/qa` accepts it as the changelog entry. The existing `[Unreleased]` entries were migrated to fragments. See ADR-0011 and `changelog.d/README.md`.
