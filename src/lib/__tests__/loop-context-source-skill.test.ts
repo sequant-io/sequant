@@ -15,9 +15,10 @@
  * sentinel pair (see `PROMPT_CONTEXT_SENTINEL`,
  * `src/lib/workflow/phase-executor.ts`, and its own unit tests in
  * `phase-executor.test.ts`), and Step 1A checks for that sentinel in its own
- * invocation before ever fetching from GitHub. This is prose with no runtime
- * twin on the skill side — the skill text is what an agent reads and acts
- * on — so these tests assert the skill text itself.
+ * invocation before ever fetching from GitHub. The sentinel check is prose,
+ * so those tests assert the skill text; the fallback fetch is a command, so
+ * its fence runs against a stub `gh` that applies the `-q` filter with real
+ * `jq`, as gh does (#1512).
  *
  * Per CLAUDE.md, file-reading gate tests are scoped to the delimited region
  * they mean to check — matching the whole SKILL.md would let an unrelated
@@ -31,12 +32,19 @@
  * partial edit fails here too.
  */
 
+import { spawnSync } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { PROMPT_CONTEXT_SENTINEL } from "../workflow/phase-executor.js";
 import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
+import {
+  fill,
+  skillEnv,
+  skillFence,
+} from "../../../__tests__/helpers/skill-fence.js";
 
 /**
  * Sentinel markers as the runtime actually emits them (`getPhasePrompt`).
@@ -163,13 +171,10 @@ describe("AC-1: Step 1A checks embedded promptContext before fetching GitHub", (
   );
 
   it.each(SKILL_ROOTS)(
-    "%s — the fetch fallback is gated on the sentinel being absent, and still contains the fetch",
+    "%s — the fetch fallback is gated on the sentinel being absent",
     (root) => {
       const span = step1ASpan(root);
       expect(span).toMatch(/Only when the sentinel is absent/i);
-      expect(span).toMatch(
-        /gh issue view "\$ISSUE_NUMBER" --json comments -q '\.comments\[\] \| select\(\.body \| startswith\("## QA Review for Issue"\)\)/,
-      );
     },
   );
 
@@ -224,4 +229,66 @@ describe("AC-3: standalone Step 1B is unaffected by the #960 fix", () => {
       expect(section).not.toMatch(/gh issue view/);
     },
   );
+});
+
+describe("Step 1A fallback fetch picks the latest QA Review comment", () => {
+  // A stub `gh` that records its arguments and applies the `-q` filter with
+  // jq to a fixture `--json comments` payload, as gh itself does.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-loop-gh-"));
+  const comments = path.join(bin, "comments.json");
+  const argsFile = path.join(bin, "args");
+  fs.writeFileSync(
+    path.join(bin, "gh"),
+    [
+      "#!/bin/bash",
+      `printf '%s ' "$@" > "${argsFile}"`,
+      'while [ $# -gt 0 ]; do [ "$1" = "-q" ] && q="$2"; shift; done',
+      `jq -r "$q" "${comments}"`,
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(
+    comments,
+    JSON.stringify({
+      comments: [
+        { body: "## QA Review for Issue #5 (first pass)" },
+        { body: "The ## QA Review for Issue header is what QA posts" },
+        { body: "## QA Review for Issue #5 (latest)" },
+        { body: "Unrelated comment" },
+      ],
+    }),
+  );
+  afterAll(() => fs.rmSync(bin, { recursive: true, force: true }));
+
+  function runFallback(orchestrator: string) {
+    fs.rmSync(argsFile, { force: true });
+    const fence = skillFence("loop", {
+      region: "step-1a-context-source (#960)",
+      contains: "gh issue view",
+    });
+    const env = skillEnv({
+      SEQUANT_ORCHESTRATOR: orchestrator,
+      SEQUANT_ISSUE: "5",
+    });
+    env.PATH = `${bin}:${env.PATH}`;
+    return spawnSync("bash", ["-c", fill(fence, { "<issue-number>": "999" })], {
+      encoding: "utf-8",
+      env,
+    });
+  }
+
+  it("orchestrated: fetches SEQUANT_ISSUE and prints the latest comment that starts with the header", () => {
+    const result = runFallback("sequant-run");
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.readFileSync(argsFile, "utf-8")).toMatch(/^issue view 5 /);
+    expect(result.stdout.trim().split("\n").pop()).toBe(
+      "## QA Review for Issue #5 (latest)",
+    );
+  });
+
+  it("standalone: does not fetch from GitHub", () => {
+    const result = runFallback("");
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.existsSync(argsFile)).toBe(false);
+  });
 });
