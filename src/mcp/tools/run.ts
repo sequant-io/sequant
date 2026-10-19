@@ -24,6 +24,7 @@ import type { RunLog, GapFinding } from "../../lib/workflow/run-log-schema.js";
 import { latestPhaseResult } from "../../lib/workflow/latest-phase.js";
 import { registerRun, unregisterRun } from "../run-registry.js";
 import { DEFAULT_FORCE_EXIT_TIMEOUT_MS } from "../../lib/shutdown.js";
+import { killProcessGroup } from "../../lib/process-group.js";
 
 /** Maximum total response size in bytes (64 KB) */
 const MAX_RESPONSE_SIZE = 64 * 1024;
@@ -974,7 +975,7 @@ export function spawnAsync(
       const remaining = Math.min(options.timeout, maxTotal - elapsed);
       if (remaining <= 0) {
         // Already exceeded max total — kill immediately
-        killProcessGroup(proc);
+        killProcessGroup(proc, { graceMs: SIGKILL_GRACE_MS });
         const msg = options.onProgress
           ? `Process timed out: total elapsed ${elapsed}ms exceeded ceiling of ${maxTotal}ms`
           : `Process timed out after ${maxTotal}ms`;
@@ -982,7 +983,7 @@ export function spawnAsync(
         return setTimeout(() => {}, 0); // dummy handle
       }
       return setTimeout(() => {
-        killProcessGroup(proc);
+        killProcessGroup(proc, { graceMs: SIGKILL_GRACE_MS });
         const msg = options.onProgress
           ? `Process timed out: no progress for ${options.timeout}ms (total elapsed: ${Date.now() - runStart}ms)`
           : `Process timed out after ${options.timeout}ms`;
@@ -1013,13 +1014,13 @@ export function spawnAsync(
       : undefined;
 
     const onAbort = () => {
-      killProcessGroup(proc);
+      killProcessGroup(proc, { graceMs: SIGKILL_GRACE_MS });
       settle({ ok: false, error: new Error("Cancelled by client") });
     };
 
     if (options.signal) {
       if (options.signal.aborted) {
-        killProcessGroup(proc);
+        killProcessGroup(proc, { graceMs: SIGKILL_GRACE_MS });
         clearTimeout(timeoutId);
         reject(new Error("Cancelled by client"));
         return;
@@ -1072,34 +1073,3 @@ export function spawnAsync(
  * ever ran.
  */
 export const SIGKILL_GRACE_MS = DEFAULT_FORCE_EXIT_TIMEOUT_MS + 1000;
-
-function killProcessGroup(proc: ReturnType<typeof spawn>): void {
-  let exited = false;
-  proc.on("close", () => {
-    exited = true;
-  });
-
-  sendSignal(proc, "SIGTERM");
-
-  setTimeout(() => {
-    if (!exited) {
-      sendSignal(proc, "SIGKILL");
-    }
-  }, SIGKILL_GRACE_MS).unref();
-}
-
-function sendSignal(
-  proc: ReturnType<typeof spawn>,
-  signal: NodeJS.Signals,
-): void {
-  try {
-    if (proc.pid) {
-      process.kill(-proc.pid, signal);
-    }
-  } catch {
-    // Process group may already be gone — fall back to direct kill
-    if (!proc.killed) {
-      proc.kill(signal);
-    }
-  }
-}
