@@ -607,8 +607,8 @@ export async function locksCheckBatchCommand(
 ): Promise<void> {
   const issues: number[] = [];
   for (const arg of issueArgs) {
-    const issue = Number.parseInt(arg, 10);
-    if (!Number.isInteger(issue) || issue <= 0) {
+    const issue = parseIssueNumber(arg);
+    if (issue === null) {
       console.error(chalk.red(`Invalid issue number: ${arg}`));
       process.exitCode = 2;
       return;
