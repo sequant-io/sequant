@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-19T16:45:28.817Z",
-  "commit": "09cd6a8ec5dc6102ff02cbaf463a6759545d1c15",
+  "generatedAt": "2026-10-19T18:00:05.147Z",
+  "commit": "070a189687d60e36a0e16c65af9550b7371cf894",
   "functions": {
     "over400": 4,
     "over200": 12,
     "longest": {
       "file": "src/lib/workflow/batch-executor.ts",
       "name": "runIssueWithLogging",
-      "lines": 1049
+      "lines": 1050
     }
   },
   "emptyCatch": {
@@ -66,9 +66,9 @@
     "lines": 30693
   },
   "testRatio28d": {
-    "sum": 2.26,
-    "median": 2.18,
-    "commits": 165
+    "sum": 2.24,
+    "median": 2.11,
+    "commits": 169
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
@@ -77,5 +77,6 @@
     "skillFiles": 19,
     "memoryFiles": null
   },
-  "adrWithoutActor": 11
+  "adrWithoutActor": 11,
+  "unusedExports": 342
 }
