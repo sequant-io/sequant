@@ -256,6 +256,7 @@ describe("templates", () => {
         // `merge` rule that describes it untested.
         "init.ts#writeOpencodeMcpConfig#configPath": ".opencode/opencode.json",
         "init.ts#writeCodexConfig#configPath": ".codex/config.toml",
+        "init.ts#writeIssueFormIfAbsent#formPath": ".github/ISSUE_TEMPLATE/",
         'init.ts#initCommand#".sequant/settings.reference.md"':
           ".sequant/settings.reference.md",
         // Rewrite installed skills in place — `templates/skills/` route

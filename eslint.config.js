@@ -26,10 +26,6 @@ export default tseslint.config(
           message: "Use ES module imports instead of require() in ESM modules",
         },
       ],
-      // Temporarily relaxed rules for gradual adoption
-      "@typescript-eslint/no-unused-vars": "warn",
-      "@typescript-eslint/no-empty-object-type": "warn",
-      "prefer-const": "warn",
     },
   },
   // #647 AC-3: forbid raw stdout writes in `phase-executor.ts`. Every

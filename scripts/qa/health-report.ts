@@ -25,7 +25,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { Linter } from "eslint";
 import tseslint from "typescript-eslint";
@@ -56,6 +56,7 @@ export interface HealthMetrics {
     memoryFiles: number | null;
   };
   adrWithoutActor: number;
+  unusedExports: number;
 }
 
 const SKIP_DIRS = new Set([
@@ -198,6 +199,25 @@ function testRatio(root: string): HealthMetrics["testRatio28d"] {
   return { sum: round(sumSrc === 0 ? 0 : sumTest / sumSrc), median: round(median), commits };
 }
 
+/** Sum the unused `exports` and `types` entries in `knip --reporter json` output. */
+export function countUnusedExports(knipJson: string): number {
+  const parsed = JSON.parse(knipJson) as { issues?: { exports?: unknown[]; types?: unknown[] }[] };
+  if (!Array.isArray(parsed.issues)) throw new Error("knip output has no issues array");
+  return parsed.issues.reduce((n, i) => n + (i.exports?.length ?? 0) + (i.types?.length ?? 0), 0);
+}
+
+/** 0 in a tree with no knip.json. knip exits non-zero on findings, so read stdout, not the status. */
+function unusedExports(root: string): number {
+  if (!fs.existsSync(path.join(root, "knip.json"))) return 0;
+  const r = spawnSync("npx", ["--no-install", "knip", "--reporter", "json", "--no-progress"], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  if (r.error || !r.stdout) throw new Error(`knip did not run: ${r.error?.message ?? r.stderr}`);
+  return countUnusedExports(r.stdout);
+}
+
 function commitOf(root: string): string | null {
   try {
     return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
@@ -278,6 +298,7 @@ export function collectMetrics(root: string, env: NodeJS.ProcessEnv = process.en
       memoryFiles,
     },
     adrWithoutActor,
+    unusedExports: unusedExports(root),
   };
 }
 

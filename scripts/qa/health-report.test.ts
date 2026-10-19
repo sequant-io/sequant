@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { run, collectMetrics, compare } from "./health-report.js";
+import { run, collectMetrics, compare, countUnusedExports } from "./health-report.js";
 
 // Real files in a temp tree, no fs mock. ESLint and the TS parser load on the
 // first call, so each case sets its own timeout (the unit project defaults to 5s).
@@ -35,7 +35,20 @@ describe("health-report --check ratchet", () => {
     expect(m.emptyCatch.byFile).toEqual({ "src/b.ts": 1 });
     expect(m.adrWithoutActor).toBe(0);
     expect(m.harness.memoryFiles).toBeNull();
+    expect(m.unusedExports).toBe(0);
   }, T);
+
+  it("counts unused exports and types from knip JSON", () => {
+    const issue = (exports: number, types: number): object => ({
+      file: "src/x.ts",
+      exports: Array.from({ length: exports }, (_, i) => ({ name: `e${i}` })),
+      types: Array.from({ length: types }, (_, i) => ({ name: `t${i}` })),
+      files: [{ name: "src/y.ts" }],
+    });
+    expect(countUnusedExports(JSON.stringify({ issues: [issue(2, 1), issue(0, 3)] }))).toBe(6);
+    expect(countUnusedExports(JSON.stringify({ issues: [] }))).toBe(0);
+    expect(() => countUnusedExports("{}")).toThrow();
+  });
 
   it("exits 0 when the baseline equals the tree", () => {
     run(args("--write-baseline"), root);
