@@ -10,6 +10,9 @@
  * - AC-6: iteration + token-budget caps halt cleanly.
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // #863 AC-3 drives the REAL `executePhaseWithRetry` so driver selection is
@@ -38,6 +41,19 @@ import { DEFAULT_CONFIG } from "./types.js";
 import { executePhaseWithRetry } from "./phase-executor.js";
 import { getDriver } from "./drivers/index.js";
 import type { AgentDriver } from "./drivers/agent-driver.js";
+
+// Verbatim GitHub issue bodies (#1474), shared with scope.test.ts.
+const readNonGoalsFixture = (issue: number): string =>
+  readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "__fixtures__",
+      "non-goals",
+      `issue-${issue}.md`,
+    ),
+    "utf8",
+  );
 import { buildExecutionConfig, resolveRunOptions } from "./config-resolver.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
 import type { SequantSettings } from "../settings.js";
@@ -181,6 +197,57 @@ describe("parseNonGoals (AC-3a)", () => {
   it("recognizes 'Out of scope' heading variants", () => {
     const body = "### Out of scope\n- Reverse resolution support\n";
     expect(parseNonGoals(body)).toEqual(["Reverse resolution support"]);
+  });
+
+  // #1474 AC-2: the scope analyzer's fixture (#947) — before the shared
+  // scanner, the gate read the fenced example as a Non-Goal.
+  it("fenced Non-Goals example is not a Non-Goal", () => {
+    const body = [
+      "## Non-Goals",
+      "",
+      "- [ ] Backend API changes",
+      "",
+      "```markdown",
+      "- [ ] This is just an example of non-goal syntax, not a real item",
+      "```",
+      "",
+      "- [ ] Database migrations",
+    ].join("\n");
+    expect(parseNonGoals(body)).toEqual([
+      "Backend API changes",
+      "Database migrations",
+    ]);
+  });
+
+  // #1474 AC-3: verbatim issue bodies, the cases the old analyzer lost.
+  it("#971: trailing text after 'Out of scope' opens the section", () => {
+    const items = parseNonGoals(readNonGoalsFixture(971));
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatch(/^Pre-escalation divergence probe/);
+    expect(items[2]).toMatch(/^Speculative downgrades/);
+  });
+
+  it("#763: a ### 'Out of scope / follow-ups' heading opens the section", () => {
+    const items = parseNonGoals(readNonGoalsFixture(763));
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatch(/^In-workspace destruction/);
+  });
+
+  it("#1246: an item starting with '#' is kept", () => {
+    const items = parseNonGoals(readNonGoalsFixture(1246));
+    expect(items).toHaveLength(3);
+    expect(items[2]).toMatch(/^#1297 \(exec summary/);
+  });
+
+  it("#1228: two Non-Goals sections are unioned", () => {
+    const items = parseNonGoals(readNonGoalsFixture(1228));
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatch(
+      /^Relaxing the guard\. Blocking a genuinely destructive reset --hard/,
+    );
+    expect(items[2]).toMatch(
+      /^Relaxing the guard\. Blocking a genuinely destructive reset is/,
+    );
   });
 });
 

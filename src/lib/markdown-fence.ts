@@ -5,8 +5,8 @@
  * looking for patterns (checkbox items, `## Non-Goals` bullets). Without
  * fence awareness, a markdown-authoring example quoted inside a fence
  * — showing what the pattern syntax looks like — gets scanned as if it
- * were real content. See #947 (ac-parser.ts) and its sibling in
- * scope/analyzer.ts's `parseNonGoals`.
+ * were real content. See #947 (ac-parser.ts) and its sibling, the shared
+ * Non-Goals scanner in non-goals.ts (#1474).
  */
 
 /** Matches a fenced-code-block delimiter line (` ``` ` or `~~~`, 3+ repeats). */
