@@ -12,6 +12,7 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { createPhaseLogFromTiming, LogWriter } from "./log-writer.js";
 import { latestPhaseResult, latestWhere } from "./latest-phase.js";
+import { attributionFromPhases } from "./qa-verdict-attribution.js";
 import {
   Phase,
   ExecutionConfig,
@@ -888,6 +889,7 @@ export function buildQaVerdictComment(
   summary: QaSummary | undefined,
   commitHash: string | undefined,
   iteration: number,
+  attribution?: string,
 ): string {
   const lines: string[] = [`## QA Verdict: ${verdict}`];
   if (summary) {
@@ -951,6 +953,9 @@ export function buildQaVerdictComment(
       iteration,
     })} -->`,
   );
+  // #1521: the visible last line names the reviewer; the machine marker stays
+  // above it (consumers match it by regex, not by position).
+  if (attribution) lines.push("", attribution);
   return lines.join("\n");
 }
 
@@ -976,9 +981,16 @@ export async function postQaVerdictComment(
     n,
     body,
   ) => new GitHubProvider().postComment(String(n), body),
+  attribution?: string,
 ): Promise<void> {
   try {
-    const body = buildQaVerdictComment(verdict, summary, commitHash, iteration);
+    const body = buildQaVerdictComment(
+      verdict,
+      summary,
+      commitHash,
+      iteration,
+      attribution,
+    );
     await postComment(issueNumber, body);
   } catch (err) {
     log(`    !  Failed to post QA verdict comment: ${err}`);
@@ -2109,6 +2121,7 @@ export async function runIssueWithLogging(
           iteration,
           warn,
           injectedPostComment,
+          attributionFromPhases(phaseResults, dispatchConfig),
         );
       }
 
