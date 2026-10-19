@@ -160,7 +160,7 @@ function emptyCatches(root: string, files: string[]): HealthMetrics["emptyCatch"
 }
 
 function testRatio(root: string): HealthMetrics["testRatio28d"] {
-  let log = "";
+  let log: string;
   try {
     log = execFileSync(
       "git",

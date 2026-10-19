@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-19T16:44:44.417Z",
-  "commit": "8d1895c3665f2c22c2f35aaffb2921d8856719a4",
+  "generatedAt": "2026-10-19T16:45:28.817Z",
+  "commit": "09cd6a8ec5dc6102ff02cbaf463a6759545d1c15",
   "functions": {
     "over400": 4,
     "over200": 12,
@@ -66,9 +66,9 @@
     "lines": 30693
   },
   "testRatio28d": {
-    "sum": 2.36,
-    "median": 2.25,
-    "commits": 164
+    "sum": 2.26,
+    "median": 2.18,
+    "commits": 165
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
