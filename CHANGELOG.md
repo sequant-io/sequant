@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`new-feature.sh` reuses the issue's local branch when no worktree has it (#1491).** It printed advice (one option was `git branch -D`) and exited 1, while `ensureWorktree` checks the branch out as is. It now runs `git worktree add <path> <branch>` with no fetch or reset, like the TS side, and keeps a recorded `sequantBase`. The existing-worktree lookup matches the branch exactly, so `feature/7-x` no longer matches `feature/7-xy`.
+
 ### Changed
 
 - **`update` refuses on a skills-only install (#1482).** It read no install scope, so it wrote hooks, agents and `settings.json` over an install that chose skills only. On a partial scope it now writes nothing, exits non-zero and names `sequant sync --only skills`. Full installs are unchanged. ADR-0015 amended.
