@@ -43,3 +43,88 @@ after the totals as an over-count in the metric.
 files were split into 4 batches balanced by line count and each batch was read
 by a separate agent that had only this rubric. A fresh agent then re-classified
 8 rows blind (see Re-read).
+
+## Table
+
+Sorted by path. Line references are to the test file at `ec9d583b4`.
+
+| Path | Class | Command, contract or phrases |
+|------|-------|------------------------------|
+| __tests__/integration/behavior-rule-qa-wiring.integration.test.ts | execute | Runs a hand-written snippet, not the skill's: extract the §6e `QA_AC_TEXT=... npx tsx -e` block from qa/SKILL.md and run it on the fixture. Prose reads today are ~7 checksum regexes (heading, findSurvivingInverseSymbols, env vars) at :52-75. |
+| __tests__/integration/behavior-rule-spec-wiring.integration.test.ts | execute | Runs a hand-copied findTouchpoints snippet (:104-140): extract the spec skill's `SPEC_AC_TEXT=... npx tsx -e` block and run it instead. Prose reads today are ~8 checksum phrases (findTouchpoints, SPEC_AC_ID, Rule Touchpoints) at :38-58. |
+| __tests__/integration/in-place-checkout-skill.integration.test.ts | keep | Already behaviour: extracts the in-place region's bash block, runs it with `bash -c` in a scratch clone and judges it with resolveIssueWorktree and verifyWorktreePath (:216, :238). Also ~15 checksum phrases (:260, :465). |
+| __tests__/integration/qa-markdown-only-ci-snippet.integration.test.ts | execute | Runs a verbatim copy of the snippet: extract the `SEQUANT_QA_RELAX_FILES=... npx tsx -e` block from qa/SKILL.md and run that (:22, :46). Prose reads today are 6 checksum names (env vars, detectMarkdownOnlyDiff) at :116-121. |
+| __tests__/integration/worktree-contract-skill.integration.test.ts | execute | Extract the guard block and run `npx sequant worktree verify <missing-or-foreign-path> --issue N` expecting exit 1 (:136, :148). Also ~20 checksum phrases (new-feature.sh at :98, SEQUANT_WORKTREE_* codes) and regex sweeps for glob offenders. |
+| scripts/affected-tests-skill.test.ts | keep | Already behaviour: extracts the documented `grep -rlF "<changed path>"` and `grep -rlw SKILL_ROOTS` commands and runs them with execSync (:44, :51, :69); checks the `Evidence:` line (:37). Also ~6 checksum phrases (vitest list, --shard=1/3). |
+| scripts/check-constitution-dod.test.ts | keep | Runs generateDodTable and parseStep4Branches on the real qa SKILL.md and asserts the constitution DoD region equals the output (:67, :91, :132-150). Also ~3 checksum: the spec cross-link phrase per copy (:184). |
+| scripts/check-skill-sync.test.ts | keep | not a prose gate: SKILL.md is a temp fixture file name passed to collectFiles (:27-78). |
+| scripts/exec-skill-marker.test.ts | keep | SEQUANT_MUTATION contract: runs parseMutationMarkers on the example marker taken from exec SKILL.md "Recording the mutation result" and asserts it is valid (:42-45). Also 3 checksum phrases (:29-31). |
+| scripts/lint-skill-calls.test.ts | keep | not a prose gate: SKILL.md files are temp fixtures for the lintSkillCalls parser (:112-147). |
+| scripts/lint-skill-gates.test.ts | keep | lint:skill-gates: runs parseVerdictAlgorithm, parseSections and parseEvidenceAcPattern on the real qa/SKILL.md (:76, :132, :462, :477, :509). Also ~2 checksum phrases in §2h (:488-489). |
+| scripts/preexisting-claim-gate.test.ts | keep | lint:skill-gates grammar: the §7 token line `settle_evidence_status = ... Section 2a` and its Unbacked branch (:117-129). Also ~12 checksum phrases (settle-against-base.sh, "reverted first and debugged second") at :166. |
+| scripts/spec/ground-check.test.ts | keep | not a prose gate: qa/SKILL.md is an index and citation path string for candidatePaths, resolvePath and extractCitations (:64, :123, :234, :256). |
+| src/commands/__tests__/locks-cli.integration.test.ts | keep | not a prose gate: SKILL.md is only in the header comment (:5); the tests spawn the CLI and assert exit codes and JSON. |
+| src/commands/doctor.test.ts | keep | not a prose gate: exec/SKILL.md is a mocked getSkillsCommitState path (:410); assertions read doctor output (:416). |
+| src/commands/init.codex.integration.test.ts | keep | not a prose gate: SKILL.md is an existsSync install check (:218); assertions read the generated config.toml (:151-154). |
+| src/commands/init.next-steps-1387.test.ts | keep | not a prose gate: SKILL.md is a stub fixture and a path argument (:47, :77); assertions read buildNextSteps output. |
+| src/commands/serve.integration.test.ts | keep | not a prose gate: a fixture qa SKILL.md in a temp project (:42); assertions read stale-install stderr (:121-138). |
+| src/commands/sync-source-invocation.integration.test.ts | keep | not a prose gate: SKILL.md is a sync-target path checked with fileExists (:119); assertions read CLI output (:132, :147). |
+| src/commands/sync.install-scope.integration.test.ts | keep | not a prose gate: edits a real SKILL.md to cause drift (:140-152), then asserts areSkillsOutdated, runVersionPreflight and runSyncRemedy behaviour. |
+| src/commands/sync.test.ts | keep | not a prose gate: SKILL.md appears as mocked manifest paths and dry-run output (:197, :793); readFile is mocked. |
+| src/commands/update.integration.test.ts | keep | not a prose gate: a demo SKILL.md fixture template written by the test (:115, :148). |
+| src/commands/update.test.ts | keep | not a prose gate: SKILL.md paths are mocked manifest entries (:90, :133). |
+| src/commands/version-preflight.test.ts | keep | not a prose gate: a fixture `# custom qa` SKILL.md in a temp root (:33); asserts preflight leaves it untouched. |
+| src/lib/__tests__/adr-convention.test.ts | checksum | spec/SKILL.md Design Review span: "when the recommended plan chooses between designs", "exec PR to include an ADR in docs/adr/" (:94-97). The ADR checks on docs are not skill prose. |
+| src/lib/__tests__/assess-collision-detect.test.ts | keep | not a prose gate: SKILL.md paths sit in issue-body fixtures for extractPathsFromIssueBody (:246-255). |
+| src/lib/__tests__/assess-skill.test.ts | execute | Already checks phases and flags against getPhaseNames() and the bin/cli.ts options (:50, :120, :133); the extracted example lines could run as `sequant run <N> --dry-run ...`. Also 1 mirror-identity check. |
+| src/lib/__tests__/evidence-clause-skill.test.ts | checksum | "### 6h. Declared-Evidence Execution", "execute the exact backtick-quoted command", AC.evidence, declared_evidence_status pseudo-code and checklist lines (:53, :64, :73, :92, :104). Does not run the Evidence: parser. |
+| src/lib/__tests__/exec-orchestrated-no-pr-skill.test.ts | keep | SEQUANT_MUTATION contract: buildAutomatedPRBody and parseMutationMarkers back the "markers inside the final ## Summary" claim (:81-95). Also ~9 checksum phrases (no gh pr create, --no-pr) at :59-76. |
+| src/lib/__tests__/exec-pr-body-edit-skill.test.ts | checksum | "Do not change the PR's body or title by any means", "no gh pr edit", "no MCP tool", "put it in your final ## Summary" (:42-46), plus the qa §6i pointer line. |
+| src/lib/__tests__/exec-skill-foreground-rule.test.ts | execute | §3 names `perl -e 'alarm shift; exec @ARGV' 600 <command>`: extract it and run it with a 1-second alarm on `sleep 5` to confirm the kill (:38). Also ~7 checksum phrases (foreground, coreutils, "exactly once per phase") at :32-49. |
+| src/lib/__tests__/fullsolve-checkout-lock-skill.test.ts | execute | Extracts the bash fences but only counts sites by regex (:166, :197, :240): run the extracted `npx sequant locks checkout acquire --issue=<N> --skip-pid-check` and the matching release against a temp repo. Also ~20 checksum phrases in §0.3 (:76-130). |
+| src/lib/__tests__/fullsolve-merge-gate-skill.test.ts | keep | allowed-tools frontmatter that Claude Code's permission system parses: no `Bash(gh pr merge:*)`, create and list kept (:142, :154-155). Also ~20 checksum phrases (--auto-merge, run.autoMerge, STOP before the merge) at :165-292. |
+| src/lib/__tests__/improve-tech-debt-scoring-skill.test.ts | checksum | 6 category rows, "Score = (Impact + Risk) × (6 − Effort)", the tech-debt-scoring.md link, "Sort rows by Score, highest first", the I/R/E Score header (:63-88). |
+| src/lib/__tests__/loop-context-source-skill.test.ts | execute | Step 1A names a jq filter: run the extracted `jq '.comments[]'` select on startswith("## QA Review for Issue") against a sample comments JSON (:170). Also ~10 checksum phrases; the sentinel checks at :137 use the runtime constant. |
+| src/lib/__tests__/merger-checkout-lock-skill.test.ts | execute | Run the extracted `npx sequant locks checkout acquire --issue=N --skip-pid-check` and the release under a temp repo (:87, :158). Also ~8 checksum phrases ("first issue number" at :126, #906, SEQUANT_ORCHESTRATOR no-op). |
+| src/lib/__tests__/merger-named-set-boundary-skill.test.ts | checksum | "halt", "named set", "#958", "Named-Set Boundary" in the boundary region and the Dependency and Stacked PR sections (:88-90, :101, :112). |
+| src/lib/__tests__/mutation-verification-skill.test.ts | keep | lint:skill-gates: calls lintSkillGates on the shipped skill and expects zero violations (:130). Also ~9 checksum assertions on §6i status words and §7 AC_NOT_MET branches (:37, :65). |
+| src/lib/__tests__/qa-followup-ledger-skill.test.ts | keep | lint:skill-gates parsers parseVerdictAlgorithm, parseTemplateSections and parseChecklists on each qa copy for followup_ledger_status (:77-80, :114-119). Also ~12 checksum ledger phrases (:95-107, :131). |
+| src/lib/__tests__/qa-oneshot-skill.test.ts | keep | The `### Verdict:` line that parseQaVerdict reads (phase-executor.ts:506-510), asserted at :69. Also ~6 checksum phrases ("later turn", "background poll", "never end"). |
+| src/lib/__tests__/qa-review-dimensions-skill.test.ts | checksum | The references/review-dimensions.md pointer in §2, checklist terms (xss, csrf, ssrf) present in the reference and absent from §2, "n+1" and "hardcoded secret" kept in §2 (:96, :117, :133-148). |
+| src/lib/__tests__/qa-sibling-scan-skill.test.ts | checksum | parseSections only scopes §5; the assertions are wording: "name the **defect class**", "Class searched: <class>", "mark the AC PENDING", "NEEDS_VERIFICATION via pending_count" (:78-123). |
+| src/lib/__tests__/qa-verdict-comment-skill.test.ts | checksum | §9 region: "### 9. Update GitHub Issue", "batch-executor.ts", "SEQUANT_QA_VERDICT", "#964", and the absence of "orchestrator handles aggregated summary" (:42, :51, :54). |
+| src/lib/__tests__/release-checkout-lock-skill.test.ts | execute | Step 0 fence: run the extracted `npx sequant locks checkout acquire --issue=999999999 --skip-pid-check` and the release sites against a temp lock dir (:57-58, :133). Also ~8 checksum phrases (sentinel, --label, SEQUANT_ORCHESTRATOR no-op) at :86-92, :162-163. |
+| src/lib/__tests__/release-plugin-validate-skill.test.ts | keep | Already behaviour: runs the extracted pre-flight bash fence through spawnSync bash -c with a stub claude and asserts exit status and call order (:132, :142). Also ~3 checksum phrases (manifest paths). |
+| src/lib/__tests__/release-skill-security-table.test.ts | execute | Step 4.67's verify block: run the extracted `grep -qE` supported-versions check for `${new_minor}.x` against a fixture SECURITY.md. Today it only matches SECURITY.md, Supported versions and new_minor (:30-32). |
+| src/lib/__tests__/release-skill-soak.test.ts | checksum | Order and wording: "npm publish --tag next" before the dist-tag latest line, "Soak checklist", "npx sequant@next sync --dry-run", "Without --soaked: refuse" (:50, :59, :68-71, :82). A publish cannot be run safely. |
+| src/lib/__tests__/security-docs.test.ts | keep | Citation resolver over the docs/THREAT-MODEL.md defenses table: reads each cited SKILL.md only to check that the § heading exists and cited tokens resolve (:224-246, :274-294). |
+| src/lib/__tests__/spec-design-review-skill.test.ts | keep | The SPEC_DIVERGENCE marker fields that parseSpecDivergence reads (:72). Also ~18 checksum phrases ("git log -S" at :50, "≥2 producers", constitution row). |
+| src/lib/__tests__/spec-skill-self-skip-marker.test.ts | keep | The SEQUANT_SPEC marker restatement that SPEC_MARKER_REGEX (spec-recommendation.ts:40) parses, asserted at :33. Also ~3 checksum phrases ("restate it", "verbatim"). |
+| src/lib/__tests__/testgen-skill.test.ts | checksum | "Sub-Agent Delegation for Stub Generation", subagent_type="sequant-testgen", "anthropics/claude-code#43869", "When to recommend testgen phase", "Skip testgen", "spec → testgen → exec → qa" (:31-150). |
+| src/lib/__tests__/testgen-testing-pyramid-skill.test.ts | checksum | Pyramid level names, component-type labels, "When the spec's verification section names no test level", the testing-pyramid.md link (:59, :78, :90, :93). |
+| src/lib/__tests__/trust-model-skill.test.ts | keep | lint:skill-gates grammar: the §7 step-2 token `trust_boundary_status = status from Section 6f`, the step-4 branch and the Simple Fix checklist entry (:145, :153). Also ~10 checksum phrases ("Trust-Boundary Check", trust-model.md pointer) at :74, :85. |
+| src/lib/__tests__/writer-state-matrix.test.ts | keep | not a prose gate: spec/SKILL.md is a fixture destination for the writer matrix (:171); byte comparisons at :1008 check sync behaviour. |
+| src/lib/ac-parser.test.ts | keep | not a prose gate: "SKILL.md" is a sample string for isGateTestEvidence (:1043); the file unit-tests the Evidence: grammar. |
+| src/lib/assess/renderer.test.ts | keep | not a prose gate: SKILL.md is only in the header comment (:7); assertions read renderer output. |
+| src/lib/assess/skill-examples.test.ts | keep | Production render() output must equal the assess SKILL.md worked examples byte for byte; RUN_COL and separator geometry in all three copies (:185, :202-230). |
+| src/lib/heuristics/__tests__/behavior-rule-detector.test.ts | keep | not a prose gate: SKILL.md is inside verbatim #533 AC text passed to findTouchpoints (:220); assertions check the production walker's hits. |
+| src/lib/locks/checkout-lock.test.ts | keep | not a prose gate: SKILL.md is in a code comment (:654); the assertion pins RELEASE_SENTINEL_ISSUE in code. |
+| src/lib/merge-check/merge-check-extended.test.ts | keep | not a prose gate: qa/SKILL.md is a filesModified fixture path and expected message text (:370, :394, :411). |
+| src/lib/merge-check/merge-check.test.ts | keep | not a prose gate: SKILL.md paths are filesModified fixtures and expected mirror-drift messages (:74-312). |
+| src/lib/skills-commit-state.integration.test.ts | keep | not a prose gate: fixture SKILL.md files in a temp repo (:26, :76); assertions read commit-state warnings (:95, :138). |
+| src/lib/stacks.no-npm-fallback-gate.test.ts | execute | "### 5. Detect Package Manager": run the extracted `[ -f "pnpm-lock.yaml" ]` chain in temp dirs seeded with each lockfile. Today it compares order to LOCKFILE_PRIORITY as text (:115). Also 1 checksum (:81). |
+| src/lib/templates.test.ts | keep | not a prose gate: SKILL.md is a fixture and destination path for ownershipPolicy, templateDestination and sync targets (:360, :589, :936, :1230). |
+| src/lib/verify-skill-guard.integration.test.ts | keep | Already behaviour: extracts the verify guard's bash block, checks allowed-tools pre-approves it, and runs it via sh -c with SEQUANT_PHASE (:72-90). Also ~4 checksum phrases (:58-61). |
+| src/lib/workflow/drivers/__tests__/driver-conformance.test.ts | keep | not a prose gate: SKILL.md is only in comments (:613, :773); assertions check driver options and the opencode ndjson fixture. |
+| src/lib/workflow/drivers/opencode.test.ts | keep | not a prose gate: SKILL.md is only in a comment (:542); assertions check parse and evaluateOpencodeRun on JSONL fixtures. |
+| src/lib/workflow/model-ladder.test.ts | keep | SEQUANT_PHASE contract: passes exec and loop SKILL.md's own SPEC_DIVERGENCE marker line to parsePhaseMarkers and parseSpecDivergence (:1264-1309). Also 2 checksum phrases (:1318-1319). |
+| src/lib/workflow/phase-executor.property.test.ts | keep | not a prose gate: SKILL.md is only in a comment (:122); property tests call parseQaSummary. |
+| src/lib/workflow/phase-executor.test.ts | keep | not a prose gate: SKILL.md is in an expected error string (:2709); no skill text is read. |
+| src/lib/workflow/qa-stagnation.test.ts | keep | not a prose gate: SKILL.md is only in a doc comment (:369); the test drives detectStagnation in a real worktree. |
+| src/lib/workflow/run-orchestrator.test.ts | keep | not a prose gate: stub `# s` SKILL.md fixtures so the skills pre-flight passes (:280, :489). |
+| src/lib/workflow/run-orchestrator.worktree-failure.test.ts | keep | not a prose gate: stub SKILL.md fixtures committed into a temp repo (:108); assertions cover worktree-failure behaviour. |
+| src/lib/workflow/run-skills-commit-warning.integration.test.ts | keep | not a prose gate: stub SKILL.md fixture (:60); assertions read orchestrator console output (:113). |
+| src/lib/workflow/skills-preflight.integration.test.ts | keep | not a prose gate: spec/SKILL.md is only in the expected abortReason message (:124). |
+| src/lib/workflow/skills-preflight.test.ts | keep | not a prose gate: SKILL.md is a `# name` fixture asserted only as a missing path in the preflight result (:374, :634). |
+
+**Totals:** execute 12, checksum 11, keep 53 (of which 34 not prose gates: `SKILL.md` appears only as a path, fixture, comment or message string)
