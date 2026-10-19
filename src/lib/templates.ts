@@ -339,6 +339,15 @@ const OWNERSHIP_RULES: readonly OwnershipRule[] = [
       "`writeCodexConfig` and refreshed wholesale (#1059).",
   },
   {
+    match: ".github/ISSUE_TEMPLATE/",
+    kind: "prefix",
+    policy: "user-owned",
+    reason:
+      "The issue form is written once, by `writeIssueFormIfAbsent`, and only " +
+      "when `.github/ISSUE_TEMPLATE/` does not exist. The project may edit it; " +
+      "sequant never rewrites it (#1528).",
+  },
+  {
     match: ".sequant/settings.reference.md",
     kind: "exact",
     policy: "sequant-owned",
@@ -407,6 +416,7 @@ export const NON_TEMPLATE_DESTINATIONS: readonly string[] = [
   ".opencode/opencode.json",
   ".opencode/",
   ".codex/config.toml",
+  ".github/ISSUE_TEMPLATE/",
 ];
 
 /**
@@ -537,6 +547,15 @@ const TEMPLATE_ROUTES: readonly TemplateRoute[] = [
       "Same reasoning as opencode above. `config.toml` renders to " +
       "`.codex/config.toml`, not `.claude/` — `init.ts`'s " +
       "`writeCodexProvisioning` is the one renderer (#1059).",
+  },
+  {
+    match: "templates/github/",
+    kind: "prefix",
+    destination: null,
+    reason:
+      "Renders to `.github/ISSUE_TEMPLATE/`, not `.claude/`, and only when " +
+      "that directory is absent — `init.ts`'s `writeIssueFormIfAbsent` is the " +
+      "one writer (#1528).",
   },
   {
     match: "templates/scripts/",
