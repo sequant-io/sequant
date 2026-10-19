@@ -191,6 +191,32 @@ async function recordReadyMetrics(
   }
 }
 
+/** Verbose-only: print the escalated effort and model rungs the gate spent. */
+function printEscalations(
+  result: ReadyResult,
+  verbose: boolean | undefined,
+): void {
+  // #915: surface any escalated qa/loop dispatches — the gate has no live
+  // print of its own (see `withEscalatedEffort` in `ready-gate.ts`).
+  if (verbose) {
+    for (const e of result.effortEscalations) {
+      console.log(
+        colors.muted(`  effort: ${e.base} → ${e.escalated} (${e.phase} retry)`),
+      );
+    }
+    // #971: the model rungs the gate spent, for the same reason — the gate
+    // has no live print of its own. Since #929 they are also in the run's
+    // `source: "ready"` metrics record; this is the only live view of them.
+    for (const e of result.modelEscalations) {
+      console.log(
+        colors.muted(
+          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${formatEscalationTriggerLabel(e.trigger)} retry)`,
+        ),
+      );
+    }
+  }
+}
+
 export async function readyCommand(
   issueArg: string,
   options: ReadyCommandOptions,
@@ -389,25 +415,7 @@ export async function readyCommand(
     return;
   }
 
-  // #915: surface any escalated qa/loop dispatches — the gate has no live
-  // print of its own (see `withEscalatedEffort` in `ready-gate.ts`).
-  if (options.verbose) {
-    for (const e of result.effortEscalations) {
-      console.log(
-        colors.muted(`  effort: ${e.base} → ${e.escalated} (${e.phase} retry)`),
-      );
-    }
-    // #971: the model rungs the gate spent, for the same reason — the gate
-    // has no live print of its own. Since #929 they are also in the run's
-    // `source: "ready"` metrics record; this is the only live view of them.
-    for (const e of result.modelEscalations) {
-      console.log(
-        colors.muted(
-          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${formatEscalationTriggerLabel(e.trigger)} retry)`,
-        ),
-      );
-    }
-  }
+  printEscalations(result, options.verbose);
 
   // Persist the terminal state so `sequant status` reflects it (Derived AC).
   // Best-effort: initialize the issue in state if a prior run didn't track it.
