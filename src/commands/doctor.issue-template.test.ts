@@ -26,7 +26,7 @@ describe("issueFormInfoLine (#1528)", () => {
     expect(issueFormInfoLine(dir)).toBeNull();
   });
 
-  it("leaves the Warnings count alone: the line is not a check", () => {
+  it("keeps the info line out of the summary counts (runtime check: Warnings unchanged)", () => {
     // The info line is printed outside `checks[]`; the summary sees only counts.
     const summary = buildDoctorSummary({ pass: 3, warn: 0, fail: 0 });
     expect(summary.level).toBe("success");
