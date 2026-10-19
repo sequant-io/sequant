@@ -14,6 +14,7 @@ import {
   readLatestRunLog,
   readRunLogById,
   resolveRunLog,
+  buildFallbackResponse,
   parseProgressLine,
   parseRunIdLine,
   createLineBuffer,
@@ -1714,15 +1715,14 @@ describe("resolveRunLog (#631 follow-up — Gap 2 / Gap 3)", () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
-  it("falls back to readLatestRunLog when capturedRunId is set but lookup misses (Gap 2 + Gap 3)", async () => {
+  it("captured runId miss never returns another run (#1515)", async () => {
     const capturedRunId = "550e8400-e29b-41d4-a716-446655440000";
     const otherRunId = "11111111-1111-4111-8111-111111111111";
     const otherLog = makeRunLog({ runId: otherRunId });
     const runStartTime = new Date();
 
     mockedExistsSync.mockReturnValue(true);
-    // Only the other run's file is on disk — lookup by capturedRunId misses.
-    // Filename timestamp is set so readLatestRunLog's recency filter accepts it.
+    // Only the other run's file is on disk, inside the recency window.
     const fileName = `run-${runStartTime
       .toISOString()
       .replace(/[:.]/g, "-")
@@ -1732,14 +1732,50 @@ describe("resolveRunLog (#631 follow-up — Gap 2 / Gap 3)", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockedReadFile.mockResolvedValue(JSON.stringify(otherLog) as any);
 
-    const result = await resolveRunLog(capturedRunId, runStartTime);
-    // Fell back to readLatestRunLog and returned the other-run log.
-    expect(result?.runId).toBe(otherRunId);
-    // Debug line emitted so the silent fallback is observable.
+    const result = await resolveRunLog(capturedRunId, runStartTime, 0);
+    expect(result).toBeNull();
+    // The other run's log is never read.
+    expect(mockedReadFile).not.toHaveBeenCalled();
+    // Miss line still emitted for the server's own stderr.
     expect(consoleErrorSpy).toHaveBeenCalledOnce();
     const message = String(consoleErrorSpy.mock.calls[0][0]);
     expect(message).toContain(capturedRunId);
     expect(message).toContain("lookup miss");
+  });
+
+  it("retries the runId lookup for a log that appears late", async () => {
+    const runId = "550e8400-e29b-41d4-a716-446655440000";
+    const log = makeRunLog({ runId });
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir
+      .mockResolvedValueOnce([])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .mockResolvedValue([`run-2026-03-23T10-00-00-${runId}.json` as any]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue(JSON.stringify(log) as any);
+
+    const result = await resolveRunLog(runId, new Date(), 0);
+    expect(result?.runId).toBe(runId);
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  it("missing run log is reported in the result (#1515)", () => {
+    const runId = "550e8400-e29b-41d4-a716-446655440000";
+    const response = buildFallbackResponse(
+      "",
+      [1486, 1488],
+      "success",
+      "spec,exec,qa",
+      0,
+      undefined,
+      runId,
+    );
+    expect(response.runLogMissing).toBe(true);
+    expect(response.requestedIssues).toEqual([1486, 1488]);
+    expect(response.issues).toEqual([]);
+    expect(response.note).toContain("Run log not found");
+    expect(response.note).toContain(runId);
+    expect(response.note).toContain("#1486, #1488");
   });
 
   it("goes straight to readLatestRunLog when capturedRunId is null (no debug log)", async () => {
@@ -1768,9 +1804,9 @@ describe("resolveRunLog (#631 follow-up — Gap 2 / Gap 3)", () => {
     mockedExistsSync.mockReturnValue(true);
     mockedReaddir.mockResolvedValue([]);
 
-    const result = await resolveRunLog(capturedRunId, new Date());
+    const result = await resolveRunLog(capturedRunId, new Date(), 0);
     expect(result).toBeNull();
-    // Debug line still fires for the missed runId before the empty fallback.
+    // Debug line still fires for the missed runId.
     expect(consoleErrorSpy).toHaveBeenCalledOnce();
   });
 });
