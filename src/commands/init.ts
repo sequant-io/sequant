@@ -1108,20 +1108,15 @@ function printPlannedFiles(agentsMd: boolean): void {
   );
 }
 
-/** Create default settings + reference doc (AC-4), then detect codebase conventions. */
-async function writeSettingsAndConventions(
-  options: InitOptions,
+/**
+ * Report the settings decision, then detect codebase conventions. The
+ * `settings.reference.md` write stays in `initCommand`: the ownership-policy
+ * registry in `templates.test.ts` keys write sites by enclosing function.
+ */
+async function reportSettingsAndDetectConventions(
+  settingsSpinner: ReturnType<typeof ui.spinner>,
+  settingsResult: Awaited<ReturnType<typeof createDefaultSettings>>,
 ): Promise<void> {
-  const settingsSpinner = ui.spinner("Creating default settings...");
-  settingsSpinner.start();
-  const settingsResult = await createDefaultSettings(
-    options.agent,
-    options.force,
-  );
-  await writeFile(
-    ".sequant/settings.reference.md",
-    generateSettingsReference(),
-  );
   settingsSpinner.succeed(
     settingsResult.action === "created"
       ? "Created default settings + reference doc"
@@ -1391,7 +1386,18 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(chalk.blue("📋 Saved multi-stack configuration"));
   }
 
-  await writeSettingsAndConventions(options);
+  // Create default settings + reference doc (AC-4)
+  const settingsSpinner = ui.spinner("Creating default settings...");
+  settingsSpinner.start();
+  const settingsResult = await createDefaultSettings(
+    options.agent,
+    options.force,
+  );
+  await writeFile(
+    ".sequant/settings.reference.md",
+    generateSettingsReference(),
+  );
+  await reportSettingsAndDetectConventions(settingsSpinner, settingsResult);
 
   // Copy templates (with symlinks for scripts unless --no-symlinks)
   const templatesSpinner = ui.spinner("Copying templates...");
