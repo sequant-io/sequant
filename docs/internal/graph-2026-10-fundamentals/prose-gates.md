@@ -128,3 +128,85 @@ Sorted by path. Line references are to the test file at `ec9d583b4`.
 | src/lib/workflow/skills-preflight.test.ts | keep | not a prose gate: SKILL.md is a `# name` fixture asserted only as a missing path in the preflight result (:374, :634). |
 
 **Totals:** execute 12, checksum 11, keep 53 (of which 34 not prose gates: `SKILL.md` appears only as a path, fixture, comment or message string)
+
+## Re-read
+
+**Selection.** Take the 76 paths in order of `sha1(path)` (the first 12 hex
+digits from `printf '%s' "$path" | shasum -a 1`) and use the first 8. If a class
+is missing from those 8, replace the 8th with the first path of the missing
+class in the same order. The first 8 held no execute row, so
+`scripts/check-skill-sync.test.ts` (8th) was replaced by
+`src/lib/__tests__/release-skill-security-table.test.ts` (13th, the first
+execute). A fresh agent received only the rubric and the 8 paths. It was told
+not to open this document or its history.
+
+**Re-read:** 7 of 8 rows agreed.
+
+| # | Path | First pass | Re-read | Agreed |
+|---|------|------------|---------|--------|
+| 1 | src/commands/update.integration.test.ts | keep (not a prose gate) | keep (not a prose gate) | yes |
+| 2 | scripts/exec-skill-marker.test.ts | keep | keep | yes |
+| 3 | __tests__/integration/in-place-checkout-skill.integration.test.ts | keep | keep | yes |
+| 4 | src/lib/workflow/drivers/__tests__/driver-conformance.test.ts | keep (not a prose gate) | keep (not a prose gate) | yes |
+| 5 | src/lib/__tests__/qa-verdict-comment-skill.test.ts | checksum | checksum | yes |
+| 6 | src/lib/assess/skill-examples.test.ts | keep | keep | yes |
+| 7 | src/lib/__tests__/spec-design-review-skill.test.ts | keep | keep | yes |
+| 8 | src/lib/__tests__/release-skill-security-table.test.ts | execute | checksum | no |
+
+**Disagreement on row 8.** The re-read judged the test alone: it asserts only
+three words in Step 4.67, so it found "nothing it could run". The first pass
+read the skill section too. Step 4.67 ends in a bash verify block
+(`new_minor=$(node -p ...)` then `grep -qE "^\| ${new_minor}\.x \|" SECURITY.md`)
+that a test could run against a fixture `package.json` and `SECURITY.md`. The
+rubric asks what the *section* names, not what the test does today, so the
+table keeps `execute`. The split shows where the rubric is easiest to misapply:
+a checksum test that sits on a runnable section looks like a checksum when only
+the test is read. F-12 should open the skill section for every checksum row
+before deleting it.
+
+## Findings for #1512 and D-3
+
+1. **The metric over-counts by 34 of 76 files.** In 34 files `SKILL.md`
+   appears only as a fixture name, a mocked path, a comment or an expected
+   message. Those 34 files hold 22,206 of the 30,693 counted lines. The real
+   prose-gate population is 42 files and 8,487 lines. The heuristic in
+   `collectMetrics` (`scripts/qa/health-report.ts`) cannot tell a path string
+   from a read of skill text. This issue does not change the metric. A
+   follow-up could count only files that read a file under a skill root
+   (`SKILL_ROOTS` or a `skills/` path passed to `readFileSync`). A narrower
+   metric would make `proseGate` track F-12's progress instead of fixture
+   churn.
+2. **11 files are pure checksum** and hold no keep or execute assertion. F-12
+   can act on each whole file under D-3's default: adr-convention,
+   evidence-clause, exec-pr-body-edit, improve-tech-debt-scoring,
+   merger-named-set-boundary, qa-review-dimensions, qa-sibling-scan,
+   qa-verdict-comment, release-skill-soak, testgen, testgen-testing-pyramid.
+   None of them is the only guard on a section that a live parser reads.
+   `qa-verdict-comment` names the `SEQUANT_QA_VERDICT` marker, but the
+   runtime emits that marker and the parser reads the runtime's output, not
+   the prose.
+3. **12 files are execute candidates, in three groups.**
+   - *Checkout lock* (3 files: fullsolve-, merger- and release-checkout-lock):
+     each extracts the same `npx sequant locks checkout acquire ... --skip-pid-check`
+     / `release` fences and only counts them. One shared harness that runs the
+     extracted fences against a temp lock dir serves all three.
+   - *Hand-copied `npx tsx -e` snippets* (3 files: behavior-rule-qa-wiring,
+     behavior-rule-spec-wiring, qa-markdown-only-ci-snippet): these already
+     run code, but a copy of the snippet, not the snippet in the skill. The copy
+     can drift from the skill without failing. Extracting the block from
+     SKILL.md is the highest-value conversion in the set.
+   - *Single commands* (6 files): worktree-contract (`sequant worktree verify`),
+     assess-skill (`sequant run --dry-run`), stacks.no-npm-fallback-gate
+     (lockfile detection chain), exec-skill-foreground-rule (`perl` alarm),
+     loop-context-source (`jq` select), release-skill-security-table
+     (`grep -qE` on SECURITY.md).
+4. **Mixed keep files carry most of the remaining checksum phrases.** With
+   keep > execute > checksum precedence, 19 files with a real contract or
+   behaviour are classed keep, and several also hold 10 to 20 checksum phrases
+   (fullsolve-merge-gate ~20, spec-design-review ~18, in-place-checkout ~15,
+   preexisting-claim-gate ~12, qa-followup-ledger ~12, trust-model ~10). If
+   D-3 deletes checksum assertions inside these files, it is a per-assertion
+   edit. The keep label means F-12 must not delete the whole file.
+5. **Execute rows are also checksum-heavy.** Most execute files carry 6 to 20
+   checksum phrases besides the runnable section. Converting the runnable part
+   does not by itself retire the phrase checks.
