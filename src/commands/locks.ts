@@ -4,6 +4,7 @@
  */
 
 import chalk from "chalk";
+import { parseIssueNumber } from "../lib/cli-flags.js";
 import {
   CheckoutLock,
   LockManager,
@@ -65,16 +66,6 @@ export interface LocksCheckOptions {
 
 export interface LocksCheckBatchOptions {
   json?: boolean;
-}
-
-function parseIssue(arg: string): number | null {
-  const issue = Number.parseInt(arg, 10);
-  if (!Number.isInteger(issue) || issue <= 0) {
-    console.error(chalk.red(`Invalid issue number: ${arg}`));
-    process.exitCode = 1;
-    return null;
-  }
-  return issue;
 }
 
 /** `sequant locks list` — print every active lock with staleness metadata. */
@@ -441,8 +432,12 @@ export async function locksAcquireCommand(
   issueArg: string,
   options: LocksAcquireOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 1;
+    return;
+  }
 
   const command = options.command ?? "unknown";
   const manager = new LockManager();
@@ -519,8 +514,12 @@ export async function locksReleaseCommand(
   issueArg: string,
   options: LocksReleaseOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 1;
+    return;
+  }
 
   const manager = new LockManager();
   if (manager.isNoop) {
@@ -556,8 +555,12 @@ export async function locksCheckCommand(
   issueArg: string,
   options: LocksCheckOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 1;
+    return;
+  }
 
   const manager = new LockManager();
   if (manager.isNoop) {
