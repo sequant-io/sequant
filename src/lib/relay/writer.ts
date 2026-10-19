@@ -12,13 +12,13 @@ import { randomBytes } from "crypto";
 import {
   closeSync,
   existsSync,
-  mkdirSync,
   openSync,
   renameSync,
   unlinkSync,
   writeSync,
 } from "fs";
 import { dirname, join } from "path";
+import { ensureParentDirSync } from "../fs.js";
 import {
   MAX_MESSAGE_BYTES,
   RelayMessageSchema,
@@ -37,10 +37,6 @@ export function generateMessageId(): string {
 /** Generate a `reply_<hex>` id. */
 export function generateReplyId(): string {
   return `reply_${randomBytes(8).toString("hex")}`;
-}
-
-function ensureDir(path: string): void {
-  mkdirSync(dirname(path), { recursive: true });
 }
 
 /** Build an inbox message, validating against the schema. */
@@ -130,7 +126,7 @@ export function writeInboxBatchAtomic(
 }
 
 function appendJsonLine(path: string, payload: unknown): void {
-  ensureDir(path);
+  ensureParentDirSync(path);
   const line = JSON.stringify(payload) + "\n";
   const fd = openSync(path, "a");
   try {
@@ -141,7 +137,7 @@ function appendJsonLine(path: string, payload: unknown): void {
 }
 
 function writeJsonLinesAtomic(path: string, items: unknown[]): void {
-  ensureDir(path);
+  ensureParentDirSync(path);
   const body =
     items.map((it) => JSON.stringify(it)).join("\n") +
     (items.length ? "\n" : "");
