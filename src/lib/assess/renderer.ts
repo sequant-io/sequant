@@ -29,7 +29,7 @@
  */
 
 import stringWidth from "string-width";
-import { truncateToWidth } from "../cli-ui/truncate.js";
+import { truncateAtWord } from "../cli-ui/truncate.js";
 
 import type {
   AssessCleanup,
@@ -105,7 +105,7 @@ function padTo(text: string, width: number): string {
 
 /** Fit `text` into exactly `width` columns: truncate if long, pad if short. */
 function fit(text: string, width: number): string {
-  return padTo(truncateToWidth(text, width), width);
+  return padTo(truncateAtWord(text, width), width);
 }
 
 /**
