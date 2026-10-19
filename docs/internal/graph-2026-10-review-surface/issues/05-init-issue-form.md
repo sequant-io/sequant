@@ -1,0 +1,39 @@
+feat(init): the issue form from the writing-issues guide becomes one template file that init writes to .github/ISSUE_TEMPLATE when the directory is absent; doctor reports its absence
+
+**Epic:** graph-2026-10-review-surface   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #RS-00
+
+- **Blocked by**: #RS-00
+
+## Problem
+
+The cold reader: "my issues rarely have formal ACs, so I'd assume I must change how I write issues first." The product's answer exists as prose: `docs/guides/writing-issues.md` ends with "Optional: a GitHub issue form" and a YAML form whose Acceptance Criteria field pre-fills `- [ ] AC-1: <observable result>. Evidence: <test, file or command>`. `init` writes nothing under `.github/`, so the shape that makes criteria parseable is a page the user has to find. This node moves the form to one template file (RD-D), has `init` write it when the user's repo has no `.github/ISSUE_TEMPLATE/` directory, and never touches a directory that exists. No new flag (I-4): `--yes` writes it, interactive `init` prints one line saying it did.
+
+## Acceptance Criteria
+
+- [ ] AC-1: One template file is the source. Evidence: `test -f templates/github/ISSUE_TEMPLATE/sequant-task.yml && grep -c 'Evidence: <test, file or command>' templates/github/ISSUE_TEMPLATE/sequant-task.yml` → `≥ 1`
+- [ ] AC-2: The guide links the file instead of carrying a copy. Evidence: `grep -c 'templates/github/ISSUE_TEMPLATE/sequant-task.yml' docs/guides/writing-issues.md` → `≥ 1` and `grep -c 'id: acceptance' docs/guides/writing-issues.md` → `0`
+- [ ] AC-3: `init` writes the form when the directory is absent and skips when it exists. Evidence: `npx vitest run src/commands/init.issue-template.test.ts` → `≥ 3 passed, 0 failed` (real temp dir, no fs mock: absent → file written byte-equal to the template and one line printed; `.github/ISSUE_TEMPLATE/` present with any file → nothing written and a one-line note; `--yes` behaves as the absent case)
+- [ ] AC-4: `doctor` reports a missing form as info, not a warning. Evidence: `npx vitest run src/commands/doctor.issue-template.test.ts` → `≥ 2 passed, 0 failed` (absent → an `i` line naming the guide; present → nothing; the `Warnings:` count is unchanged either way, per #1387 AC-3)
+- AC-3 and AC-4 are classified as gate tests by `isGateTestEvidence`; the PR body carries a `SEQUANT_MUTATION` record for each (delete the template file → the "written byte-equal" case fails; remove the `doctor` info line → the "absent" case fails; restore).
+- [ ] AC-5: The form parses as a GitHub issue form. Evidence: `npx tsx -e 'import {readFileSync} from "node:fs"; import yaml from "yaml"; const f = yaml.parse(readFileSync("templates/github/ISSUE_TEMPLATE/sequant-task.yml","utf8")); if (!(f.name && Array.isArray(f.body) && f.body.some((b) => b.id === "acceptance"))) process.exit(1); console.log("form-ok")'` → `form-ok`
+- [ ] AC-6: No skill directory is touched. Evidence: `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0` (constraint)
+
+## Prior fixes / producers
+
+- Prior fixes on `init`'s writes: #1387 (next steps, warning count), #1209 (what `init` writes), ADR-0012 follow-ups (skills from the installed package). Class: what `init` writes is contested (the 23,000-line objection in the brief). This node adds one ~40-line file and only into an absent directory; it records that trade-off here rather than claiming isolation.
+- Producers of the form today: the guide (one copy). After this node: the template file (one copy), the guide links it.
+
+## May touch
+
+`templates/github/ISSUE_TEMPLATE/sequant-task.yml` (new), `src/lib/templates.ts` if the path needs registering, `src/commands/init.ts` (one step), `src/commands/doctor.ts` (one info line), `docs/guides/writing-issues.md` (replace the inline YAML with a link and the file's first lines), tests, CHANGELOG.
+
+## Non-Goals
+
+- Writing into an existing `.github/ISSUE_TEMPLATE/` directory, ever.
+- A flag to opt in or out (I-4); removal is `git rm`.
+- Changing the AC linter or parser.
+- Any edit under `plugin/`, `.claude/skills/`, `templates/skills/` (I-1).
+
+## Done when
+
+A fresh `npx sequant init --yes` on a repo without issue templates leaves `.github/ISSUE_TEMPLATE/sequant-task.yml` in place, and the guide and the file say the same thing because they are the same file.
