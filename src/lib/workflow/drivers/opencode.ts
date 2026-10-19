@@ -62,6 +62,10 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { RingBuffer } from "../ring-buffer.js";
+import {
+  DRIVER_SIGKILL_GRACE_MS,
+  killProcessGroup,
+} from "../../process-group.js";
 import { joinAgentTexts } from "./agent-text.js";
 import { SequantError, SubprocessError } from "../../errors.js";
 import type {
@@ -405,6 +409,11 @@ export interface OpencodeRunOutcome {
   phase?: string;
   /** Seconds allowed, for the timeout message. */
   phaseTimeout: number;
+  /**
+   * The driver sent this run a kill (timeout or abort). A SIGKILL close then
+   * reads as the escalation of that kill, not a foreign signal (#1472).
+   */
+  killRequested?: boolean;
   stderrTail: string[];
   stdoutTail: string[];
   /**
@@ -450,7 +459,9 @@ export function evaluateOpencodeRun(
   });
 
   if (outcome.signal) {
-    const isTimeout = outcome.signal === "SIGTERM";
+    const isTimeout =
+      outcome.signal === "SIGTERM" ||
+      (outcome.signal === "SIGKILL" && outcome.killRequested === true);
     return fail(
       isTimeout
         ? `Timeout after ${outcome.phaseTimeout}s`
@@ -668,8 +679,12 @@ export class OpencodeDriver implements AgentDriver {
 
     return new Promise<AgentPhaseResult>((resolve) => {
       const parser = new OpencodeStreamParser(config.phase);
-      const stderrBuffer = new RingBuffer(TAIL_LINES);
-      const stdoutBuffer = new RingBuffer(TAIL_LINES);
+      const stderrBuffer = new RingBuffer(TAIL_LINES, {
+        maxLineChars: TAIL_LINE_CHARS,
+      });
+      const stdoutBuffer = new RingBuffer(TAIL_LINES, {
+        maxLineChars: TAIL_LINE_CHARS,
+      });
 
       const env: Record<string, string> = {
         ...(process.env as Record<string, string>),
@@ -703,7 +718,14 @@ export class OpencodeDriver implements AgentDriver {
         resolve(result);
       };
 
-      const killGroup = () => killProcessGroup(proc.pid);
+      let killRequested = false;
+      const killGroup = () => {
+        if (
+          killProcessGroup(proc, { graceMs: DRIVER_SIGKILL_GRACE_MS }).requested
+        ) {
+          killRequested = true;
+        }
+      };
 
       const timeoutId = setTimeout(killGroup, config.phaseTimeout * 1000);
 
@@ -718,7 +740,7 @@ export class OpencodeDriver implements AgentDriver {
       proc.stdout.on("data", (data: Buffer) => {
         const text = data.toString();
         parser.feed(text);
-        pushLines(stdoutBuffer, text);
+        stdoutBuffer.pushLines(text);
         if (config.verbose) {
           config.onOutput?.(text);
         }
@@ -726,7 +748,7 @@ export class OpencodeDriver implements AgentDriver {
 
       proc.stderr.on("data", (data: Buffer) => {
         const text = data.toString();
-        pushLines(stderrBuffer, text);
+        stderrBuffer.pushLines(text);
         config.onStderr?.(text);
       });
 
@@ -751,6 +773,7 @@ export class OpencodeDriver implements AgentDriver {
         const result = evaluateOpencodeRun(parsed, {
           exitCode: code,
           signal,
+          killRequested,
           phase: config.phase,
           phaseTimeout: config.phaseTimeout,
           stderrTail: stderrBuffer.getLines(),
@@ -781,18 +804,6 @@ export class OpencodeDriver implements AgentDriver {
     } catch {
       return false;
     }
-  }
-}
-
-/** Split a chunk into lines and push a capped form of each into `buffer`. */
-function pushLines(buffer: RingBuffer, text: string): void {
-  for (const line of text.split("\n")) {
-    if (line.length === 0) continue;
-    buffer.push(
-      line.length > TAIL_LINE_CHARS
-        ? `${line.slice(0, TAIL_LINE_CHARS)}… [${line.length} chars]`
-        : line,
-    );
   }
 }
 
@@ -869,27 +880,4 @@ function createRunConfigHome(settings?: OpencodeSettings): {
       }
     },
   };
-}
-
-/**
- * SIGTERM the whole process group, swallowing ESRCH.
- *
- * `detached: true` makes the child a group leader, so `-pid` addresses the
- * tree. ESRCH just means it already exited between the check and the signal.
- */
-function killProcessGroup(pid: number | undefined): void {
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ESRCH") {
-      // Fall back to signalling the child directly — better a killed leader
-      // than a run that ignores its timeout.
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        // Already gone.
-      }
-    }
-  }
 }
