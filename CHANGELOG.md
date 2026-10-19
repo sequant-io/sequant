@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **The QA verdict comment names its reviewer (#1521).** Every verdict comment ends with `_Reviewed in a separate session by <driver> (<model>); the change was written by <driver> (<model>)._`, computed from the phase records and the resolved per-phase agent (`src/lib/workflow/qa-verdict-attribution.ts`), never from agent output; an unreported model reads `model not reported`. `docs/reference/run-command.md` gains "Run the review on a different driver" naming `phases.qa.agent` as the independence knob.
-
 ### Changed
 
 - **One Non-Goals scanner for the ready gate and the scope analyzer (#1474).** `src/lib/non-goals.ts` now holds the only `parseNonGoals`; `ready-gate.ts` re-exports it and the scope analyzer wraps it as `assessNonGoals` (same `NonGoals { items, found, warning }` shape). The gate's heading rules are now the rules for both: any heading level, trailing text after `Non-Goals`/`Out of scope`, several sections unioned, items starting with `#` kept. Scope assessment therefore now finds Non-Goals in issues it used to report as missing (e.g. `## Out of scope (deferred, not rejected)`). The gate now ignores Non-Goals examples inside fenced code blocks and strips `[ ]`/`[x]` checkboxes from items. `Scope Boundaries` and `Non Goals` (with a space) are no longer recognised headings.
@@ -18,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The QA verdict comment names its reviewer (#1521).** Every verdict comment ends with `_Reviewed in a separate session by <driver> (<model>); the change was written by <driver> (<model>)._`, computed from the phase records and the resolved per-phase agent (`src/lib/workflow/qa-verdict-attribution.ts`), never from agent output; an unreported model reads `model not reported`. `docs/reference/run-command.md` gains "Run the review on a different driver" naming `phases.qa.agent` as the independence knob.
+- **knip runs as an advisory CI job (#1503).** `knip.json` and `npm run lint:knip` report unused exports; the `knip-advisory` job never blocks a PR, and `health-report.ts` carries the count as `unusedExports` (baseline 342). The 2026-01 "temporarily relaxed" lint rules (`no-unused-vars`, `no-empty-object-type`, `prefer-const`) are now `error`.
 - **`scripts/qa/health-report.ts` prints the fundamentals baseline and `--check` fails a raised metric (#1502).** One script measures function length, empty catches, child_process mock files, `gh` calls outside the provider, prose-gate tests, the 28-day test ratio, `@deprecated` tags without a removal version, harness size and ADRs without an actor. `--check` compares against the committed `scripts/qa/health-baseline.json` (the ratio and memory count are reported only); `--write-baseline` rewrites it. An advisory `health-advisory` CI job and `npm run lint:health` run the check.
 
 ## [2.20.0] - 2026-10-18
