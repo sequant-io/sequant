@@ -9,7 +9,7 @@ Classes: **fails-today** (command runs, result differs from the expected value),
 | 00 | AC-3 | fails-today | `0` | `≥ 6` |
 | 01 | AC-1 | fails-today | `node:internal/modules/esm/resolve:275` | `ok` |
 | 01 | AC-2 | fails-today | `(no output, exit 1)` | `same` |
-| 01 | AC-3 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 4 passed, 0 failed` |
+| 01 | AC-3 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 4 passed, 0 failed` |
 | 01 | AC-4 | fails-today | `0` | `1` |
 | 01 | AC-5 | fails-today | `0` | `≥ 1` |
 | 01 | AC-6 | fails-today | `(no output, exit 1)` | `fast` |
@@ -18,20 +18,20 @@ Classes: **fails-today** (command runs, result differs from the expected value),
 | 02 | AC-3 | fails-today | `(no output, exit 1)` | `ok` |
 | 02 | AC-4 | fails-today | `0` | `1` |
 | 02 | AC-5 | fails-today | `node:internal/modules/esm/resolve:275` | `ok` |
-| 03 | AC-1 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 3 passed, 0 failed` |
+| 03 | AC-1 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 3 passed, 0 failed` |
 | 03 | AC-2 | fails-today | `0` | `≥ 1` |
 | 03 | AC-3 | constraint | `1` | `1` |
 | 03 | AC-4 | fails-today | `node:internal/modules/esm/resolve:275` | `0` |
-| 03 | AC-5 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 2 passed, 0 failed` |
+| 03 | AC-5 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 2 passed, 0 failed` |
 | 03 | AC-6 | fails-today | `(no output, exit 1)` | `≤ 94` |
 | 04 | AC-1 | fails-today | `node:internal/modules/esm/resolve:275` | `0` |
 | 04 | AC-2 | fails-today | `0` | `≥ 1` |
 | 04 | AC-3 | constraint | `green` | `green` |
-| 04 | AC-4 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 1 passed, 0 failed` |
+| 04 | AC-4 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 1 passed, 0 failed` |
 | 04 | AC-5 | fails-today | `jq: error: Could not open file scripts/qa/health-baseline.json: No such file or directory` | `0` |
 | 05 | AC-1 | fails-today | `3` | `0` |
 | 05 | AC-2 | fails-today | `fixtures=0` | `fixtures=≥ 4` |
-| 05 | AC-3 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 4 passed, 0 failed` |
+| 05 | AC-3 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 4 passed, 0 failed` |
 | 05 | AC-4 | fails-today | `6` | `0` |
 | 05 | AC-5 | fails-today | `(no output, exit 1)` | `≥ 1` |
 | 05 | AC-6 | fails-today | `   Duration  18.61s (tests 94%, import 4%, transform 2%)` | `0 failed` |
@@ -57,7 +57,7 @@ Classes: **fails-today** (command runs, result differs from the expected value),
 | 08 | AC-6 | fails-today | `jq: error: Could not open file scripts/qa/health-baseline.json: No such file or directory` | `≤ 7` |
 | 09 | AC-1 | fails-today | `(no output, exit 1)` | `ok` |
 | 09 | AC-2 | fails-today | `18` | `0` |
-| 09 | AC-3 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 2 passed, 0 failed` |
+| 09 | AC-3 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 2 passed, 0 failed` |
 | 09 | AC-4 | fails-today | `0` | `≥ 1` |
 | 09 | AC-5 | fails-today | `0` | `≥ 1` |
 | 09 | AC-6 | fails-today | `jq: error: Could not open file scripts/qa/health-baseline.json: No such file or directory` | `0` |
@@ -81,7 +81,7 @@ Classes: **fails-today** (command runs, result differs from the expected value),
 | 13 | AC-1 | fails-today | `(no output, exit 1)` | `5` |
 | 13 | AC-2 | not-runnable | (no backticked command → expected pair) | |
 | 13 | AC-3 | fails-today | `0` | `≥ 1` |
-| 13 | AC-4 | fails-today | `RUN  v5.0.4 /Users/tony/Projects/sequant` | `≥ 2 passed, 0 failed` |
+| 13 | AC-4 | fails-today | `RUN  v5.0.4 ~/Projects/sequant` | `≥ 2 passed, 0 failed` |
 | 13 | AC-5 | fails-today | `(no output, exit 1)` | `ok` |
 | 13 | AC-6 | fails-today | `0` | `≥ 1` |
 | 13 | AC-7 | fails-today | `jq: error: Could not open file scripts/qa/health-baseline.json: No such file or directory` | `0` |
