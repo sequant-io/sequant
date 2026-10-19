@@ -37,7 +37,10 @@ vi.mock("./phase-executor.js", async (importOriginal) => ({
   hasExecChanges: vi.fn().mockReturnValue(true),
 }));
 
-vi.mock("./worktree-manager.js", () => ({
+vi.mock("./worktree-manager.js", async (importOriginal) => ({
+  // Real pure helpers (composeExecSummary feeds a state write); only the
+  // git/PR side effects are stubbed.
+  ...(await importOriginal<typeof import("./worktree-manager.js")>()),
   createCheckpointCommit: vi.fn(),
   rebaseBeforePR: vi.fn(),
   createPR: vi.fn(),
@@ -89,6 +92,7 @@ afterEach(() => {
   chmodSync(stateDir, 0o755);
   rmSync(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 async function runOnce(
@@ -97,8 +101,13 @@ async function runOnce(
 ): Promise<{
   result: Awaited<ReturnType<typeof runIssueWithLogging>>;
   log: WrittenLog;
+  debugLines: string[];
 }> {
-  const logWriter = new LogWriter({ logPath: logDir });
+  // Verbose routes each dropped error's debug line to stderr; capture them so
+  // a test can tell which error was counted.
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(console, "log").mockImplementation(() => {});
+  const logWriter = new LogWriter({ logPath: logDir, verbose: true });
   await logWriter.initialize({
     phases: ["exec"],
     sequential: false,
@@ -130,7 +139,10 @@ async function runOnce(
   });
   const written = await logWriter.finalize();
   expect(readdirSync(logDir)).toHaveLength(1);
-  return { result, log: JSON.parse(readFileSync(written, "utf8")) };
+  const debugLines = errorSpy.mock.calls
+    .map((c) => String(c[0]))
+    .filter((l) => l.startsWith("suppressed["));
+  return { result, log: JSON.parse(readFileSync(written, "utf8")), debugLines };
 }
 
 describe("#1504 AC-5: dropped errors are counted into the run log", () => {
@@ -143,13 +155,31 @@ describe("#1504 AC-5: dropped errors are counted into the run log", () => {
       chmodSync(statePath, 0o444);
       chmodSync(stateDir, 0o555);
 
-      const { result, log } = await runOnce({}, stateManager);
+      const { result, log, debugLines } = await runOnce({}, stateManager);
 
       expect(result.issueNumber).toBe(ISSUE);
       expect(result.success).toBe(true);
       expect(log.suppressed?.byScope.state ?? 0).toBeGreaterThanOrEqual(1);
+      // The counted errors are the injected fault, not some other failure.
+      const stateLines = debugLines.filter((l) =>
+        l.startsWith("suppressed[state]"),
+      );
+      expect(stateLines.length).toBe(log.suppressed?.byScope.state);
+      expect(stateLines.every((l) => l.includes("EACCES"))).toBe(true);
     },
   );
+
+  it("control: with a writable state dir the same run drops no state error", async () => {
+    const stateManager = new StateManager({
+      statePath: join(stateDir, "state.json"),
+    });
+    await stateManager.initializeIssue(ISSUE, "suppressed trace");
+
+    const { result, log } = await runOnce({}, stateManager);
+
+    expect(result.success).toBe(true);
+    expect(log.suppressed).toEqual({ total: 0, byScope: {} });
+  });
 
   it("a throwing onProgress callback is counted under progress", async () => {
     const onProgress = vi.fn(() => {
