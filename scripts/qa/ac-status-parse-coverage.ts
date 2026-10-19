@@ -308,7 +308,7 @@ export function fetchQaComments(since: string, cwd: string): QaComment[] {
 
 export function fetchIssueAcIds(issue: number, cwd: string): string[] {
   const body = gh(
-    ["api", `repos/{owner}/{repo}/issues/${issue}`, "--jq", ".body // \"\""],
+    ["api", `repos/{owner}/{repo}/issues/${issue}`, "--jq", '.body // ""'],
     cwd,
   );
   return extractAcceptanceCriteria(body).items.map((i) => i.id);
@@ -366,7 +366,10 @@ export function measureCorpus(
     coverage: ratio(total),
     commentsWithoutIssueAcs,
     byStatus: Object.fromEntries(
-      Object.entries(byStatus).map(([k, t]) => [k, { ...t, coverage: ratio(t) }]),
+      Object.entries(byStatus).map(([k, t]) => [
+        k,
+        { ...t, coverage: ratio(t) },
+      ]),
     ),
     byParsedStatus,
   };
@@ -397,7 +400,9 @@ function printCorpus(r: CorpusReport): void {
     `Corpus since ${r.since}: ${r.comments} QA comments, ${r.acs} issue-body ACs, ` +
       `${r.classified} classified — coverage ${pct(r.coverage)}`,
   );
-  console.log(`Comments whose issue has no parseable ACs: ${r.commentsWithoutIssueAcs}`);
+  console.log(
+    `Comments whose issue has no parseable ACs: ${r.commentsWithoutIssueAcs}`,
+  );
   for (const [status, t] of Object.entries(r.byStatus)) {
     console.log(
       `  ${status}: ${t.comments} comments, ${t.acs} ACs, ${t.classified} classified (${pct(t.coverage)})`,
