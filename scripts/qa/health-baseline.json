@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-10-19T17:53:35.939Z",
-  "commit": "1cf65d2e68e7b622bbbe0da958945dea1d2bdac7",
+  "generatedAt": "2026-10-19T17:44:47.969Z",
+  "commit": "89af7db712b3a1fc5f760ba1fbde41a0e96b5c91",
   "functions": {
     "over400": 4,
     "over200": 12,
     "longest": {
       "file": "src/lib/workflow/batch-executor.ts",
       "name": "runIssueWithLogging",
-      "lines": 1049
+      "lines": 1050
     }
   },
   "emptyCatch": {
-    "total": 118,
+    "total": 119,
     "byFile": {
       "bin/cli.ts": 1,
       "bin/preflight.ts": 1,
@@ -28,7 +28,6 @@
       "src/lib/locks/lock-manager.ts": 4,
       "src/lib/manifest.ts": 1,
       "src/lib/mcp-config.ts": 2,
-      "src/lib/process-group.ts": 1,
       "src/lib/project-name.ts": 5,
       "src/lib/relay/activation.ts": 3,
       "src/lib/relay/frame.ts": 1,
@@ -44,7 +43,8 @@
       "src/lib/version-check.ts": 3,
       "src/lib/version.ts": 1,
       "src/lib/workflow/batch-executor.ts": 25,
-      "src/lib/workflow/drivers/opencode.ts": 2,
+      "src/lib/workflow/drivers/codex.ts": 1,
+      "src/lib/workflow/drivers/opencode.ts": 3,
       "src/lib/workflow/event-emitter.ts": 1,
       "src/lib/workflow/phase-detection.ts": 1,
       "src/lib/workflow/phase-executor.ts": 4,
@@ -63,7 +63,7 @@
   "ghCallFilesOutsideProvider": 3,
   "proseGate": {
     "files": 76,
-    "lines": 30750
+    "lines": 30693
   },
   "testRatio28d": {
     "sum": 2.24,
