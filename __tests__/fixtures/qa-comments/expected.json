@@ -1,0 +1,374 @@
+{
+  "879-5167288457.md": {
+    "issue": 879,
+    "commentId": 5167288457,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      },
+      {
+        "id": "AC-6",
+        "status": "met"
+      },
+      {
+        "id": "AC-7",
+        "status": "met"
+      }
+    ]
+  },
+  "892-5180081102.md": {
+    "issue": 892,
+    "commentId": 5180081102,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      }
+    ]
+  },
+  "922-5236374780.md": {
+    "issue": 922,
+    "commentId": 5236374780,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "unknown"
+      },
+      {
+        "id": "AC-2",
+        "status": "unknown"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "unknown"
+      },
+      {
+        "id": "AC-5",
+        "status": "unknown"
+      },
+      {
+        "id": "AC-7",
+        "status": "unknown"
+      },
+      {
+        "id": "AC-8",
+        "status": "unknown"
+      }
+    ]
+  },
+  "927-5236440445.md": {
+    "issue": 927,
+    "commentId": 5236440445,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "pending"
+      },
+      {
+        "id": "AC-5",
+        "status": "pending"
+      },
+      {
+        "id": "AC-6",
+        "status": "met"
+      }
+    ]
+  },
+  "938-5276960005.md": {
+    "issue": 938,
+    "commentId": 5276960005,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      },
+      {
+        "id": "AC-6",
+        "status": "met"
+      }
+    ]
+  },
+  "939-5277343845.md": {
+    "issue": 939,
+    "commentId": 5277343845,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      },
+      {
+        "id": "AC-6",
+        "status": "met"
+      }
+    ]
+  },
+  "943-5464733778.md": {
+    "issue": 943,
+    "commentId": 5464733778,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      },
+      {
+        "id": "AC-6",
+        "status": "met"
+      }
+    ]
+  },
+  "958-5389990054.md": {
+    "issue": 958,
+    "commentId": 5389990054,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "pending"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "pending"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      }
+    ]
+  },
+  "975-5466166413.md": {
+    "issue": 975,
+    "commentId": 5466166413,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      },
+      {
+        "id": "AC-6",
+        "status": "met"
+      }
+    ]
+  },
+  "1136-5809314084.md": {
+    "issue": 1136,
+    "commentId": 5809314084,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      },
+      {
+        "id": "AC-5",
+        "status": "met"
+      },
+      {
+        "id": "AC-6",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-7",
+        "status": "met"
+      }
+    ]
+  },
+  "1265-5933933577.md": {
+    "issue": 1265,
+    "commentId": 5933933577,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "pending"
+      },
+      {
+        "id": "AC-2",
+        "status": "pending"
+      },
+      {
+        "id": "AC-3",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-9",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-5",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-6",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-7",
+        "status": "pending"
+      },
+      {
+        "id": "AC-8",
+        "status": "pending"
+      },
+      {
+        "id": "AC-10",
+        "status": "unknown"
+      }
+    ]
+  },
+  "1487-6237541904.md": {
+    "issue": 1487,
+    "commentId": 6237541904,
+    "acs": [
+      {
+        "id": "AC-1",
+        "status": "met"
+      },
+      {
+        "id": "AC-2",
+        "status": "not_met"
+      },
+      {
+        "id": "AC-3",
+        "status": "met"
+      },
+      {
+        "id": "AC-4",
+        "status": "met"
+      }
+    ]
+  }
+}
