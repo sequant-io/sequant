@@ -33,3 +33,15 @@ export function formatTimestamp(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
+
+/**
+ * Format duration in human-readable format
+ */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs.toFixed(0)}s`;
+}

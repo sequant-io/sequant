@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Run-log helpers live in one module (#1471).** `parseLogFile`, `listLogFiles` and `resolveLogDir` are defined once in `src/lib/run-logs.ts` and `formatDuration` once in `src/lib/cli-ui/format.ts`; the duplicate copies in `sequant logs`, `sequant stats`, the `sequant_logs` and `sequant_run` MCP tools, `merge --check` and `phase-executor.ts` are removed. `resolveLogPath` is renamed `resolveLogDir`. No output, path or precedence changes.
+
 ## [2.20.0] - 2026-10-18
 
 ### Added
