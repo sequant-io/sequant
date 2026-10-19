@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Run-log helpers live in one module (#1471).** `parseLogFile`, `listLogFiles` and `resolveLogDir` are defined once in `src/lib/run-logs.ts` and `formatDuration` once in `src/lib/cli-ui/format.ts`; the duplicate copies in `sequant logs`, `sequant stats`, the `sequant_logs` and `sequant_run` MCP tools, `merge --check` and `phase-executor.ts` are removed. `resolveLogPath` is renamed `resolveLogDir`. No output, path or precedence changes.
+
 ### Added
 
 - **`scripts/qa/health-report.ts` prints the fundamentals baseline and `--check` fails a raised metric (#1502).** One script measures function length, empty catches, child_process mock files, `gh` calls outside the provider, prose-gate tests, the 28-day test ratio, `@deprecated` tags without a removal version, harness size and ADRs without an actor. `--check` compares against the committed `scripts/qa/health-baseline.json` (the ratio and memory count are reported only); `--write-baseline` rewrites it. An advisory `health-advisory` CI job and `npm run lint:health` run the check.

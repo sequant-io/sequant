@@ -17,9 +17,9 @@ import { spawn } from "child_process";
 import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
 import { readdir, readFile } from "fs/promises";
-import { homedir } from "os";
+import { resolveLogDir } from "../../lib/run-logs.js";
 import { formatResetTime } from "../../lib/errors.js";
-import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
+import { RunLogSchema } from "../../lib/workflow/run-log-schema.js";
 import type { RunLog, GapFinding } from "../../lib/workflow/run-log-schema.js";
 import { latestPhaseResult } from "../../lib/workflow/latest-phase.js";
 import { registerRun, unregisterRun } from "../run-registry.js";
@@ -141,23 +141,6 @@ export function resolveCliBinary(): [string, string[]] {
 
   // Last resort: fall back to npx (original behavior)
   return ["npx", ["sequant"]];
-}
-
-/**
- * Resolve the log directory path (project-level or user-level)
- */
-function resolveLogDir(): string {
-  const projectPath = LOG_PATHS.project;
-  if (existsSync(projectPath)) {
-    return projectPath;
-  }
-
-  const userPath = LOG_PATHS.user.replace("~", homedir());
-  if (existsSync(userPath)) {
-    return userPath;
-  }
-
-  return projectPath;
 }
 
 /**
