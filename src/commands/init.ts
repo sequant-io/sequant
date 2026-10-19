@@ -605,8 +605,8 @@ export async function writeCodexConfig(targetDir = "."): Promise<string> {
 /** Template and destination of the issue form (#1528). */
 export const ISSUE_FORM_TEMPLATE =
   "templates/github/ISSUE_TEMPLATE/sequant-task.yml";
-export const ISSUE_FORM_DIR = join(".github", "ISSUE_TEMPLATE");
-export const ISSUE_FORM_FILE = "sequant-task.yml";
+const ISSUE_FORM_DIR = join(".github", "ISSUE_TEMPLATE");
+const ISSUE_FORM_FILE = "sequant-task.yml";
 
 export interface IssueFormOutcome {
   written: boolean;
