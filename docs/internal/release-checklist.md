@@ -6,6 +6,7 @@ Before tagging a release, verify:
 - [ ] `npm test` passes
 - [ ] `npm run build` passes
 - [ ] `npm run lint` passes
+- [ ] `npm run lint:health` (`scripts/qa/health-report.ts --check`) reports no raised metric; note any `ratchet available:` lines
 
 ## Validation
 - [ ] All skills validate: `npm run validate:skills`
