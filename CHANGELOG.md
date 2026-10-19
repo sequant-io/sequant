@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sequant init` writes the issue form when `.github/ISSUE_TEMPLATE/` is absent; `doctor` reports its absence as info (#1528).** The YAML form from the writing-issues guide is now one file, `templates/github/ISSUE_TEMPLATE/sequant-task.yml`, and the guide links it. `init` (with or without `--yes`) writes it to `.github/ISSUE_TEMPLATE/sequant-task.yml` only when that directory does not exist, and prints one line either way; an existing directory is never touched. `doctor` prints an `i` line when `sequant-task.yml` is missing; it counts toward no total, so `Warnings:` is unchanged. No new flag.
 - **`scripts/qa/health-report.ts` prints the fundamentals baseline and `--check` fails a raised metric (#1502).** One script measures function length, empty catches, child_process mock files, `gh` calls outside the provider, prose-gate tests, the 28-day test ratio, `@deprecated` tags without a removal version, harness size and ADRs without an actor. `--check` compares against the committed `scripts/qa/health-baseline.json` (the ratio and memory count are reported only); `--write-baseline` rewrites it. An advisory `health-advisory` CI job and `npm run lint:health` run the check.
 
 ## [2.20.0] - 2026-10-18
