@@ -85,6 +85,12 @@ interface RunToolResponse {
   phases: string;
   rawOutput?: string;
   error?: string;
+  /** True when no run log was parsed: `issues` is empty and `summary` is inferred from the exit code (#1515). */
+  runLogMissing?: true;
+  /** The issues this call asked for; set with `runLogMissing`. */
+  requestedIssues?: number[];
+  /** Why `runLogMissing` is set. */
+  note?: string;
 }
 
 /**
@@ -222,25 +228,36 @@ export async function readLatestRunLog(
   }
 }
 
+/** Re-reads of the runId lookup before a captured-runId miss is final (#1515). */
+const RUN_LOG_LOOKUP_RETRIES = 3;
+const RUN_LOG_LOOKUP_RETRY_DELAY_MS = 200;
+
 /**
  * Resolve the run log for an MCP `sequant_run` invocation (#631).
  *
- * Prefers exact-filename lookup by captured runId; falls back to the
- * time-window heuristic when no runId was captured (older CLI, startup
- * race) or when the runId lookup returned null (corrupted file, slow
- * fsync). On lookup-miss with a captured runId, emit a debug line on
- * the MCP server's own stderr so the silent fallback is observable.
+ * With a captured runId, only the log carrying that runId is accepted. A
+ * short retry covers a log that is not visible on disk yet; a miss after
+ * that returns `null` and emits a line on the MCP server's own stderr. It
+ * never falls back to the time window: that returned another concurrent
+ * run's issues and verdict as this run's (#1515). The time-window heuristic
+ * applies only when no runId was captured (older CLI, startup race).
  */
 export async function resolveRunLog(
   capturedRunId: string | null,
   runStartTime: Date,
+  retryDelayMs: number = RUN_LOG_LOOKUP_RETRY_DELAY_MS,
 ): Promise<RunLog | null> {
   if (capturedRunId !== null) {
-    const byId = await readRunLogById(capturedRunId);
-    if (byId) return byId;
+    for (let attempt = 0; ; attempt++) {
+      const byId = await readRunLogById(capturedRunId);
+      if (byId) return byId;
+      if (attempt >= RUN_LOG_LOOKUP_RETRIES) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
     console.error(
-      `[mcp:run] runId ${capturedRunId} lookup miss — falling back to readLatestRunLog`,
+      `[mcp:run] runId ${capturedRunId} lookup miss — no fallback, run log not found`,
     );
+    return null;
   }
   return readLatestRunLog(runStartTime);
 }
@@ -429,14 +446,17 @@ function enforceResponseSizeLimit(response: RunToolResponse): RunToolResponse {
 /**
  * Build a fallback response when no log file is available
  */
-function buildFallbackResponse(
+export function buildFallbackResponse(
   stdout: string,
   issueNumbers: number[],
   overallStatus: "success" | "failure",
   phases: string,
   exitCode?: number | null,
   stderr?: string,
+  capturedRunId?: string | null,
 ): RunToolResponse {
+  const issueList = issueNumbers.map((n) => `#${n}`).join(", ");
+  const which = capturedRunId ? ` for runId ${capturedRunId}` : "";
   return {
     status: overallStatus,
     ...(exitCode != null && exitCode !== 0 ? { exitCode } : {}),
@@ -451,6 +471,9 @@ function buildFallbackResponse(
     phases,
     rawOutput: stdout.slice(-MAX_RAW_OUTPUT),
     ...(stderr ? { error: stderr.slice(-1000) } : {}),
+    runLogMissing: true,
+    requestedIssues: issueNumbers,
+    note: `Run log not found${which}; this result is not a parsed log, and per-issue status and QA verdicts are unavailable (requested issues ${issueList}). The summary counts only reflect the exit code.`,
   };
 }
 /** Prefix used by the batch executor to emit structured progress lines. */
@@ -831,10 +854,11 @@ export function registerRunTool(server: McpServer): void {
           result.exitCode === 0 ? "success" : "failure";
 
         // Try to read structured log file for rich per-issue data.
-        // Prefer exact-filename lookup by captured runId (#631); fall back to
-        // the time-window heuristic when the CLI didn't emit a runId (older
-        // CLI, startup race) or the file is not yet visible on disk.
-        const runLog = await resolveRunLog(getCapturedRunId(), runStartTime);
+        // Exact-filename lookup by captured runId (#631), never widened on a
+        // miss (#1515); the time-window heuristic applies only when the CLI
+        // emitted no runId (older CLI, startup race).
+        const capturedRunId = getCapturedRunId();
+        const runLog = await resolveRunLog(capturedRunId, runStartTime);
 
         let response: RunToolResponse;
         if (runLog) {
@@ -854,6 +878,7 @@ export function registerRunTool(server: McpServer): void {
             phasesStr,
             result.exitCode,
             stderr || undefined,
+            capturedRunId,
           );
         }
 

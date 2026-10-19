@@ -374,6 +374,8 @@ When gates fail, the quality loop automatically fixes issues.
               (up to 3 iterations)
 ```
 
+QA failures are analyzed, fixed, and QA re-runs — up to 3 iterations.
+
 ### Triggering Quality Loop
 
 ```bash

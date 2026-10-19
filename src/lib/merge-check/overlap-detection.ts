@@ -15,6 +15,9 @@ import type {
   FileOverlap,
 } from "./types.js";
 import { getBranchRef } from "./types.js";
+import type { OpenPRFiles } from "../workflow/platforms/github.js";
+import { findOpenPrOverlaps } from "../open-pr-overlap.js";
+import { EXCLUDED_PATHS } from "../assess-collision-detect.js";
 
 /**
  * Parse git diff hunk headers to extract changed line ranges.
@@ -24,6 +27,7 @@ function getChangedLineRanges(
   branchRef: string,
   file: string,
   repoRoot: string,
+  baseRef: string,
 ): Array<[number, number]> {
   const result = spawnSync(
     "git",
@@ -32,7 +36,7 @@ function getChangedLineRanges(
       repoRoot,
       "diff",
       "--unified=0",
-      `origin/main...${branchRef}`,
+      `${baseRef}...${branchRef}`,
       "--",
       file,
     ],
@@ -79,10 +83,11 @@ function classifyOverlap(
   file: string,
   issueBranches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
 ): "additive" | "conflicting" {
   const rangesByIssue = issueBranches.map((b) => ({
     issueNumber: b.issueNumber,
-    ranges: getChangedLineRanges(getBranchRef(b), file, repoRoot),
+    ranges: getChangedLineRanges(getBranchRef(b), file, repoRoot, baseRef),
   }));
 
   for (let i = 0; i < rangesByIssue.length; i++) {
@@ -105,6 +110,7 @@ function classifyOverlap(
 export function runOverlapDetection(
   branches: BranchInfo[],
   repoRoot: string,
+  baseRef: string,
 ): CheckResult {
   const startTime = Date.now();
   const branchResults: BranchCheckResult[] = [];
@@ -130,7 +136,7 @@ export function runOverlapDetection(
       overlaps.push({
         file,
         issues,
-        type: classifyOverlap(file, issueBranches, repoRoot),
+        type: classifyOverlap(file, issueBranches, repoRoot, baseRef),
       });
     }
   }
@@ -180,6 +186,89 @@ export function runOverlapDetection(
     name: "overlap-detection",
     passed: overlaps.length === 0,
     branchResults,
+    batchFindings,
+    durationMs: Date.now() - startTime,
+  };
+}
+
+/** Source of open-PR file lists; `GitHubProvider` satisfies it (#1454). */
+export interface OpenPrFilesSource {
+  listOpenPRFilesSync(): OpenPRFiles[];
+}
+
+/**
+ * External PR overlap (#1454): open PRs on origin that are not in the batch
+ * but change files the batch changes. Each such PR is one warning naming its
+ * number, head branch and shared paths.
+ *
+ * Always `passed: true` with no branch results, so these findings never move
+ * the batch verdict or the exit code: the owner decides merge order. When the
+ * PR list can't be fetched, the check yields one `info` skip finding, whose
+ * reason is the error's first line (gh appends hints such as
+ * "Try authenticating with: gh auth login").
+ *
+ * Files nearly every PR touches (`EXCLUDED_PATHS`: CHANGELOG.md, lockfiles)
+ * are left out, as in `/assess`'s collision check, or every open PR would
+ * be flagged.
+ */
+export function runExternalPrOverlap(
+  branches: BranchInfo[],
+  source: OpenPrFilesSource,
+): CheckResult {
+  const startTime = Date.now();
+  const batchFindings: CheckFinding[] = [];
+
+  let prs: OpenPRFiles[] | null = null;
+  try {
+    prs = source.listOpenPRFilesSync();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const reason =
+      message
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.length > 0) ?? "unknown error";
+    batchFindings.push({
+      check: "external-pr-overlap",
+      severity: "info",
+      message: `Open-PR overlap check skipped: ${reason}`,
+    });
+  }
+
+  if (prs) {
+    const batchFiles = new Set(
+      branches
+        .flatMap((b) => b.filesModified)
+        .filter((f) => !EXCLUDED_PATHS.has(f)),
+    );
+    const batchHeads = new Set(branches.map((b) => b.branch));
+    const overlaps = findOpenPrOverlaps(
+      new Map([["batch", batchFiles]]),
+      prs,
+      batchHeads,
+    );
+
+    if (overlaps.length === 0) {
+      batchFindings.push({
+        check: "external-pr-overlap",
+        severity: "info",
+        message: "No open PRs outside the batch touch the batch's files",
+      });
+    }
+    for (const o of overlaps) {
+      batchFindings.push({
+        check: "external-pr-overlap",
+        severity: "warning",
+        message: `External PR overlap: PR #${o.prNumber} (${o.headRefName}) shares ${o.sharedPaths.join(", ")} with this batch`,
+        file: o.sharedPaths[0],
+      });
+    }
+  }
+
+  return {
+    name: "external-pr-overlap",
+    passed: true,
+    branchResults: [],
     batchFindings,
     durationMs: Date.now() - startTime,
   };

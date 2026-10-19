@@ -28,6 +28,15 @@ export const RunOutcomeSchema = z.enum(["success", "partial", "failed"]);
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
 /**
+ * Which entry point produced a run record (#929): `sequant run` or standalone
+ * `sequant ready`. Parsed with a `"run"` default so records written before the
+ * field existed read back as `run` with no migration.
+ */
+export const RunSourceSchema = z.enum(["run", "ready"]);
+
+export type RunSource = z.infer<typeof RunSourceSchema>;
+
+/**
  * Bounded-enum classification of the failure that ended a run (#761 AC-7).
  *
  * Sourced from `ERROR_CATEGORIES` so the metric can never carry free text —
@@ -161,6 +170,11 @@ export const MetricRunSchema = z.object({
   phases: z.array(MetricPhaseSchema),
   /** Overall outcome */
   outcome: RunOutcomeSchema,
+  /**
+   * Entry point that produced the record (#929). Defaults to `"run"` at parse
+   * time, so legacy records need no migration and no `version` bump.
+   */
+  source: RunSourceSchema.default("run"),
   /** Total duration in seconds */
   duration: z.number().nonnegative(),
   /** Model used (e.g., "opus", "sonnet") */
@@ -297,6 +311,8 @@ export function createMetricRun(options: {
   model?: string;
   flags?: string[];
   failureCategory?: FailureCategory;
+  /** Entry point that produced the record (#929). Defaults to `"run"`. */
+  source?: RunSource;
   /**
    * Resolved per-phase model/effort overrides (#914/#975), keyed by phase name.
    * Pass only the phases that actually had a configured override — a phase
@@ -346,6 +362,7 @@ export function createMetricRun(options: {
     issues: options.issues,
     phases: options.phases,
     outcome: options.outcome,
+    source: options.source ?? "run",
     duration: options.duration,
     model: options.model ?? "unknown",
     flags: options.flags ?? [],

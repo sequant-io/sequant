@@ -4,7 +4,7 @@
 
 For developers who won't merge what they can't trust — solo or on a team.
 
-Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, implement, review — each in its own git worktree, with quality gates between them. The PR arrives with evidence: every acceptance criterion re-checked against the code and posted to the issue. The merge is always yours.
+Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, implement, review — each in its own git worktree, with quality gates between them. The PR arrives with evidence: every acceptance criterion re-checked against the code and posted to the issue. On a held-out fixture with 5 planted defects, the review named all 5 in each of 3 runs ([measured](docs/investigations/qa-second-look-measured.md)). The merge is always yours.
 
 **[sequant.io](https://sequant.io)** — docs, guides, and getting started.
 
@@ -36,6 +36,8 @@ Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, 
 - Optional MCP servers: `chrome-devtools` (browser tests via `/test`), `sequential-thinking`, `context7`.
 
 > **Why Claude Code ≥ 2.1.288?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`. Its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208, and its coverage of `bash -c` / `sh -c` scripts (e.g. `bash -c "rm -rf ~"`) landed in 2.1.288. On an older version, a phase agent running `bash -c "rm -rf ~"` is not stopped by either side. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
+
+> **Phase agents run the bundled Claude Code.** `sequant run` phases go through the Agent SDK `query()` and use the Claude Code bundled with `@anthropic-ai/claude-agent-sdk` (2.1.296 at SDK 0.3.296), not the `claude` you installed, so the two versions can differ. The recommended version above is for your interactive CLI. Inside a phase agent, the `rm` analyzer coverage it describes comes from the bundled version, which is already past 2.1.288.
 
 ### Install
 

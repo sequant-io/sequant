@@ -15,9 +15,10 @@ import {
   type RunLog,
   LOG_PATHS,
 } from "../workflow/run-log-schema.js";
-import { getGitDiffStats } from "../workflow/git-diff-utils.js";
+import { detectDefaultBranch } from "../workflow/worktree-manager.js";
 import type {
   BranchInfo,
+  BranchCheckResult,
   CheckResult,
   MergeCommandOptions,
   MergeReport,
@@ -25,7 +26,10 @@ import type {
 import { DEFAULT_MIRROR_PAIRS } from "./types.js";
 import { runCombinedBranchTest } from "./combined-branch-test.js";
 import { runMirroringCheck } from "./mirroring-check.js";
-import { runOverlapDetection } from "./overlap-detection.js";
+import {
+  runExternalPrOverlap,
+  runOverlapDetection,
+} from "./overlap-detection.js";
 import { runResidualPatternScan } from "./residual-pattern-scan.js";
 import {
   buildReport,
@@ -80,6 +84,15 @@ export function findMostRecentLog(logDir: string): RunLog | null {
 }
 
 /**
+ * The base every merge-check diff and the combined branch are taken against:
+ * the repo's default branch on origin (`origin/<default>`).
+ * Resolved at the repo root, not per branch, because a batch check has one base.
+ */
+export function resolveMergeBaseRef(repoRoot: string): string {
+  return `origin/${detectDefaultBranch(false, repoRoot)}`;
+}
+
+/**
  * Resolve branches from issue numbers.
  *
  * Uses git worktree list and remote branch patterns to find
@@ -88,6 +101,7 @@ export function findMostRecentLog(logDir: string): RunLog | null {
 export function resolveBranches(
   issueNumbers: number[],
   repoRoot: string,
+  baseRef: string,
   runLog?: RunLog | null,
 ): BranchInfo[] {
   const branches: BranchInfo[] = [];
@@ -149,28 +163,28 @@ export function resolveBranches(
 
     // Get modified files from the branch
     const worktreePath = worktreePaths.get(branch);
-    let filesModified: string[];
+    let filesModified: string[] = [];
+    let filesModifiedError: string | undefined;
 
-    if (worktreePath) {
-      // Use worktree for diff
-      const diffStats = getGitDiffStats(worktreePath);
-      filesModified = diffStats.filesModified;
-    } else {
-      // Use remote branch diff
-      const diffResult = spawnSync(
-        "git",
-        [
+    // The worktree's HEAD when one holds the branch, else the remote branch.
+    const diffArgs = worktreePath
+      ? ["-C", worktreePath, "diff", "--name-only", `${baseRef}...HEAD`]
+      : [
           "-C",
           repoRoot,
           "diff",
           "--name-only",
-          `origin/main...origin/${branch}`,
-        ],
-        { stdio: "pipe", encoding: "utf-8" },
-      );
-      filesModified = diffResult.stdout
-        ? diffResult.stdout.split("\n").filter(Boolean)
-        : [];
+          `${baseRef}...origin/${branch}`,
+        ];
+    const diffResult = spawnSync("git", diffArgs, {
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+    if (diffResult.status === 0) {
+      filesModified = diffResult.stdout.split("\n").filter(Boolean);
+    } else {
+      // An empty list here would read as "no changes" to every overlap check.
+      filesModifiedError = `git ${diffArgs.join(" ")}`;
     }
 
     const info = issueInfo.get(issueNumber);
@@ -186,6 +200,7 @@ export function resolveBranches(
       worktreePath,
       prNumber: info?.prNumber,
       filesModified,
+      ...(filesModifiedError ? { filesModifiedError } : {}),
     });
   }
 
@@ -205,7 +220,12 @@ const ghProvider = new GitHubProvider();
  * and show the Phase 3 stub message (see merge.ts).
  */
 export function getChecksToRun(options: MergeCommandOptions): string[] {
-  const phase1 = ["combined-branch-test", "mirroring", "overlap-detection"];
+  const phase1 = [
+    "combined-branch-test",
+    "mirroring",
+    "overlap-detection",
+    "external-pr-overlap",
+  ];
   const phase2 = ["residual-pattern-scan"];
   // Phase 3 checks will be added here when AI briefing is implemented
   // const phase3 = ["ai-briefing"];
@@ -215,6 +235,34 @@ export function getChecksToRun(options: MergeCommandOptions): string[] {
   }
   // Default --check: Phase 1 only
   return phase1;
+}
+
+/**
+ * Report branches whose `filesModified` diff failed (AC-3, #1484).
+ * Returns null when every diff succeeded.
+ */
+function buildDiffFailureResult(branches: BranchInfo[]): CheckResult | null {
+  const failed = branches.filter((b) => b.filesModifiedError);
+  if (failed.length === 0) return null;
+  const branchResults: BranchCheckResult[] = failed.map((b) => ({
+    issueNumber: b.issueNumber,
+    verdict: "FAIL",
+    findings: [
+      {
+        check: "branch-diff",
+        severity: "error",
+        message: `Could not compute files modified for ${b.branch}: \`${b.filesModifiedError}\` failed (base ref does not resolve?)`,
+        issueNumber: b.issueNumber,
+      },
+    ],
+  }));
+  return {
+    name: "branch-diff",
+    passed: false,
+    branchResults,
+    batchFindings: [],
+    durationMs: 0,
+  };
 }
 
 /**
@@ -247,8 +295,11 @@ export async function runMergeChecks(
     runLog = findMostRecentLog(logDir);
   }
 
+  // One base for the whole run, shared by every check below.
+  const baseRef = resolveMergeBaseRef(repoRoot);
+
   // Resolve branches for each issue
-  const branches = resolveBranches(issueNumbers, repoRoot, runLog);
+  const branches = resolveBranches(issueNumbers, repoRoot, baseRef, runLog);
 
   if (branches.length === 0) {
     throw new Error(
@@ -261,9 +312,15 @@ export async function runMergeChecks(
   const checksToRun = getChecksToRun(options);
   const checkResults: CheckResult[] = [];
 
+  // A failed `filesModified` diff is an error, never a silent empty list.
+  const diffFailures = buildDiffFailureResult(branches);
+  if (diffFailures) {
+    checkResults.push(diffFailures);
+  }
+
   // Phase 1: Deterministic checks
   if (checksToRun.includes("combined-branch-test")) {
-    checkResults.push(runCombinedBranchTest(branches, repoRoot));
+    checkResults.push(runCombinedBranchTest(branches, repoRoot, baseRef));
   }
 
   if (checksToRun.includes("mirroring")) {
@@ -271,12 +328,16 @@ export async function runMergeChecks(
   }
 
   if (checksToRun.includes("overlap-detection")) {
-    checkResults.push(runOverlapDetection(branches, repoRoot));
+    checkResults.push(runOverlapDetection(branches, repoRoot, baseRef));
+  }
+
+  if (checksToRun.includes("external-pr-overlap")) {
+    checkResults.push(runExternalPrOverlap(branches, ghProvider));
   }
 
   // Phase 2: Residual pattern detection
   if (checksToRun.includes("residual-pattern-scan")) {
-    checkResults.push(runResidualPatternScan(branches, repoRoot));
+    checkResults.push(runResidualPatternScan(branches, repoRoot, baseRef));
   }
 
   // Build report

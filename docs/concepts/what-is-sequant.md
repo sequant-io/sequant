@@ -87,6 +87,13 @@ catches problems before merge.
                          Code on main
 ```
 
+In words:
+
+1. `/spec` runs in the main repo. It reads the issue, lints the acceptance criteria, and posts a plan to GitHub.
+2. In an isolated worktree (its own branch and dependencies), `/exec` implements the plan, commits, pushes, and opens a PR.
+3. `/qa` reviews type safety, security, scope, and tests. If it fails, `/loop` fixes the findings and re-runs QA, up to 3 times.
+4. When QA passes, the PR merges to main and the worktree is removed.
+
 Or run the full pipeline in one command:
 
 ```text
@@ -169,32 +176,15 @@ your code and renders one of four verdicts:
 
 The checks behind those verdicts:
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│                     /qa Quality Gates                   │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  AC Adherence ─── Does the code do what the issue asked │
-│                                                         │
-│  Type Safety ──── Detects `any`, missing types,         │
-│                   unsafe casts                          │
-│                                                         │
-│  Security ─────── Semgrep static analysis, OWASP        │
-│                   checks, secret detection              │
-│                                                         │
-│  Scope ────────── Flags changes outside issue scope     │
-│                                                         │
-│  Test Coverage ── File-by-file coverage, critical path  │
-│                   flagging, deleted test detection      │
-│                                                         │
-│  Build ────────── Distinguishes regressions from        │
-│                   pre-existing failures                 │
-│                                                         │
-│  Anti-Patterns ── N+1 queries, empty catch blocks,      │
-│                   over-mocking, stale dependencies      │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
+| Gate | What it checks |
+| ---- | -------------- |
+| **AC Adherence** | Does the code do what the issue asked |
+| **Type Safety** | Detects `any`, missing types, unsafe casts |
+| **Security** | Semgrep static analysis, OWASP checks, secret detection |
+| **Scope** | Flags changes outside issue scope |
+| **Test Coverage** | File-by-file coverage, critical path flagging, deleted test detection |
+| **Build** | Distinguishes regressions from pre-existing failures |
+| **Anti-Patterns** | N+1 queries, empty catch blocks, over-mocking, stale dependencies |
 
 When checks fail, `/loop` can automatically parse findings, apply fixes,
 and re-run — up to 3 iterations — without human intervention.

@@ -17,6 +17,9 @@
  * skill-prose edits.
  */
 
+import type { OpenPRFiles } from "./workflow/platforms/github.js";
+import { findOpenPrOverlaps } from "./open-pr-overlap.js";
+
 /**
  * Files that virtually every PROCEED issue mentions. Including them in
  * pairwise intersection would flag every batch as colliding, training
@@ -338,4 +341,24 @@ export function formatCollisionAnnotations(
   }
 
   return { orderLines, warnings, chainSuggestion };
+}
+
+/**
+ * Warnings for open PRs on origin whose changed files overlap an issue's
+ * predicted paths (#1454): one `⚠ #N  Modifies <path> (overlaps PR #M); land
+ * sequentially` line per overlapping (issue, PR) pair. Several shared
+ * paths are joined with `, ` in ascending order. A disjoint PR produces no
+ * line.
+ *
+ * `/assess` starts calling this after the plugin freeze lifts (graph doc
+ * D-8); the PR file lists come from `GitHubProvider.listOpenPRFilesSync`.
+ */
+export function formatOpenPrCollisionWarnings(
+  issuePaths: Map<number, Set<string>>,
+  prs: OpenPRFiles[],
+): string[] {
+  return findOpenPrOverlaps(issuePaths, prs).map(
+    (o) =>
+      `⚠ #${o.key}  Modifies ${o.sharedPaths.join(", ")} (overlaps PR #${o.prNumber}); land sequentially`,
+  );
 }

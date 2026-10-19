@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.19.0
+# What We've Built: Sequant v2.20.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -15,13 +15,13 @@ journey through planning, implementation, testing, and review
 |--------|-------|
 | Slash Commands | 20 |
 | CLI Commands | 20 |
-| Core Library Modules | 145 |
-| Test Files | 360 |
-| Documentation Files | 119 |
+| Core Library Modules | 149 |
+| Test Files | 397 |
+| Documentation Files | 145 |
 | Stack Configurations | 9 |
-| Lines of TypeScript | ~70,600 |
+| Lines of TypeScript | ~72,900 |
 
-*Counted 2026-10-01 (v2.19.0) with the commands in `/release` Step 4.6.*
+*Counted 2026-10-18 (v2.20.0) with the commands in `/release` Step 4.6.*
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)
@@ -742,6 +742,15 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.20.0)
+
+- **Honest PRs** - a `sequant run` PR says `QA has not run` until QA reviews the latest exec (#1246); `/qa` keeps a follow-up ledger where every deferred item ends filed, fixed or dropped (#1249)
+- **Affected Tests in Phases** - `/exec` and `/qa` run the tests a branch affects (`vitest --changed`) instead of the full suite; CI keeps the full run (#1349)
+- **Merge-Check Overlap** - `sequant merge --check` warns about open PRs outside the batch that touch the batch's files (#1454), and diffs against the repo's default branch instead of `origin/main` (#1484)
+- **Skills-Only Installs Stay Skills-Only** - the manifest records the install scope (#1409); `update` refuses on it (#1482); plain `sync` and `doctor` stop steering it into a full install (#1485, #1489); `doctor` reports skill content drift (#1490)
+- **Run Correctness** - a failed `git worktree add` fails the issue instead of running in the main checkout (#1469); a re-run reuses the issue's branch whatever its title (#1487); phase agents get `SEQUANT_BASE_BRANCH` (#1460); the MCP `sequant_run` result never reports another run's log (#1515)
+- **Supply Chain and CI** - gitleaks scans every PR (#1352); the `main` ruleset payload moves to a merge queue (#1350); standalone `sequant ready` records metrics (#929)
+
 ### Recent Additions (v2.19.0)
 
 - **One PR Producer** - under `sequant run`, exec pushes and opens no PR; the run opens the PR right after exec so QA can read its body, then updates it after QA with the QA note, ready-gate report, exec summary and typed title; an existing PR is updated, not skipped, and `--no-pr` stops both producers (#1247, #1223)
@@ -1242,7 +1251,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.19.0
+**Current Version:** 2.20.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1252,7 +1261,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.19.0                               │
+│                              SEQUANT v2.20.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

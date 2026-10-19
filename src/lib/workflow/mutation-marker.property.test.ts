@@ -1,26 +1,26 @@
 /**
  * Round-trip property tests for `SEQUANT_MUTATION` markers (#1095).
  *
- * No production formatter exists (the emitter is skill prose), so `format`
- * here mirrors the documented shape and this proves parser/doc consistency.
- * Generators encode the marker contract: flat JSON, and no `}` inside string
- * values (the `{[^}]+}` regex stops at the first `}`); a boundary test pins
- * that known-lossy input.
+ * Markers are produced by `renderMutationMarker`, so these prove the
+ * parser is its inverse. Generators encode the marker contract: flat JSON,
+ * and string values may hold `{`, `}` and `-->` (#1305).
  */
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { parseMutationMarkers } from "./mutation-marker.js";
+import {
+  parseMutationMarkers,
+  renderMutationMarker,
+} from "./mutation-marker.js";
 
 const seedParam = (): { seed?: number } =>
   process.env.FC_SEED ? { seed: Number(process.env.FC_SEED) } : {};
 
-const format = (m: { ac: string; mutation: string; failedTest: string }) =>
-  `<!-- SEQUANT_MUTATION: ${JSON.stringify(m)} -->`;
+const format = renderMutationMarker;
 
-// Contract: non-empty, no `}`, no backtick (inline-code stripping), no newline.
+// Contract: non-empty, no backtick (inline-code stripping), no newline.
 const value = fc
   .string({ minLength: 1, maxLength: 40 })
-  .filter((s) => !/[}`\n\r]/.test(s) && s.trim().length > 0);
+  .filter((s) => !/[`\n\r]/.test(s) && s.trim().length > 0);
 
 const payload = fc.record({
   ac: fc.integer({ min: 1, max: 99 }).map((n) => `AC-${n}`),
@@ -60,12 +60,12 @@ describe("SEQUANT_MUTATION marker (property)", () => {
     );
   });
 
-  it("boundary: a `}` inside a value drops the marker (known lossy input)", () => {
+  it("boundary: braces and `-->` inside a value round-trip", () => {
     const x = {
       ac: "AC-1",
-      mutation: "removed } brace",
+      mutation: "removed } brace {x} --> end",
       failedTest: "a.test.ts",
     };
-    expect(parseMutationMarkers(format(x))).toEqual([]);
+    expect(parseMutationMarkers(format(x))).toEqual([x]);
   });
 });

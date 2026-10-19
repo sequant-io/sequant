@@ -153,7 +153,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
   it("reinstalls dependencies before running test/build when the lockfile changed", () => {
     mockRun({ lockfileChanged: true });
 
-    runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     const installIdx = indexOfCommand("npm ci");
     const testIdx = indexOfCommand("npm run test");
@@ -169,7 +169,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
     // succeed once node_modules matches the merged lockfile.
     mockRun({ lockfileChanged: true });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     expect(result.passed).toBe(true);
     expect(
@@ -187,7 +187,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
   it("skips the reinstall when no lockfile changed", () => {
     mockRun({ lockfileChanged: false });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     expect(indexOfCommand("npm ci")).toBe(-1);
     expect(indexOfCommand("npm run test")).toBeGreaterThanOrEqual(0);
@@ -197,7 +197,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
   it("uses a frozen install so the lockfile is never rewritten", () => {
     mockRun({ lockfileChanged: true });
 
-    runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     // `npm install` would rewrite package-lock.json and dirty the temp branch,
     // breaking the checkout during cleanup.
@@ -207,7 +207,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
   it("restores the caller's node_modules after installing the combined state", () => {
     mockRun({ lockfileChanged: true });
 
-    runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     const commands = spawnedCommands();
     const checkoutBackIdx = commands.findIndex(
@@ -226,7 +226,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
   it("restores with a frozen install so the caller's lockfile is not rewritten", () => {
     mockRun({ lockfileChanged: true });
 
-    runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     // A plain `npm install` normalizes the lockfile, which would leave the
     // user's restored branch dirty.
@@ -253,7 +253,7 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
       return passthrough(bin, args, opts);
     });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     const warning = result.batchFindings.find((f) => f.severity === "warning");
     expect(warning?.message).toContain("could not be restored");
@@ -280,7 +280,7 @@ describe("runCombinedBranchTest — install failure (#803 AC-4)", () => {
       },
     });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     expect(result.passed).toBe(false);
 
@@ -336,7 +336,7 @@ describe("runCombinedBranchTest — skips test/build with no script, not a BLOCK
     mockReadFileSync.mockImplementation(() => enoent());
     mockRun({ lockfileChanged: false });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     expect(result.passed).toBe(true);
     expect(indexOfCommand("npm run test")).toBe(-1);
@@ -367,7 +367,7 @@ describe("runCombinedBranchTest — skips test/build with no script, not a BLOCK
     });
     mockRun({ lockfileChanged: false });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     expect(result.passed).toBe(true);
     expect(indexOfCommand("npm run test")).toBe(-1);
@@ -399,7 +399,7 @@ describe("runCombinedBranchTest — failure messages (#803 AC-3)", () => {
       },
     });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     const error = result.batchFindings.find(
       (f) => f.severity === "error" && f.message.includes("npm run test"),
@@ -417,13 +417,30 @@ describe("runCombinedBranchTest — failure messages (#803 AC-3)", () => {
       },
     });
 
-    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
+    const result = runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/main");
 
     const error = result.batchFindings.find(
       (f) => f.severity === "error" && f.message.includes("npm run build"),
     );
     expect(error?.message).toContain("exited with code 2");
     expect(error?.message).not.toMatch(/failed on combined state:\s*$/);
+  });
+});
+
+describe("runCombinedBranchTest — cleanup restore (#1484)", () => {
+  it("restores the base branch when the original branch cannot be read, not a hardcoded main", () => {
+    mockRun({
+      lockfileChanged: false,
+      overrides: { "git rev-parse": spawnResult({ status: 128 }) },
+    });
+
+    runCombinedBranchTest(BRANCHES, REPO_ROOT, "origin/master");
+
+    const checkouts = spawnedCommands().filter(
+      (c) => c.startsWith("git checkout") && !c.includes(" -b "),
+    );
+    expect(checkouts).toContain("git checkout master");
+    expect(checkouts).not.toContain("git checkout main");
   });
 });
 
@@ -535,7 +552,7 @@ describe("runCombinedBranchTest — yarn major resolution (#871)", () => {
     writeFileSync(join(repo, "yarn.lock"), YARN_1_LOCK);
     mockRun({ lockfileChanged: true });
 
-    runCombinedBranchTest(BRANCHES, repo);
+    runCombinedBranchTest(BRANCHES, repo, "origin/main");
 
     expect(yarnInstalls()).toContain("yarn install --frozen-lockfile");
     // The bug: `--immutable` is what Yarn 1 errors out on, which would surface
@@ -547,7 +564,7 @@ describe("runCombinedBranchTest — yarn major resolution (#871)", () => {
     writeFileSync(join(repo, "yarn.lock"), BERRY_LOCK);
     mockRun({ lockfileChanged: true });
 
-    runCombinedBranchTest(BRANCHES, repo);
+    runCombinedBranchTest(BRANCHES, repo, "origin/main");
 
     expect(yarnInstalls()).toContain("yarn install --immutable");
     expect(yarnCommands().join("\n")).not.toContain("--frozen-lockfile");
@@ -562,7 +579,7 @@ describe("runCombinedBranchTest — yarn major resolution (#871)", () => {
       },
     });
 
-    const result = runCombinedBranchTest(BRANCHES, repo);
+    const result = runCombinedBranchTest(BRANCHES, repo, "origin/main");
 
     // A finding naming berry's command would tell a Yarn 1 user to rerun the
     // very command that just failed.
@@ -600,7 +617,7 @@ describe("runCombinedBranchTest — yarn major resolution (#871)", () => {
       return spawnResult();
     });
 
-    runCombinedBranchTest(BRANCHES, repo);
+    runCombinedBranchTest(BRANCHES, repo, "origin/main");
 
     const installs = yarnInstalls();
     // Combined install: berry, because that is what the merged tree declares.

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The merge queue builds each queued PR on a temporary branch off the latest
+  # `main` and waits for the required contexts (`test`, `canary`) to report on
+  # this event. Without this trigger a queued PR never gets its checks (#1350).
+  merge_group:
 
 jobs:
   # The check-run context required by the `main` ruleset (#1093,
@@ -15,9 +19,12 @@ jobs:
   #      — the context named in the ruleset payload.
   #   2. It carries NO `strategy.matrix`. A matrix — even a single-entry one,
   #      which is what this job had until #1093 — suffixes the context
-  #      (`build (22.x)`). Under `strict_required_status_checks_policy` a
-  #      required context that never reports blocks EVERY merge to `main`, so
-  #      bumping `node-version` under a matrix would brick the branch silently.
+  #      (`build (22.x)`). A required context that never reports stalls the
+  #      merge queue until its check-response timeout and then ejects the PR,
+  #      so bumping `node-version` under a matrix would brick merging silently.
+  #
+  # `canary` is held to the same two rules, and both jobs must keep running on
+  # `merge_group` (see the `on:` block above).
   #
   # Renaming this job, or adding a matrix to it, requires updating
   # REQUIRED_CHECK_CONTEXT in scripts/ruleset-main.sh and re-applying the
@@ -29,7 +36,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
           cache: 'npm'
@@ -61,7 +68,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
           cache: 'npm'
@@ -89,7 +96,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 22.x (build)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
           cache: 'npm'
@@ -101,7 +108,7 @@ jobs:
         run: npm run build
 
       - name: Switch to below-floor Node 20.x (keep node_modules + dist)
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 20.x
 
@@ -132,7 +139,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
           cache: 'npm'
@@ -180,7 +187,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
           cache: 'npm'
@@ -205,7 +212,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
 
@@ -347,7 +354,7 @@ jobs:
           fetch-depth: 0
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
           cache: 'npm'

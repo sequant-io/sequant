@@ -4,7 +4,14 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { execFileSync } from "child_process";
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -14,6 +21,7 @@ import {
   buildPRTitle,
   createPR,
   isAutomatedPRBody,
+  resolvePrBase,
   resolvePrLinkMode,
   resolveWorktreeRoot,
   shouldPreserveWorktree,
@@ -203,7 +211,23 @@ describe("installWorktreeDeps skips install with no manifest (#1196 AC-1)", () =
     expect(result).toBe(true);
     const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
     expect(output).toContain("Skipping dependency install");
-    expect(output).toContain("no manifest found");
+    expect(output).toContain("no package.json at the worktree root");
+
+    logSpy.mockRestore();
+  });
+
+  it("no root package.json: skips with a root-naming message (package in a subdirectory)", () => {
+    mkdirSync(join(dir, "agent"));
+    writeFileSync(join(dir, "agent", "package.json"), "{}");
+    writeFileSync(join(dir, "agent", "package-lock.json"), "{}");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = installWorktreeDeps(dir, undefined, false);
+
+    expect(result).toBe(true);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("no package.json at the worktree root");
+    expect(output).not.toContain("Dependency install failed");
 
     logSpy.mockRestore();
   });
@@ -287,7 +311,16 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     git(clone, "checkout", "-q", "-b", "main");
     commitFile(clone, "base.txt", "base");
     git(clone, "push", "-q", "origin", "main");
-    git(clone, "worktree", "add", "-q", "-b", "feature/1247", wt, "origin/main");
+    git(
+      clone,
+      "worktree",
+      "add",
+      "-q",
+      "-b",
+      "feature/1247",
+      wt,
+      "origin/main",
+    );
     commitFile(wt, "fix.txt", "fix one");
     logs = [];
     vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
@@ -305,7 +338,10 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const run = (stackOptions?: { prBase?: string; stackManifest?: string }) =>
+  const run = (
+    stackOptions?: { prBase?: string; stackManifest?: string },
+    baseBranch?: string,
+  ) =>
     createPR(
       wt,
       1247,
@@ -318,7 +354,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
       undefined,
       undefined,
       undefined,
-      { execSummary: "Exec summary from state." },
+      { execSummary: "Exec summary from state.", baseBranch },
     );
 
   const remoteHead = (): string =>
@@ -344,6 +380,40 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     expect(fields.body).toContain("Fixes #1247");
     expect(fields.body).not.toContain("Automated PR for issue #1247.");
     expect(fields.base).toBeUndefined();
+  });
+
+  // #1386: a plain --base (no --stacked) reaches `gh`'s --base / the PATCH.
+  it("#1386 AC-1: create path passes --base <branch> when only --base is set", () => {
+    viewSpy.mockReturnValue(null);
+    createSpy.mockReturnValue({
+      stdout: "https://github.com/o/r/pull/9",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    run(undefined, "feat/x");
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    // `base` is createPRCliSync's 5th positional argument.
+    expect(createSpy.mock.calls[0][4]).toBe("feat/x");
+  });
+
+  it("#1386 AC-1: update path retargets the PR to --base <branch>", () => {
+    viewSpy.mockReturnValue(existing(AUTOMATED_BODY));
+
+    run(undefined, "origin/feat/x");
+
+    const fields = updateSpy.mock.calls[0][1] as { base?: string };
+    expect(fields.base).toBe("feat/x");
+  });
+
+  it("#1386 AC-4: --stacked predecessor wins over --base", () => {
+    viewSpy.mockReturnValue(existing(AUTOMATED_BODY));
+
+    run({ prBase: "feature/1200-first" }, "feat/x");
+
+    const fields = updateSpy.mock.calls[0][1] as { base?: string };
+    expect(fields.base).toBe("feature/1200-first");
   });
 
   it("an empty existing body is overwritten too", () => {
@@ -764,9 +834,13 @@ describe("#1234 ensureWorktree records sequantBaseRef", () => {
     });
   };
 
-  const ensure = (issue: number, base: string | undefined): string => {
+  const ensure = (
+    issue: number,
+    base: string | undefined,
+    chain = false,
+  ): string => {
     const out = runScript(
-      `const info = await ensureWorktree(${issue}, "base ref", false, undefined, ${JSON.stringify(base)}, false, ".trees");
+      `const info = await ensureWorktree(${issue}, "base ref", false, undefined, ${JSON.stringify(base)}, ${chain}, ".trees");
 process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
     );
     const line = out.split("\n").find((l) => l.startsWith("RESULT="));
@@ -793,6 +867,46 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
 
   it("1234 records a local --base branch as-is", () => {
     expect(recorded(ensure(3, "local-base"))).toBe("local-base");
+  }, 60_000);
+
+  // #1406: a non-default bare base is cut from origin/<base>, not a stale local.
+  const lagBehindOrigin = (name: string): void => {
+    git(clone, "checkout", "-q", "-b", name, "main");
+    commitFile(clone, `${name}-1.txt`, `${name} one`);
+    git(clone, "push", "-q", "-u", "origin", name);
+    git(clone, "checkout", "-q", "main");
+    const mate = join(root, `mate-${name}`);
+    git(root, "clone", "-q", join(root, "remote.git"), mate);
+    git(mate, "config", "user.email", "m@m");
+    git(mate, "config", "user.name", "m");
+    git(mate, "config", "commit.gpgsign", "false");
+    git(mate, "checkout", "-q", name);
+    commitFile(mate, `${name}-2.txt`, `${name} two`);
+    git(mate, "push", "-q", "origin", name);
+  };
+
+  it("1406 a lagging local base: the worktree is cut from origin/<base>", () => {
+    lagBehindOrigin("release");
+    const wt = ensure(10, "release");
+    const originTip = git(clone, "rev-parse", "origin/release");
+    expect(originTip).not.toBe(git(clone, "rev-parse", "release"));
+    expect(git(wt, "rev-parse", "HEAD")).toBe(originTip);
+    expect(recorded(wt)).toBe("origin/release");
+  }, 60_000);
+
+  it("1406 a local-only base is still cut from the local branch", () => {
+    const wt = ensure(11, "local-base");
+    expect(git(wt, "rev-parse", "HEAD")).toBe(
+      git(clone, "rev-parse", "local-base"),
+    );
+    expect(recorded(wt)).toBe("local-base");
+  }, 60_000);
+
+  it("1406 a stacked predecessor that is also on origin stays local", () => {
+    lagBehindOrigin("pred");
+    const wt = ensure(12, "pred", true);
+    expect(git(wt, "rev-parse", "HEAD")).toBe(git(clone, "rev-parse", "pred"));
+    expect(recorded(wt)).toBe("pred");
   }, 60_000);
 
   it("1234 pre-PR rebase onto a local-only base prints no fetch failure", () => {
@@ -847,4 +961,475 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
     );
     expect(out).toContain("onto origin/main");
   }, 60_000);
+});
+
+describe("#1386: resolvePrBase", () => {
+  const detected = () => "main";
+
+  it("no base: undefined, so gh uses the repo default", () => {
+    expect(resolvePrBase(undefined, undefined, detected)).toBeUndefined();
+  });
+
+  it("a base equal to the detected default: undefined (unchanged)", () => {
+    expect(resolvePrBase(undefined, "main", detected)).toBeUndefined();
+    expect(resolvePrBase(undefined, "origin/main", detected)).toBeUndefined();
+  });
+
+  it("a non-default base: the bare branch name", () => {
+    expect(resolvePrBase(undefined, "feat/x", detected)).toBe("feat/x");
+    expect(resolvePrBase(undefined, "origin/feat/x", detected)).toBe("feat/x");
+  });
+
+  it("--stacked predecessor wins and detection is not consulted", () => {
+    const detect = vi.fn(() => "main");
+    expect(resolvePrBase("feature/1-a", "feat/x", detect)).toBe("feature/1-a");
+    expect(detect).not.toHaveBeenCalled();
+  });
+});
+
+// #1380: a stale-and-clean worktree is recreated from origin/<branch> when the
+// remote has it, and never in a way that drops the branch's commits.
+describe("#1380 ensureWorktree recreate keeps the branch's commits", () => {
+  let root: string;
+  let clone: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1380-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    git(clone, "config", "commit.gpgsign", "false");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "a.txt", "init");
+    git(clone, "push", "-q", "-u", "origin", "main");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const ensure = (
+    issue: number,
+    cwd: string = clone,
+    extraEnv: Record<string, string> = {},
+  ): { out: string; info: { path: string; existed: boolean } } => {
+    const script = join(root, `run-${Math.random().toString(36).slice(2)}.mts`);
+    const modPath = join(__dirname, "worktree-manager.ts");
+    writeFileSync(
+      script,
+      `import { ensureWorktree } from ${JSON.stringify(modPath)};
+const info = await ensureWorktree(${issue}, "recreate me", false, undefined, undefined, false, ".trees");
+process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
+    );
+    const env = { ...process.env, ...extraEnv };
+    delete env.SEQUANT_WORKTREE_ROOT;
+    const out = execFileSync("npx", ["tsx", script], {
+      cwd,
+      env,
+      encoding: "utf8",
+    });
+    const line = out.split("\n").find((l) => l.startsWith("RESULT="));
+    return { out, info: JSON.parse(line!.slice("RESULT=".length)) };
+  };
+
+  // A teammate lands six commits on main; the clone fetches them.
+  const advanceMain = (): void => {
+    const mate = join(root, "mate");
+    git(root, "clone", "-q", join(root, "remote.git"), mate);
+    git(mate, "config", "user.email", "m@m");
+    git(mate, "config", "user.name", "m");
+    git(mate, "config", "commit.gpgsign", "false");
+    for (let i = 0; i < 6; i++) commitFile(mate, `m${i}.txt`, `main ${i}`);
+    git(mate, "push", "-q", "origin", "main");
+    git(clone, "fetch", "-q", "origin");
+  };
+
+  // The PR shape: a worktree whose branch has a commit pushed with -u.
+  const pushedBranch = (issue: number): { wt: string; branch: string } => {
+    const wt = ensure(issue).info.path;
+    const branch = git(wt, "branch", "--show-current");
+    commitFile(wt, "pr.txt", "pr commit");
+    git(wt, "push", "-q", "-u", "origin", branch);
+    return { wt, branch };
+  };
+
+  // Another machine pushes a commit to origin/<branch>, so the local HEAD is
+  // behind it. A worktree already at origin/<branch> is kept, not recreated
+  // (#1405), so the recreate tests start from this shape.
+  const advanceBranchRemotely = (branch: string): void => {
+    const pusher = join(root, "pusher");
+    git(root, "clone", "-q", "-b", branch, join(root, "remote.git"), pusher);
+    git(pusher, "config", "user.email", "p@p");
+    git(pusher, "config", "user.name", "p");
+    git(pusher, "config", "commit.gpgsign", "false");
+    commitFile(pusher, "remote.txt", "remote commit");
+    git(pusher, "push", "-q", "origin", branch);
+  };
+
+  it("1380 AC-1 recreates a pushed branch from origin/<branch>, keeping its commits", () => {
+    const { branch } = pushedBranch(10);
+    advanceBranchRemotely(branch);
+    advanceMain();
+
+    const { out, info } = ensure(10);
+    expect(out).toContain("recreating fresh");
+    expect(info.existed).toBe(false);
+    expect(
+      git(info.path, "rev-list", "--count", `HEAD..origin/${branch}`),
+    ).toBe("0");
+    expect(git(info.path, "log", "--format=%s")).toContain("pr commit");
+    expect(git(info.path, "log", "--format=%s")).toContain("remote commit");
+    // The recreated branch still tracks the PR branch, so a later push
+    // fast-forwards origin/<branch>.
+    expect(git(info.path, "config", "--get", `branch.${branch}.remote`)).toBe(
+      "origin",
+    );
+    expect(git(info.path, "config", "--get", `branch.${branch}.merge`)).toBe(
+      `refs/heads/${branch}`,
+    );
+  }, 90_000);
+
+  it("1380 AC-2 recreates a local-only branch with no commits of its own from the base", () => {
+    const branch = git(ensure(11).info.path, "branch", "--show-current");
+    expect(git(clone, "ls-remote", "--heads", "origin", branch)).toBe("");
+    advanceMain();
+
+    const { out, info } = ensure(11);
+    expect(out).toContain("recreating fresh");
+    expect(info.existed).toBe(false);
+    expect(git(info.path, "rev-parse", "HEAD")).toBe(
+      git(clone, "rev-parse", "origin/main"),
+    );
+  }, 90_000);
+
+  it("1380 AC-2 keeps a local-only branch that has commits of its own", () => {
+    const wt = ensure(15).info.path;
+    const branch = git(wt, "branch", "--show-current");
+    commitFile(wt, "local.txt", "local-only commit");
+    expect(git(clone, "ls-remote", "--heads", "origin", branch)).toBe("");
+    const head = git(wt, "rev-parse", "HEAD");
+    advanceMain();
+
+    const { out, info } = ensure(15);
+    expect(out).not.toContain("recreating fresh");
+    expect(info.existed).toBe(true);
+    expect(git(wt, "rev-parse", "HEAD")).toBe(head);
+  }, 90_000);
+
+  it("1380 AC-3 keeps the worktree when the start ref lacks the branch's commits", () => {
+    const { wt, branch } = pushedBranch(12);
+    advanceMain();
+    const head = git(wt, "rev-parse", "HEAD");
+    // Offline blip: sequant cannot see origin/<branch> any more.
+    git(clone, "update-ref", "-d", `refs/remotes/origin/${branch}`);
+    git(clone, "remote", "set-url", "origin", join(root, "missing.git"));
+
+    const { out, info } = ensure(12);
+    expect(out).toContain("does not contain its commits");
+    expect(out).toContain("Keeping existing worktree");
+    expect(out).not.toContain("recreating fresh");
+    expect(info.existed).toBe(true);
+    expect(git(wt, "rev-parse", "HEAD")).toBe(head);
+  }, 90_000);
+
+  it("1380 AC-4 records the run's base, not origin/<branch>, after a recreate", () => {
+    const { branch } = pushedBranch(13);
+    advanceBranchRemotely(branch);
+    advanceMain();
+
+    const { info } = ensure(13);
+    expect(info.existed).toBe(false);
+    expect(
+      git(info.path, "config", "--get", `branch.${branch}.sequantBaseRef`),
+    ).toBe("origin/main");
+  }, 90_000);
+
+  // #1405: the first-creation path resolves its start ref the same way, and a
+  // worktree already at origin/<branch> is not recreated on every run.
+  describe("#1405 first creation and repeat recreate", () => {
+    // A second machine: a fresh clone with no local feature branch.
+    const freshClone = (): string => {
+      const other = join(root, "other");
+      git(root, "clone", "-q", join(root, "remote.git"), other);
+      return other;
+    };
+
+    // A teammate merges origin/<branch> into main and pushes it.
+    const mergeIntoMain = (branch: string, squash: boolean): void => {
+      const mate = join(root, "merger");
+      git(root, "clone", "-q", join(root, "remote.git"), mate);
+      git(mate, "config", "user.email", "m@m");
+      git(mate, "config", "user.name", "m");
+      git(mate, "config", "commit.gpgsign", "false");
+      if (squash) {
+        git(mate, "merge", "-q", "--squash", `origin/${branch}`);
+        git(mate, "commit", "-q", "-m", "squash merge");
+      } else {
+        git(mate, "merge", "-q", "--no-ff", "-m", "merge", `origin/${branch}`);
+      }
+      git(mate, "push", "-q", "origin", "main");
+    };
+
+    it("1405 AC-1 first creation on a fresh machine starts from origin/<branch>", () => {
+      const { branch } = pushedBranch(20);
+      const other = freshClone();
+
+      const { info } = ensure(20, other);
+      expect(info.existed).toBe(false);
+      expect(
+        git(info.path, "rev-list", "--count", `HEAD..origin/${branch}`),
+      ).toBe("0");
+      expect(git(info.path, "log", "--format=%s")).toContain("pr commit");
+      expect(git(info.path, "config", "--get", `branch.${branch}.remote`)).toBe(
+        "origin",
+      );
+      expect(git(info.path, "config", "--get", `branch.${branch}.merge`)).toBe(
+        `refs/heads/${branch}`,
+      );
+      expect(
+        git(info.path, "config", "--get", `branch.${branch}.sequantBaseRef`),
+      ).toBe("origin/main");
+    }, 90_000);
+
+    it("1405 AC-2 a worktree recreated from origin/<branch> is reused by the next call", () => {
+      const { branch } = pushedBranch(21);
+      advanceBranchRemotely(branch);
+      advanceMain();
+
+      const first = ensure(21);
+      expect(first.out).toContain("recreating fresh");
+      expect(first.info.existed).toBe(false);
+      const head = git(first.info.path, "rev-parse", "HEAD");
+
+      const second = ensure(21);
+      expect(second.out).not.toContain("recreating fresh");
+      expect(second.info.existed).toBe(true);
+      expect(second.info.path).toBe(first.info.path);
+      expect(git(second.info.path, "rev-parse", "HEAD")).toBe(head);
+      // Still more than 5 behind main: the skip, not freshness, kept it.
+      expect(
+        Number(
+          git(second.info.path, "rev-list", "--count", "HEAD..origin/main"),
+        ),
+      ).toBeGreaterThan(5);
+    }, 90_000);
+
+    it("1405 AC-3 a squash-merged remote branch is not resurrected", () => {
+      const { branch } = pushedBranch(22);
+      mergeIntoMain(branch, true);
+      const other = freshClone();
+
+      const { info } = ensure(22, other);
+      expect(info.existed).toBe(false);
+      expect(git(info.path, "rev-parse", "HEAD")).toBe(
+        git(other, "rev-parse", "origin/main"),
+      );
+    }, 90_000);
+
+    it("1405 AC-3 a merge-commit-merged remote branch is not resurrected", () => {
+      const { branch } = pushedBranch(23);
+      mergeIntoMain(branch, false);
+      const other = freshClone();
+
+      const { info } = ensure(23, other);
+      expect(info.existed).toBe(false);
+      expect(git(info.path, "rev-parse", "HEAD")).toBe(
+        git(other, "rev-parse", "origin/main"),
+      );
+    }, 90_000);
+
+    it("1405 AC-3 a stale tracking ref for a deleted remote branch is ignored", () => {
+      const { branch } = pushedBranch(24);
+      const other = freshClone();
+      expect(git(other, "rev-parse", `origin/${branch}`)).not.toBe("");
+      git(clone, "push", "-q", "origin", "--delete", branch);
+
+      const { info } = ensure(24, other);
+      expect(info.existed).toBe(false);
+      expect(git(info.path, "rev-parse", "HEAD")).toBe(
+        git(other, "rev-parse", "origin/main"),
+      );
+    }, 90_000);
+
+    it("1405 AC-3 a deleted remote branch is detected under a non-English locale", () => {
+      // git translates "couldn't find remote ref"; the check must not depend
+      // on the user's locale. Vacuous where git has no translations installed.
+      const { branch } = pushedBranch(26);
+      const other = freshClone();
+      git(clone, "push", "-q", "origin", "--delete", branch);
+
+      const { info } = ensure(26, other, {
+        LC_ALL: "de_DE.UTF-8",
+        LANG: "de_DE.UTF-8",
+        LANGUAGE: "de",
+      });
+      expect(git(info.path, "rev-parse", "HEAD")).toBe(
+        git(other, "rev-parse", "origin/main"),
+      );
+    }, 90_000);
+
+    it("1405 AC-3 the reuse path makes no gh call", () => {
+      const bin = join(root, "bin");
+      mkdirSync(bin);
+      const marker = join(root, "gh-called");
+      writeFileSync(
+        join(bin, "gh"),
+        `#!/bin/sh\ntouch ${JSON.stringify(marker)}\nexit 1\n`,
+        { mode: 0o755 },
+      );
+      const first = ensure(25);
+      expect(first.info.existed).toBe(false);
+      rmSync(marker, { force: true });
+
+      const pathEnv = { PATH: `${bin}:${process.env.PATH ?? ""}` };
+      const second = ensure(25, clone, pathEnv);
+      expect(second.info.existed).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+    }, 90_000);
+  });
+});
+
+// #1487: the issue number, not the title, is a branch's identity. A failed
+// `gh issue view` (title "Issue #N") or a retitle used to cut a second branch,
+// feature/N-issue-n, from the base next to the PR branch.
+describe("#1487 ensureWorktree finds the issue's branch by number", () => {
+  let root: string;
+  let clone: string;
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1487-")));
+    const remote = join(root, "remote.git");
+    clone = join(root, "clone");
+    git(root, "init", "-q", "--bare", "-b", "main", remote);
+    git(root, "clone", "-q", remote, clone);
+    git(clone, "config", "user.email", "t@t");
+    git(clone, "config", "user.name", "t");
+    git(clone, "config", "commit.gpgsign", "false");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "a.txt", "init");
+    git(clone, "push", "-q", "-u", "origin", "main");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const ensure = (
+    issue: number,
+    title: string,
+    cwd: string = clone,
+  ): {
+    out: string;
+    info: { path: string; branch: string; existed: boolean } | null;
+    failure: string | null;
+  } => {
+    const script = join(root, `run-${Math.random().toString(36).slice(2)}.mts`);
+    const modPath = join(__dirname, "worktree-manager.ts");
+    writeFileSync(
+      script,
+      `import { ensureWorktree } from ${JSON.stringify(modPath)};
+const failures = new Map();
+const info = await ensureWorktree(${issue}, ${JSON.stringify(title)}, false, undefined, undefined, false, ".trees", { failures });
+process.stdout.write("\\nFAILURE=" + JSON.stringify(failures.get(${issue}) ?? null));
+process.stdout.write("\\nRESULT=" + JSON.stringify(info));\n`,
+    );
+    const env = { ...process.env };
+    delete env.SEQUANT_WORKTREE_ROOT;
+    const out = execFileSync("npx", ["tsx", script], {
+      cwd,
+      env,
+      encoding: "utf8",
+    });
+    const field = (name: string) => {
+      const line = out.split("\n").find((l) => l.startsWith(`${name}=`));
+      return JSON.parse(line!.slice(name.length + 1));
+    };
+    return { out, info: field("RESULT"), failure: field("FAILURE") };
+  };
+
+  // The PR shape: a worktree cut under the real title, a commit pushed with -u.
+  const pushedBranch = (
+    issue: number,
+    title: string,
+  ): { wt: string; branch: string } => {
+    const wt = ensure(issue, title).info!.path;
+    const branch = git(wt, "branch", "--show-current");
+    commitFile(wt, "pr.txt", "pr commit");
+    git(wt, "push", "-q", "-u", "origin", branch);
+    return { wt, branch };
+  };
+
+  const branchList = (cwd: string, pattern: string): string =>
+    git(cwd, "branch", "--list", pattern);
+
+  it("reuses the issue's branch for the fallback title Issue #N", () => {
+    const { wt, branch } = pushedBranch(30, "fix(qa): a real title");
+    expect(branch).toBe("feature/30-fix-qa-a-real-title");
+
+    const { info } = ensure(30, "Issue #30");
+    expect(info!.branch).toBe(branch);
+    expect(info!.path).toBe(wt);
+    expect(info!.existed).toBe(true);
+    expect(branchList(clone, "feature/30-issue-30")).toBe("");
+  }, 90_000);
+
+  it("reuses the issue's branch after the issue is retitled", () => {
+    const { wt, branch } = pushedBranch(31, "the first title");
+
+    const { info } = ensure(31, "a different title");
+    expect(info!.branch).toBe(branch);
+    expect(info!.path).toBe(wt);
+    expect(branchList(clone, "feature/31-a-different-title")).toBe("");
+    expect(branchList(clone, "feature/31-issue-31")).toBe("");
+  }, 90_000);
+
+  it("reuses the issue's branch from origin on a fresh clone", () => {
+    const { branch } = pushedBranch(32, "pushed from elsewhere");
+    const other = join(root, "other");
+    git(root, "clone", "-q", join(root, "remote.git"), other);
+
+    const { info } = ensure(32, "Issue #32", other);
+    expect(info!.branch).toBe(branch);
+    expect(info!.existed).toBe(false);
+    expect(git(info!.path, "branch", "--show-current")).toBe(branch);
+    expect(git(info!.path, "log", "--format=%s")).toContain("pr commit");
+    expect(branchList(other, "feature/32-issue-32")).toBe("");
+  }, 90_000);
+
+  it("reuses the issue's branch, not one for an issue sharing its digits", () => {
+    const { branch } = pushedBranch(1, "issue one");
+    git(clone, "branch", "feature/12-other", "main");
+
+    const { info } = ensure(1, "Issue #1");
+    expect(info!.branch).toBe(branch);
+    expect(branchList(clone, "feature/1-issue-1")).toBe("");
+  }, 90_000);
+
+  it("several branches for one issue: creates none and lists every candidate", () => {
+    git(clone, "branch", "feature/40-a", "main");
+    git(clone, "branch", "feature/40-b", "main");
+
+    const { out, info, failure } = ensure(40, "Issue #40");
+    expect(info).toBeNull();
+    expect(out).toContain("feature/40-a");
+    expect(out).toContain("feature/40-b");
+    // The run fails the issue with this reason (#1469's worktreeRequired
+    // guard) instead of running it in the main checkout.
+    expect(failure).toContain("feature/40-a");
+    expect(failure).toContain("feature/40-b");
+    expect(branchList(clone, "feature/40-*").split("\n")).toHaveLength(2);
+    expect(branchList(clone, "feature/40-issue-40")).toBe("");
+  }, 90_000);
+
+  it("several branches for one issue: uses the one the title names", () => {
+    git(clone, "branch", "feature/41-a", "main");
+    git(clone, "branch", "feature/41-b", "main");
+
+    const { info } = ensure(41, "b");
+    expect(info!.branch).toBe("feature/41-b");
+    expect(branchList(clone, "feature/41-*").split("\n")).toHaveLength(2);
+  }, 90_000);
 });

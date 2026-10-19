@@ -9,9 +9,16 @@
  */
 
 import chalk from "chalk";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
+import {
+  retryOnConfigLock,
+  type ConfigLockRetryOptions,
+} from "./git-config-lock.js";
+// ESM cycle with worktree-manager (it imports this module): safe, both sides
+// are function declarations called at run time, not at module load (#1460).
+import { detectDefaultBranch } from "./worktree-manager.js";
 import {
   Phase,
   ExecutionConfig,
@@ -822,23 +829,35 @@ export const SEQUANT_BASE_REF_KEY = "sequantBaseRef";
 
 /**
  * Record the exact ref a worktree's branch was cut from (#1234), for
- * {@link resolveBaseRef} to read verbatim. Best-effort: a failed write leaves
- * the legacy/`origin/main` resolution in place, never fails the caller.
+ * {@link resolveBaseRef} to read verbatim. Retries a lost `.git/config` lock
+ * (#1469). A final failure never fails the caller, but it is returned so the
+ * caller can say the legacy/`origin/main` resolution is in effect.
  */
 export function recordWorktreeBaseRef(
   cwd: string,
   branch: string,
   baseRef: string,
-): void {
-  try {
-    execFileSync(
-      "git",
-      ["config", `branch.${branch}.${SEQUANT_BASE_REF_KEY}`, baseRef],
-      { cwd, stdio: "pipe" },
-    );
-  } catch {
-    // Best-effort — see doc comment.
-  }
+  lockRetry?: ConfigLockRetryOptions,
+): { ok: true } | { ok: false; error: string } {
+  const errorOf = (r: ReturnType<typeof spawnSync>): string | null =>
+    r.status === 0
+      ? null
+      : (r.stderr?.toString() ?? "").trim() ||
+        r.error?.message ||
+        `git config exited ${r.status}`;
+  const error = errorOf(
+    retryOnConfigLock(
+      () =>
+        spawnSync(
+          "git",
+          ["config", `branch.${branch}.${SEQUANT_BASE_REF_KEY}`, baseRef],
+          { cwd, stdio: "pipe" },
+        ),
+      errorOf,
+      lockRetry,
+    ),
+  );
+  return error === null ? { ok: true } : { ok: false, error };
 }
 
 /**
@@ -891,8 +910,11 @@ export function readRecordedBaseRef(
  *    only when the recorded value does not already reference a remote); a
  *    bare name is never read as a local branch, so a stale local `main`
  *    is never used.
- * 3. `"origin/main"` on missing config, missing branch, or any git error —
- *    preserves the pre-#537 behavior for worktrees that predate both keys.
+ * 3. `origin/<default branch of cwd>` on missing config, missing branch,
+ *    detached HEAD, or any git error — `detectDefaultBranch(false, cwd)`, so
+ *    a repo whose default is `master` falls back to `origin/master`, not a
+ *    hard-coded `origin/main` (#1460). This is the path the spec phase takes:
+ *    it runs in the main checkout, where nothing is recorded.
  *
  * Uses `execFileSync` (not `execSync`) so argv is passed directly to
  * `execve` without shell interpretation — the recorded value originates
@@ -904,7 +926,7 @@ export function readRecordedBaseRef(
  * @internal Exported for testing only.
  */
 export function resolveBaseRef(cwd: string): string {
-  const fallback = "origin/main";
+  const fallback = (): string => `origin/${detectDefaultBranch(false, cwd)}`;
   let branch: string;
   try {
     branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
@@ -914,11 +936,11 @@ export function resolveBaseRef(cwd: string): string {
       .toString()
       .trim();
   } catch {
-    return fallback;
+    return fallback();
   }
   // Guard against multi-line output (paranoid — should never happen) and
   // the detached-HEAD case where we have no recorded base to look up.
-  if (!branch || branch === "HEAD" || branch.includes("\n")) return fallback;
+  if (!branch || branch === "HEAD" || branch.includes("\n")) return fallback();
   const exact = readRecordedBaseRef(cwd, branch);
   if (exact) return exact;
   let recorded: string;
@@ -931,9 +953,9 @@ export function resolveBaseRef(cwd: string): string {
       .toString()
       .trim();
   } catch {
-    return fallback;
+    return fallback();
   }
-  if (!recorded || recorded.includes("\n")) return fallback;
+  if (!recorded || recorded.includes("\n")) return fallback();
   return recorded.startsWith("origin/") ? recorded : `origin/${recorded}`;
 }
 
@@ -984,9 +1006,10 @@ function parsePorcelainPaths(porcelain: string): string[] {
  * that would falsely report "has commits" even when exec produced nothing,
  * reintroducing the bug #534 is fixing.
  *
- * The base ref defaults to `origin/main` but is overridden to the worktree's
- * recorded base (see #537) so zero-diff execs are still detected on custom-base
- * worktrees (e.g. those created with `--base feature/epic`).
+ * The base ref comes from `resolveBaseRef`: the worktree's recorded base
+ * (see #537), so zero-diff execs are still detected on custom-base worktrees
+ * (e.g. those created with `--base feature/epic`), else `origin/<default
+ * branch>` (#1460).
  *
  * Read-only: runs only `git rev-list` and `git status --porcelain`, so it never
  * mutates the worktree itself (#879 AC-3). The exec guard that consumes an
@@ -1695,6 +1718,10 @@ async function executePhase(
   // Skills can check these to skip redundant pre-flight checks
   env.SEQUANT_ORCHESTRATOR = "sequant-run";
   env.SEQUANT_PHASE = phase;
+  // #1460: the resolver's base as a bare branch name, so skills that read
+  // `${SEQUANT_BASE_BRANCH:-main}` stop guessing `main` on a master-default
+  // repo. Every phase gets it, spec included (main checkout, no recorded base).
+  env.SEQUANT_BASE_BRANCH = resolveBaseRef(cwd).replace(/^origin\//, "");
 
   // #683: force full-weight QA. `sequant ready` sets config.fullQa so its QA
   // pass runs the standalone branch-freshness / process-state pre-flight checks

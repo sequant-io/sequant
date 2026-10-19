@@ -41,6 +41,12 @@ export function getPackageVersion(): string {
     .version as string);
 }
 
+/**
+ * A template group an install can be scoped to — the `sync --only`
+ * vocabulary (#1209). `"skills"` is `.claude/skills/**`.
+ */
+export type InstallGroup = "skills";
+
 export interface Manifest {
   version: string;
   stack: string;
@@ -48,6 +54,26 @@ export interface Manifest {
   installedAt: string;
   updatedAt?: string;
   files: Record<string, string>; // path -> hash
+  /**
+   * The template groups this install holds (#1409). Absent means a full
+   * install — every manifest written before #1409, and every full `init`.
+   * `init --manifest-only` writes `[]`; `sync --only skills` adds `"skills"`.
+   */
+  groups?: InstallGroup[];
+}
+
+/**
+ * What a project installed: every template (`full`), or only the listed
+ * groups (`partial`). Drift and its remedy are scoped to this, so a file a
+ * partial install never wrote is not reported as drift (#1409).
+ */
+export type InstallScope =
+  { kind: "full" } | { kind: "partial"; groups: InstallGroup[] };
+
+/** The install scope a manifest records. A manifest without `groups` is a full install. */
+export function getInstallScope(manifest: Manifest): InstallScope {
+  if (!Array.isArray(manifest.groups)) return { kind: "full" };
+  return { kind: "partial", groups: [...manifest.groups] };
 }
 
 export async function getManifest(): Promise<Manifest | null> {
@@ -72,9 +98,22 @@ export async function readManifestStrict(): Promise<Manifest | null> {
   return JSON.parse(content) as Manifest;
 }
 
+/**
+ * Serialize the manifest as written to disk. Ends with a newline so the file
+ * passes Prettier / `insert_final_newline` checks in the user's repo (#1355).
+ */
+function serializeManifest(manifest: Manifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+/**
+ * @param options.groups - Record a partial install scope. Omit for a full
+ *   install; `init --manifest-only` passes `[]` (nothing installed yet).
+ */
 export async function createManifest(
   stack: string,
   packageManager?: PackageManager,
+  options: { groups?: InstallGroup[] } = {},
 ): Promise<void> {
   const manifest: Manifest = {
     version: getPackageVersion(),
@@ -82,12 +121,22 @@ export async function createManifest(
     ...(packageManager && { packageManager }),
     installedAt: new Date().toISOString(),
     files: {},
+    ...(options.groups && { groups: [...options.groups] }),
   };
 
-  await writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+  await writeFile(MANIFEST_PATH, serializeManifest(manifest));
 }
 
-export async function updateManifest(): Promise<void> {
+/**
+ * @param options.addGroup - A group the caller just installed. Added to a
+ *   partial scope; a full install (no `groups`) stays full, so a later
+ *   `sync --only` never narrows it and hides drift on files it has (#1409).
+ * @param options.full - The caller installed every group: drop `groups` so
+ *   the manifest records a full install.
+ */
+export async function updateManifest(
+  options: { addGroup?: InstallGroup; full?: boolean } = {},
+): Promise<void> {
   const manifest = await getManifest();
   if (!manifest) {
     return;
@@ -100,6 +149,15 @@ export async function updateManifest(): Promise<void> {
     manifest.version = packageVersion;
   }
   manifest.updatedAt = new Date().toISOString();
+  if (options.full) {
+    delete manifest.groups;
+  } else if (
+    options.addGroup &&
+    Array.isArray(manifest.groups) &&
+    !manifest.groups.includes(options.addGroup)
+  ) {
+    manifest.groups.push(options.addGroup);
+  }
 
-  await writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
+  await writeFile(MANIFEST_PATH, serializeManifest(manifest));
 }

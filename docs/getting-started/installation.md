@@ -95,6 +95,8 @@ npx sequant update
 
 This updates files in `.claude/skills/` and `.claude/hooks/` while leaving your local overrides in `.claude/skills.local/` and `.claude/hooks.local/` untouched.
 
+**Skills-only installs.** If you adopted Sequant with `init --manifest-only` and `sync --only skills`, `update` refuses and writes nothing, because it would add hooks, agents and `settings.json` you opted out of. Upgrade a skills-only install with `npx sequant sync --only skills`.
+
 ## Directory Structure
 
 After installation:

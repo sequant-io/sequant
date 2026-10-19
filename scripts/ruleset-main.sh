@@ -16,6 +16,11 @@
 # application out of an agent's reach is deliberate — a wrong ruleset blocks
 # every merge to `main` and can only be undone by a human with admin rights.
 #
+# #1350: the payload swaps strict "up to date" for a merge queue. The queue
+# builds each PR on the latest `main` itself, so strict mode (a merge-main
+# commit and a CI run per PR per round) is dropped. Both still need `ci.yml` to
+# run on `merge_group`.
+#
 # Field-by-field rationale: docs/internal/graph-2026-09-guard/ruleset.md
 #
 # Usage:
@@ -35,10 +40,12 @@ set -euo pipefail
 # The check-run context the ruleset requires. `ci.yml`'s `test` job is the one
 # that runs `npm test`; it deliberately carries NO matrix, because a
 # single-entry matrix would name the context `test (22.x)` and bumping
-# `node-version` would silently stop matching a required context — which, under
-# `strict_required_status_checks_policy`, blocks every merge to `main` until a
-# human edits the ruleset back.
+# `node-version` would silently stop matching a required context — which stalls
+# the merge queue until `check_response_timeout_minutes` and then ejects every
+# queued PR, until a human edits the ruleset back.
 REQUIRED_CHECK_CONTEXT="test"
+# `canary` is the second required check (#1350); same no-matrix rule applies.
+CANARY_CHECK_CONTEXT="canary"
 
 usage() {
   cat <<'USAGE'
@@ -77,13 +84,28 @@ print_payload() {
     {
       "type": "required_status_checks",
       "parameters": {
-        "strict_required_status_checks_policy": true,
+        "strict_required_status_checks_policy": false,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
             "context": "${REQUIRED_CHECK_CONTEXT}"
+          },
+          {
+            "context": "${CANARY_CHECK_CONTEXT}"
           }
         ]
+      }
+    },
+    {
+      "type": "merge_queue",
+      "parameters": {
+        "merge_method": "SQUASH",
+        "grouping_strategy": "ALLGREEN",
+        "max_entries_to_build": 5,
+        "max_entries_to_merge": 5,
+        "min_entries_to_merge": 1,
+        "min_entries_to_merge_wait_minutes": 5,
+        "check_response_timeout_minutes": 60
       }
     }
   ]

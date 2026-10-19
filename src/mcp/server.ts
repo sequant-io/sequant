@@ -43,7 +43,7 @@ export function createServer(
       "Resources:",
       "- sequant://state: Dashboard view of all tracked issues and their phases.",
       "- sequant://config: Current workflow settings (timeout, phases, quality loop), verbatim.",
-      "- sequant://install: Is the installed skill tree stale vs this server's version? Report-only — never auto-applied; run `sequant update`.",
+      "- sequant://install: Is the installed skill tree stale vs this server's version? Report-only — never auto-applied; the report names the fix command.",
       "",
       "Workflow: Check sequant_status first → sequant_run if needed → poll sequant_status → review sequant_logs on failure.",
       "Do NOT call sequant_run for issues that are already merged or completed.",

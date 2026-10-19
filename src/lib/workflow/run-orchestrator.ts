@@ -112,6 +112,7 @@ function isWorktreeDirty(worktreePath: string): boolean {
 }
 import {
   getIssueInfo,
+  issueTitleWarning,
   sortByDependencies,
   parseBatches,
   runIssueWithLogging,
@@ -126,6 +127,10 @@ import {
   runSkillsPreflight,
   SYNC_ONLY_SKILLS_NOTE,
 } from "./skills-preflight.js";
+import {
+  formatSkillsCommitWarning,
+  getSkillsCommitState,
+} from "../skills-commit-state.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import { formatEscalationTriggerLabel } from "./model-ladder.js";
@@ -195,6 +200,10 @@ export interface OrchestratorConfig {
   issueInfoMap: Map<number, { title: string; labels: string[] }>;
   /** Worktree paths keyed by issue number */
   worktreeMap: Map<number, WorktreeInfo>;
+  /** #1469: isolation is on; an issue missing from `worktreeMap` fails. */
+  worktreeRequired?: boolean;
+  /** #1469: provisioning failure reasons, per issue. */
+  worktreeFailures?: Map<number, string>;
   /** Injectable services */
   services: OrchestratorServices;
   /** Package manager name (e.g. "npm", "pnpm") */
@@ -388,7 +397,11 @@ export class RunOrchestrator {
         );
       },
     });
-    this.cfg = { ...config, onProgress: this.wrapProgress(config.onProgress) };
+    this.cfg = {
+      ...config,
+      onProgress: this.wrapProgress(config.onProgress),
+      onPhasePlan: this.wrapPhasePlan(config.onPhasePlan),
+    };
     this.initIssueStates();
   }
 
@@ -415,6 +428,14 @@ export class RunOrchestrator {
    */
   getProgressCallback(): ProgressCallback {
     return this.cfg.onProgress!;
+  }
+
+  /**
+   * The wrapped phase-plan callback `batch-executor` fires once per issue
+   * when its phase pipeline resolves (#672, #1356).
+   */
+  getPhasePlanCallback(): PhasePlanCallback {
+    return this.cfg.onPhasePlan!;
   }
 
   /**
@@ -481,6 +502,38 @@ export class RunOrchestrator {
         status: "queued",
         phases,
       });
+    }
+  }
+
+  /**
+   * #1356: apply the resolved per-issue phase plan to `issueStates`, which the
+   * TUI draws from, before forwarding it. Without this the TUI kept
+   * `config.phases` and appended a label-inserted phase (e.g. `test`) when it
+   * started, so it showed after `qa` though it ran before it.
+   */
+  private wrapPhasePlan(external?: PhasePlanCallback): PhasePlanCallback {
+    return (issue, phases) => {
+      this.applyPhasePlan(issue, phases);
+      external?.(issue, phases);
+    };
+  }
+
+  /**
+   * Same merge as `RunRenderer.setPhasePlan`: phases already seen keep their
+   * state, planned phases enter as `pending`, and a seen phase outside the
+   * plan is kept at the end.
+   */
+  private applyPhasePlan(issue: number, phases: string[]): void {
+    const state = this.issueStates.get(issue);
+    if (!state) return;
+    const existing = new Map(state.phases.map((p) => [p.name, p]));
+    state.phases = phases.map(
+      (name) => existing.get(name) ?? { name, status: "pending" },
+    );
+    for (const prev of existing.values()) {
+      if (!phases.includes(prev.name) && prev.status !== "pending") {
+        state.phases.push(prev);
+      }
     }
   }
 
@@ -1112,6 +1165,13 @@ export class RunOrchestrator {
     for (const issueNumber of issueNumbers) {
       const info = await getIssueInfo(issueNumber);
       if (info.notFound) missingIssues.push(issueNumber);
+      // #1487: say so before worktree setup when the title is a placeholder.
+      const titleWarning = config.dryRun
+        ? null
+        : issueTitleWarning(issueNumber, info);
+      if (titleWarning) {
+        bracketedConsoleLog(phasePauseHandle, chalk.yellow(titleWarning));
+      }
       issueInfoMap.set(issueNumber, { title: info.title, labels: info.labels });
     }
 
@@ -1145,6 +1205,9 @@ export class RunOrchestrator {
       mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
 
     let worktreeMap: Map<number, WorktreeInfo> = new Map();
+    // #1469: filled by provisioning; an issue in it never runs a phase.
+    const worktreeFailures = new Map<number, string>();
+    const worktreeRequired = useWorktreeIsolation && !config.dryRun;
 
     // Skills pre-flight inputs, shared by the main-checkout check below and
     // the per-worktree check after provisioning. Both are skipped entirely
@@ -1183,6 +1246,21 @@ export class RunOrchestrator {
       logWriter: null,
       wallClockDurationSeconds: wallClock(),
     });
+
+    // #1354: worktrees are checked out from git, so uncommitted skill edits
+    // in the main checkout (typically an uncommitted `sequant sync`) never
+    // reach a phase. Warn, naming the committed version phases will run.
+    if (skillsPreflightActive && useWorktreeIsolation) {
+      const warning = formatSkillsCommitWarning(
+        getSkillsCommitState(process.cwd()),
+      );
+      if (warning) {
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.yellow(`\n  !  ${warning}`),
+        );
+      }
+    }
 
     // ── Main-checkout skills pre-flight (#1193) ────────────────────────
     // Spec (and verify/merger) are `requiresWorktree: false`: they run in the
@@ -1225,7 +1303,7 @@ export class RunOrchestrator {
       }
     }
 
-    if (useWorktreeIsolation && !config.dryRun) {
+    if (worktreeRequired) {
       const issueData = issueNumbers.map((num) => ({
         number: num,
         title: issueInfoMap.get(num)?.title || `Issue #${num}`,
@@ -1241,6 +1319,7 @@ export class RunOrchestrator {
           manifest.packageManager,
           chainBase,
           settings.run.worktreeRoot,
+          { failures: worktreeFailures },
         );
       } else {
         worktreeMap = await ensureWorktrees(
@@ -1249,6 +1328,7 @@ export class RunOrchestrator {
           manifest.packageManager,
           baseBranch,
           settings.run.worktreeRoot,
+          { failures: worktreeFailures },
         );
       }
       for (const [issueNum, worktree] of worktreeMap.entries()) {
@@ -1311,8 +1391,10 @@ export class RunOrchestrator {
     if (skillsPreflightActive) {
       // Worktree isolation disabled: phases execute in the main checkout,
       // same as pre-#933 behavior, so that's what gets checked.
+      // #1469: under isolation an empty map means provisioning failed, and
+      // those issues fail before any phase — not a main-checkout run to check.
       const cwdsToCheck =
-        worktreeMap.size > 0
+        worktreeMap.size > 0 || worktreeRequired
           ? [...worktreeMap.values()].map((w) => w.path)
           : [process.cwd()];
       for (const cwd of cwdsToCheck) {
@@ -1414,6 +1496,8 @@ export class RunOrchestrator {
       options: mergedOptions,
       issueInfoMap,
       worktreeMap,
+      worktreeRequired,
+      worktreeFailures,
       services: { logWriter, stateManager, shutdownManager: shutdown },
       packageManager: manifest.packageManager,
       baseBranch,
@@ -1557,6 +1641,8 @@ export class RunOrchestrator {
       options,
       issueInfoMap,
       worktreeMap,
+      worktreeRequired: this.cfg.worktreeRequired,
+      worktreeFailures: this.cfg.worktreeFailures,
       logWriter: services.logWriter ?? null,
       stateManager: services.stateManager ?? null,
       shutdownManager: services.shutdownManager,
@@ -1816,6 +1902,8 @@ export class RunOrchestrator {
       options,
       issueInfoMap,
       worktreeMap,
+      worktreeRequired,
+      worktreeFailures,
       logWriter,
       stateManager,
       shutdownManager,
@@ -1846,6 +1934,8 @@ export class RunOrchestrator {
       worktree: worktreeInfo
         ? { path: worktreeInfo.path, branch: worktreeInfo.branch }
         : undefined,
+      worktreeRequired,
+      worktreeError: worktreeFailures?.get(issueNumber),
       chain,
       packageManager,
       baseBranch,

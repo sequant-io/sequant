@@ -95,7 +95,7 @@ counting as containment.
 
 ## OWASP Top 10 for Agentic Applications (2026)
 
-Source: https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+Source: [OWASP Top 10 for Agentic Applications for 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
 
 Categories are cited by identifier first and title second: the `ASI01`–`ASI10`
 identifiers are stable across OWASP's publications, while the exact wording of

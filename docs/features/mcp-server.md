@@ -224,7 +224,7 @@ What this means in practice:
 
 ## MCP vs CLI
 
-|                | CLI (`sequant run 42`)    | MCP (from your editor)                                      |
+| Aspect         | CLI (`sequant run 42`)    | MCP (from your editor)                                      |
 | -------------- | ------------------------- | ----------------------------------------------------------- |
 | **Context**    | Separate terminal window  | Your AI already has file context                            |
 | **Invocation** | Exact commands and flags  | Natural language                                            |
@@ -265,6 +265,9 @@ Progress notifications also reset the server-side spawn timeout (30-minute per-p
 | `phases`    | `string`                 | Comma-separated phases that ran                               |
 | `rawOutput` | `string`                 | Tail of stdout (max 2000 chars, truncated to fit 64 KB limit) |
 | `error`     | `string`                 | Tail of stderr on failure                                     |
+| `runLogMissing` | `true` | Only on the fallback response: no run log was parsed (#1515) |
+| `requestedIssues` | `number[]` | Only on the fallback response: the issues this call asked for |
+| `note` | `string` | Only on the fallback response: says the result is not a parsed log and names the requested issues |
 
 Each item in `issues`:
 
@@ -284,7 +287,7 @@ Each item in `issues`:
 | `haltReason`      | `"SPEC_DIVERGENCE" \| "DIVERGENCE_SUSPECT" \| "TOP_OF_LADDER"` | Present when the run halted on the [model ladder](../reference/model-ladder.md) (#1254) |
 | `declaredAcs`     | `string`                                    | ACs the agent declared impossible, with `haltReason: "SPEC_DIVERGENCE"` (#1254) |
 
-When the structured run log is unavailable (e.g., process crashed before writing it), a fallback response is returned with an empty `issues` array and the raw output preserved.
+When the structured run log is unavailable (e.g., the process crashed or the disk was full before it was written), a fallback response is returned. It has an empty `issues` array, `runLogMissing: true`, `requestedIssues` and a `note`, and keeps the raw output. Its `summary` counts come from the exit code only. The run log is found by the runId the CLI reports; when that log is missing, the server never substitutes another run's log (#1515). Only a CLI that reports no runId (older than #631) falls back to the newest log from the last 5 minutes.
 
 ### `sequant_status`
 

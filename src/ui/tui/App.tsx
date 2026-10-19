@@ -27,7 +27,12 @@ export function App({
   const [now, setNow] = useState(() => Date.now());
   const doneFired = useRef(false);
   const { stdout } = useStdout();
-  const [columns, setColumns] = useState(() => stdout?.columns ?? 80);
+  // ink 8 types stdout as a plain stream: `columns`/`rows` exist only on a TTY,
+  // and every read below already falls back when they're absent.
+  const tty = stdout as
+    | (typeof stdout & { columns?: number; rows?: number })
+    | undefined;
+  const [columns, setColumns] = useState(() => tty?.columns ?? 80);
 
   // Snapshot poller (drives all state transitions).
   useEffect(() => {
@@ -58,7 +63,7 @@ export function App({
   // width. A 1 Hz fallback poll covers terminals that don't emit `resize`.
   useEffect(() => {
     if (!stdout) return;
-    const sync = (): void => setColumns(stdout.columns ?? 80);
+    const sync = (): void => setColumns(tty?.columns ?? 80);
     stdout.on("resize", sync);
     sync();
     const id = setInterval(sync, 1000);
@@ -78,7 +83,7 @@ export function App({
   // renderer's #624 row cap). Older completed issues collapse into `✔ N done`.
   const { visible, rolledUpDoneCount } = selectVisibleIssues(
     snapshot.issues,
-    stdout?.rows,
+    tty?.rows,
   );
 
   return (

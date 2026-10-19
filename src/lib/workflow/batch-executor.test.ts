@@ -119,10 +119,12 @@ import {
   createCheckpointCommit,
   createPR,
   filterResumedPhases,
+  rebaseBeforePR,
 } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
 const mockCreatePR = vi.mocked(createPR);
+const mockRebaseBeforePR = vi.mocked(rebaseBeforePR);
 const mockHasExecChanges = vi.mocked(hasExecChanges);
 
 /** Build a minimal ExecutionConfig for testing */
@@ -570,7 +572,7 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   // pause/resume protocol cannot regress to dead code again.
   describe("#656 AC-1: phasePauseHandle forwarded at every call site", () => {
     it("forwards the handle to spec, exec, and qa calls", async () => {
-      const handle = { pause: vi.fn(), resume: vi.fn() };
+      const handle = { pause: vi.fn(), resume: vi.fn(), appendNotice: vi.fn() };
       await runIssueWithLogging({
         ...makeCtx({
           issueNumber: 656,
@@ -604,7 +606,7 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
     });
 
     it("forwards the handle to the loop phase when quality loop triggers", async () => {
-      const handle = { pause: vi.fn(), resume: vi.fn() };
+      const handle = { pause: vi.fn(), resume: vi.fn(), appendNotice: vi.fn() };
       // QA fails on first attempt, then loop runs, then qa retries and passes.
       mockExecutePhase.mockReset();
       mockExecutePhase.mockImplementation(async (_i, phase) => {
@@ -2587,6 +2589,43 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
       expect(mockCreatePR.mock.calls[1][7]).toBe("READY_FOR_MERGE");
     });
 
+    // #1386: the run's one resolved base reaches `rebaseBeforePR` and both
+    // `createPR` calls (the after-exec create and the after-qa update).
+    it("#1386 AC-1: rebaseBeforePR and createPR receive the run's one resolved base", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+
+      await runIssueWithLogging({
+        ...ctx1247(),
+        baseBranch: "feat/x",
+      });
+
+      expect(mockRebaseBeforePR).toHaveBeenCalledTimes(1);
+      // `baseBranch` is rebaseBeforePR's 5th positional argument.
+      const rebaseBase = mockRebaseBeforePR.mock.calls[0][4];
+      expect(mockCreatePR).toHaveBeenCalledTimes(2);
+      const prBases = mockCreatePR.mock.calls.map(
+        (c) => (c.at(-1) as { baseBranch?: string }).baseBranch,
+      );
+      expect(rebaseBase).toBe("feat/x");
+      expect(prBases).toEqual([rebaseBase, rebaseBase]);
+    });
+
+    it("#1386 AC-3: no base given leaves createPR's baseBranch unset", async () => {
+      mockExecutePhase.mockImplementation(async (_i, phase) =>
+        phase === "exec" ? successResult("exec") : qaPass,
+      );
+
+      await runIssueWithLogging(ctx1247());
+
+      for (const call of mockCreatePR.mock.calls) {
+        expect(
+          (call.at(-1) as { baseBranch?: string }).baseBranch,
+        ).toBeUndefined();
+      }
+    });
+
     it("a failed after-exec call warns and the run still succeeds when the post-qa call works", async () => {
       mockExecutePhase.mockImplementation(async (_i, phase) =>
         phase === "exec" ? successResult("exec") : qaPass,
@@ -4216,5 +4255,77 @@ describe("#1254: a ladder halt is recorded, not only printed", () => {
       success: true,
       error: undefined,
     });
+  });
+});
+
+describe("#1342: per-issue warnings survive parallel mode", () => {
+  // Default mocks give spec an output with no recommendation, so the
+  // "Could not parse spec recommendation" warning fires on every spec run.
+  // Issue number that cannot exist: resolveSpecRecommendation reads the real
+  // issue comments, and a live issue (e.g. this one) would carry a marker.
+  const PARSE_WARNING = "Could not parse spec recommendation";
+
+  function loggedLines(spy: { mock: { calls: unknown[][] } }): string[] {
+    return spy.mock.calls.map((c) => String(c[0]));
+  }
+
+  it("AC-1: parallel mode emits the warning but not progress lines", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await runIssueWithLogging(
+        makeCtx({
+          issueNumber: 999999991,
+          labels: ["bug"],
+          config: { parallel: true },
+        }),
+      );
+      const lines = loggedLines(logSpy);
+      expect(lines.some((l) => l.includes(PARSE_WARNING))).toBe(true);
+      expect(lines.some((l) => l.includes("Issue #999999991"))).toBe(false);
+      expect(lines.some((l) => l.includes("Fallback:"))).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("AC-2: with a renderer handle the warning goes through appendNotice, not console.log", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const appendNotice = vi.fn();
+    try {
+      await runIssueWithLogging({
+        ...makeCtx({
+          issueNumber: 999999991,
+          labels: ["bug"],
+          config: { parallel: true },
+        }),
+        phasePauseHandle: {
+          pause: vi.fn(),
+          resume: vi.fn(),
+          appendNotice,
+        } as unknown as IssueExecutionContext["phasePauseHandle"],
+      });
+      const notices = appendNotice.mock.calls.map((c) => String(c[0]));
+      expect(notices.filter((n) => n.includes(PARSE_WARNING))).toHaveLength(1);
+      expect(loggedLines(logSpy).some((l) => l.includes(PARSE_WARNING))).toBe(
+        false,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("AC-3: no log(chalk.yellow|red(...)) call remains in runIssueWithLogging", () => {
+    const src = readFileSync(
+      new URL("./batch-executor.ts", import.meta.url),
+      "utf8",
+    );
+    const start = src.indexOf(
+      `export async function ${runIssueWithLogging.name}(`,
+    );
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf("\n}\n", start);
+    const body = src.slice(start, end);
+    const bypass = body.match(/\blog\(\s*chalk\.(yellow|red)\(/g) ?? [];
+    expect(bypass).toEqual([]);
   });
 });

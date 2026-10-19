@@ -10,6 +10,12 @@ vi.mock("child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
+// #1354: the git state is stubbed; the formatter is the real one.
+vi.mock("../lib/skills-commit-state.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/skills-commit-state.js")>()),
+  getSkillsCommitState: vi.fn(() => ({ committedVersion: null, modified: [] })),
+}));
+
 // Mock fs functions
 vi.mock("../lib/fs.js", () => ({
   fileExists: vi.fn(),
@@ -30,6 +36,11 @@ vi.mock("fs/promises", () => ({
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
   getPackageVersion: vi.fn(() => "1.0.0"),
+  getInstallScope: vi.fn((m: { groups?: unknown }) =>
+    Array.isArray(m.groups)
+      ? { kind: "partial", groups: [...m.groups] }
+      : { kind: "full" },
+  ),
 }));
 
 // Mock agents-md module
@@ -40,15 +51,24 @@ vi.mock("../lib/agents-md.js", () => ({
 }));
 
 // Mock sync module
-vi.mock("./sync.js", () => ({
-  areSkillsOutdated: vi.fn(() =>
-    Promise.resolve({
-      outdated: false,
-      currentVersion: "1.0.0",
-      packageVersion: "1.0.0",
-    }),
-  ),
-}));
+vi.mock("./sync.js", async (importActual) => {
+  const actual = await importActual<typeof import("./sync.js")>();
+  return {
+    areSkillsOutdated: vi.fn(() =>
+      Promise.resolve({
+        outdated: false,
+        currentVersion: "1.0.0",
+        packageVersion: "1.0.0",
+      }),
+    ),
+    scopedRemedy: vi.fn((scope: { kind: string } | undefined, cli: string) =>
+      scope && scope.kind === "partial" ? `${cli} sync --only skills` : null,
+    ),
+    // The real producer: doctor and the banner must share it (#1490)
+    formatSkillsDriftRemedy: actual.formatSkillsDriftRemedy,
+    checkAndWarnSkillsOutdated: actual.checkAndWarnSkillsOutdated,
+  };
+});
 
 // Mock settings (for Aider CLI check)
 vi.mock("../lib/settings.js", () => ({
@@ -168,6 +188,7 @@ import {
 } from "../lib/fs.js";
 import { readdir } from "fs/promises";
 import { getManifest } from "../lib/manifest.js";
+import { areSkillsOutdated } from "./sync.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -181,6 +202,7 @@ import {
 } from "../lib/mcp-config.js";
 import { readAgentsMd, isAgentsMdSequantOwned } from "../lib/agents-md.js";
 import { getSettings } from "../lib/settings.js";
+import { getSkillsCommitState } from "../lib/skills-commit-state.js";
 
 const mockGetSettings = vi.mocked(getSettings);
 
@@ -188,6 +210,7 @@ const mockFileExists = vi.mocked(fileExists);
 const mockIsExecutable = vi.mocked(isExecutable);
 const mockReadFile = vi.mocked(readFile);
 const mockGetManifest = vi.mocked(getManifest);
+const mockAreSkillsOutdated = vi.mocked(areSkillsOutdated);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockIsNativeWindows = vi.mocked(isNativeWindows);
@@ -376,6 +399,38 @@ describe("doctor command", () => {
       await doctorCommand();
 
       expect(output()).toContain("Not committed to git: .claude/skills/exec.");
+      expect(output()).not.toContain("Core skills are committed");
+    });
+
+    it("warns when tracked skills have uncommitted changes, naming the committed version (#1354)", async () => {
+      vi.mocked(getSkillsCommitState).mockReturnValueOnce({
+        committedVersion: "2.15.1",
+        modified: [
+          ".claude/skills/.sequant-version",
+          ".claude/skills/exec/SKILL.md",
+        ],
+      });
+
+      await doctorCommand();
+
+      expect(output()).toContain(
+        "2 tracked files under .claude/skills/ have uncommitted changes",
+      );
+      expect(output()).toContain("committed skills (2.15.1)");
+      expect(output()).not.toContain("Core skills are committed");
+    });
+
+    it("warns when only a tracked hook has uncommitted changes (#1456)", async () => {
+      vi.mocked(getSkillsCommitState).mockReturnValueOnce({
+        committedVersion: "2.15.1",
+        modified: [".claude/hooks/pre-tool.sh"],
+      });
+
+      await doctorCommand();
+
+      expect(output()).toContain(
+        "1 tracked file under .claude/hooks/ has uncommitted changes",
+      );
       expect(output()).not.toContain("Core skills are committed");
     });
 
@@ -866,7 +921,8 @@ describe("doctor command", () => {
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("jq");
       expect(output).toContain("jq not installed");
-      expect(output).toContain("Warnings: 1");
+      // jq warning + the upstream #43869 notice, which prints a `!` line (#1387)
+      expect(output).toContain("Warnings: 2");
       // Should not exit with failure since jq is optional
       expect(processExitSpy).not.toHaveBeenCalled();
     });
@@ -914,11 +970,25 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand();
+      // --quiet suppresses the upstream notice, which otherwise counts as a
+      // warning (#1387), so the healthy summary is reachable.
+      await doctorCommand({ quiet: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       // New boxed format includes the count: "All X checks passed!"
       expect(output).toMatch(/All \d+ checks passed/);
+      expect(processExitSpy).not.toHaveBeenCalled();
+    });
+
+    it("counts the upstream notice as a warning when everything else passes (#1387)", async () => {
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Warnings: 1");
+      expect(output).toMatch(/All checks passed \(1 warning\)/);
       expect(processExitSpy).not.toHaveBeenCalled();
     });
 
@@ -1516,6 +1586,206 @@ describe("doctor command", () => {
       const results = await checkShadowingLocalSequant(cwd, home);
 
       expect(results).toHaveLength(0);
+    });
+  });
+
+  // #1485: the Skills Version check must not steer a skills-only install
+  // into a full one.
+  describe("scoped install remedy (#1485)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const outdated = {
+      outdated: true,
+      currentVersion: "0.0.1",
+      packageVersion: "2.19.0",
+      contentDrift: 0,
+    };
+
+    it("names sync --only skills on a skills-only install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...outdated,
+        installScope: { kind: "partial", groups: ["skills"] },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(/Outdated \(0\.0\.1.*run: .*sync --only skills/);
+    });
+
+    it("keeps the bare sync message on a full install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...outdated,
+        installScope: { kind: "full" },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(/Outdated \(0\.0\.1.*run: .* sync(?! --only)/);
+    });
+  });
+
+  describe("legacy skills-only manifest (#1485)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const legacy = {
+      version: "0.1.0",
+      stack: "nextjs",
+      installedAt: "2024-01-01T00:00:00.000Z",
+      files: {},
+    };
+    const nonSkills = [
+      ".claude/hooks",
+      ".claude/settings.json",
+      ".claude/agents",
+    ];
+
+    it("advises the groups edit when hooks, settings and agents are all absent", async () => {
+      mockGetManifest.mockResolvedValue(legacy as never);
+      mockFileExists.mockImplementation(
+        async (p: string) => !nonSkills.includes(p),
+      );
+      await doctorCommand();
+      expect(output()).toContain('"groups": ["skills"]');
+    });
+
+    it("stays quiet when any of the three exists", async () => {
+      mockGetManifest.mockResolvedValue(legacy as never);
+      for (const present of nonSkills) {
+        consoleLogSpy.mockClear();
+        mockFileExists.mockImplementation(
+          async (p: string) => p === present || !nonSkills.includes(p),
+        );
+        await doctorCommand();
+        expect(output()).not.toContain('"groups": ["skills"]');
+      }
+    });
+
+    it("stays quiet when the manifest records groups", async () => {
+      mockGetManifest.mockResolvedValue({ ...legacy, groups: [] } as never);
+      mockFileExists.mockImplementation(
+        async (p: string) => !nonSkills.includes(p),
+      );
+      await doctorCommand();
+      expect(output()).not.toContain('"groups": ["skills"]');
+    });
+  });
+
+  describe("Skills Version reports content drift (#1490)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const drift = {
+      outdated: false,
+      currentVersion: "2.19.0",
+      packageVersion: "2.19.0",
+      contentDrift: 3,
+    };
+
+    it("warns with the count and the scoped remedy on a partial install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...drift,
+        installScope: { kind: "partial", groups: ["skills"] },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(
+        /3 file\(s\) differ from bundled content.*run: .*sync --only skills/,
+      );
+      expect(output()).not.toContain("Up to date (2.19.0)");
+    });
+
+    it("warns with the full-install drift remedy on a full install", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        ...drift,
+        installScope: { kind: "full" },
+      } as never);
+      await doctorCommand();
+      expect(output()).toMatch(
+        /3 file\(s\) differ from bundled content.*sync --force \(or .* update\)/,
+      );
+    });
+
+    it("uses the same remedy the pre-flight banner prints", async () => {
+      const { checkAndWarnSkillsOutdated } =
+        await vi.importActual<typeof import("./sync.js")>("./sync.js");
+      const status = {
+        ...drift,
+        installScope: { kind: "full" },
+      } as never;
+      mockAreSkillsOutdated.mockResolvedValue(status);
+      await doctorCommand();
+      // Only the Skills Version line: another check's `run:` must not be compared.
+      const doctorLine = output()
+        .split("\n")
+        .find((l) => l.includes("differ from bundled content"));
+      expect(doctorLine).toBeTruthy();
+      consoleLogSpy.mockClear();
+      await checkAndWarnSkillsOutdated(status);
+      const banner = output();
+      const remedy = banner.match(/Run: (.*)/)?.[1]?.trim();
+      expect(remedy).toBeTruthy();
+      expect(doctorLine?.match(/run: (.*)/)?.[1]?.trim()).toBe(remedy);
+    });
+  });
+
+  describe("Skills Version passes with no drift (#1490)", () => {
+    it("stays Up to date at a matching version with contentDrift 0", async () => {
+      mockAreSkillsOutdated.mockResolvedValue({
+        outdated: false,
+        currentVersion: "2.19.0",
+        packageVersion: "2.19.0",
+        contentDrift: 0,
+      } as never);
+      await doctorCommand();
+      const out = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(out).toContain("Up to date (2.19.0)");
+    });
+  });
+
+  describe("AGENTS.md on a skills-only install (#1489)", () => {
+    function output(): string {
+      return consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+    }
+    const base = {
+      version: "0.1.0",
+      stack: "nextjs",
+      installedAt: "2024-01-01T00:00:00.000Z",
+      files: {},
+    };
+
+    it("missing AGENTS.md on a skills-only install is not a warning and names no command", async () => {
+      mockGetManifest.mockResolvedValue({
+        ...base,
+        groups: ["skills"],
+      } as never);
+      mockReadAgentsMd.mockResolvedValue(null as never);
+      await doctorCommand();
+      const line = output()
+        .split("\n")
+        .find((l) => l.includes("AGENTS.md"));
+      expect(line).toContain("outside this install scope");
+      expect(line).not.toContain("init --force");
+      expect(line).not.toContain("run:");
+      expect(line).not.toMatch(/!/);
+    });
+
+    it("missing AGENTS.md on a full install keeps the init --force warning", async () => {
+      mockGetManifest.mockResolvedValue(base as never);
+      mockReadAgentsMd.mockResolvedValue(null as never);
+      await doctorCommand();
+      expect(output()).toContain("run: sequant init --force");
+    });
+
+    it("existing AGENTS.md on a skills-only install gets the ownership result", async () => {
+      mockGetManifest.mockResolvedValue({
+        ...base,
+        groups: ["skills"],
+      } as never);
+      mockReadAgentsMd.mockResolvedValue("# AGENTS.md\n" as never);
+      mockIsAgentsMdSequantOwned.mockReturnValue(true);
+      await doctorCommand();
+      expect(output()).toContain("Present and up to date");
+      consoleLogSpy.mockClear();
+      mockIsAgentsMdSequantOwned.mockReturnValue(false);
+      await doctorCommand();
+      expect(output()).toContain("user-owned (preserved by sync)");
     });
   });
 });

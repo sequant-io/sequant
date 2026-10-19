@@ -123,6 +123,60 @@ export function isLocalNodeModulesInstall(
 }
 
 /**
+ * Check whether the project that owns a `node_modules/sequant` install lists
+ * `sequant` in its own package.json (dependencies, devDependencies or
+ * optionalDependencies).
+ *
+ * The project root is the directory holding the nearest `node_modules/sequant`
+ * segment of the install path (above the store for pnpm), not `process.cwd()`, so a run from a
+ * subdirectory gives the same answer. An unreadable or invalid package.json
+ * counts as undeclared.
+ */
+export function isDeclaredDependency(installPath: string = __dirname): boolean {
+  const normalizedPath = installPath.replace(/\\/g, "/");
+  const marker = "/node_modules/sequant";
+  // pnpm's real path is <root>/node_modules/.pnpm/sequant@x/node_modules/sequant:
+  // the project is the directory above the store, not `.pnpm/sequant@x`.
+  const pnpmStore = normalizedPath.lastIndexOf("/node_modules/.pnpm/");
+  const idx = pnpmStore !== -1 ? pnpmStore : normalizedPath.lastIndexOf(marker);
+  if (idx === -1 || !normalizedPath.includes(marker)) return false;
+  const projectRoot = normalizedPath.slice(0, idx) || "/";
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"),
+    );
+    return [
+      pkg?.dependencies,
+      pkg?.devDependencies,
+      pkg?.optionalDependencies,
+    ].some(
+      (deps) =>
+        deps !== null &&
+        typeof deps === "object" &&
+        Object.prototype.hasOwnProperty.call(deps, PACKAGE_NAME),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Should the "Running sequant from local node_modules" warning print?
+ *
+ * Yes for a project-local install the project does not declare (a stray
+ * install). No when the project's package.json declares `sequant`: that is the
+ * README's headless path (`npm install sequant`, then `npx sequant init`), and
+ * telling that user to uninstall contradicts the docs (#1387).
+ */
+export function shouldWarnLocalInstall(
+  installPath: string = __dirname,
+): boolean {
+  return (
+    isLocalNodeModulesInstall(installPath) && !isDeclaredDependency(installPath)
+  );
+}
+
+/**
  * Check if running from the npx cache (~/.npm/_npx/<hash>/node_modules/sequant).
  *
  * Separated from `isLocalNodeModulesInstall`, which deliberately excludes the

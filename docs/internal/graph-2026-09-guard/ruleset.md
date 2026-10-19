@@ -48,16 +48,25 @@ run a week later.
 | `rules[].type: deletion` | — | Preserved from the current ruleset: `main` cannot be deleted. |
 | `rules[].type: non_fast_forward` | — | Preserved: `main` cannot be force-pushed. |
 | `rules[].type: required_status_checks` | — | Fixes defect 2. |
-| `…parameters.required_status_checks` | `[{ "context": "test" }]` | The `test` job in `.github/workflows/ci.yml` — the one that runs `npm test`. See "The context name" below. |
-| `…parameters.strict_required_status_checks_policy` | `true` | The up-to-date requirement: the check must have run against the *merge state*, not against a stale head. Without it a PR branched before a breaking change still shows green. |
+| `…parameters.required_status_checks` | `[{ "context": "test" }, { "context": "canary" }]` | The `test` job in `.github/workflows/ci.yml` (runs `npm test`) and `canary` (#1350; the issue and `CLAUDE.md` already count it as required). See "The context name" below. |
+| `…parameters.strict_required_status_checks_policy` | `false` | #1350 drops the strict up-to-date requirement (37 of the last 40 merged PRs carried a merge-main commit, ~8 min of CI each). The merge queue below gives the same guarantee: each PR is tested on the latest `main`. |
 | `…parameters.do_not_enforce_on_create` | `false` | Branch creation is not exempt. |
+| `rules[].type: merge_queue` | — | #1350. The queue builds each PR on a temporary branch off the latest `main` and runs the required checks on the `merge_group` event. |
+| `…parameters.merge_method` | `"SQUASH"` | Matches how PRs land today (one commit per PR). |
+| `…parameters.grouping_strategy` | `"ALLGREEN"` | Every entry in a group must pass before it merges. |
+| `…parameters.max_entries_to_build` / `max_entries_to_merge` | `5` / `5` | Conservative sizing; affects throughput only. |
+| `…parameters.min_entries_to_merge` / `min_entries_to_merge_wait_minutes` | `1` / `5` | A lone PR merges after at most 5 minutes. |
+| `…parameters.check_response_timeout_minutes` | `60` | How long the queue waits for a required context before ejecting the entry. |
 
 ## The context name
 
 A required status check is matched **by check-run context string**. A required
-context that never reports is not skipped — it is permanently pending, and under
-`strict_required_status_checks_policy: true` it blocks **every** merge to `main`
-until a human with admin rights edits the ruleset back. So the context string has
+context that never reports is not skipped — it is permanently pending. Under
+strict mode it blocks **every** merge to `main`; under the merge queue it stalls
+each entry until `check_response_timeout_minutes` and then ejects it. Either way
+it lasts until a human with admin rights edits the ruleset back. The required
+jobs must also run on `merge_group` (`ci.yml` has the trigger, #1350), or a
+queued PR never gets its checks. So the context string has
 to be exactly right, and has to stay right.
 
 Before #1093, the job that ran `npm test` was called `build` and carried a
@@ -89,8 +98,11 @@ the same change.
 
 ## Applying it
 
-This is an owner action, done by hand, tracked in #1109. An agent never applies
-it: `scripts/ruleset-main.sh` has `--print` as its only mode and makes no network
+This is an owner action, done by hand, tracked in #1109. **The #1350 payload
+(merge queue, no strict) is not applied yet: that waits on #1368**, because
+`/release` Step 6 would tag the wrong commit while a merge sits in the queue,
+and the skill edits wait for the plugin-directory review. Until then the live
+ruleset still has strict up-to-date. An agent never applies it: `scripts/ruleset-main.sh` has `--print` as its only mode and makes no network
 call.
 
 1. Review the diff against what is live:
@@ -100,6 +112,9 @@ call.
    gh api repos/sequant-io/sequant/rulesets/12393605 > /tmp/ruleset-live.json
    diff <(jq -S . /tmp/ruleset-live.json) <(jq -S . /tmp/ruleset-new.json)
    ```
+
+   Check that the live ruleset requires `canary` too (the payload adds it if
+   not), and that `ci.yml` runs on `merge_group`, before step 2.
 
 2. Apply with a `PUT` to `repos/sequant-io/sequant/rulesets/12393605`, passing
    `/tmp/ruleset-new.json` as the request body.

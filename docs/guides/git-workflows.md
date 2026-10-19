@@ -180,7 +180,7 @@ Base branch is resolved in this order (highest priority first):
 
 ### Visual Comparison
 
-**Standard Workflow (no --base)**
+#### Standard Workflow (no --base)
 
 ```
 origin/main
@@ -191,7 +191,7 @@ origin/main
 
 All issues branch independently from main.
 
-**Feature Branch Workflow (--base)**
+#### Feature Branch Workflow (--base)
 
 ```
 origin/main
@@ -203,7 +203,7 @@ origin/main
 
 All issues branch from the integration branch.
 
-**Chain Mode with --base**
+#### Chain Mode with --base
 
 ```
 origin/main
@@ -252,8 +252,10 @@ The `new-feature.sh` script also supports `--base`:
 ./scripts/new-feature.sh 117 --base feature/dashboard
 ```
 
-`new-feature.sh` no longer switches or updates the main checkout — it branches
-the new worktree directly off `origin/<base>` — so uncommitted changes in the
+`new-feature.sh` no longer switches or updates the main checkout. It starts the
+new worktree from `origin/<branch>` when the remote already has the issue's
+branch (a pushed PR) and the branch is not merged into the base, and from
+`origin/<base>` otherwise. So uncommitted changes in the
 main checkout no longer block worktree creation. The `--stash` flag is
 therefore a deprecated no-op, kept only for backward compatibility.
 

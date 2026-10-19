@@ -16,6 +16,11 @@ import {
   resolvePackageManagerConfig,
 } from "../stacks.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
+import {
+  CONFIG_LOCK_ERROR,
+  retryOnConfigLock,
+  type ConfigLockRetryOptions,
+} from "./git-config-lock.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import {
   parseMutationMarkers,
@@ -158,11 +163,67 @@ function findExistingWorktree(branch: string): string | null {
   for (const line of lines) {
     if (line.startsWith("worktree ")) {
       currentPath = line.substring(9);
-    } else if (line.startsWith("branch refs/heads/") && line.includes(branch)) {
+    } else if (line === `branch refs/heads/${branch}`) {
       return currentPath;
     }
   }
   return null;
+}
+
+/**
+ * Every branch name that belongs to an issue (#1487): local
+ * `refs/heads/feature/<n>-*` (which covers this repo's worktrees) and
+ * `refs/remotes/origin/feature/<n>-*`, deduplicated and sorted. The dash in
+ * the prefix keeps issue 1 from claiming `feature/12-*`.
+ *
+ * @internal Exported for testing
+ */
+export function findIssueBranches(
+  issueNumber: number,
+  cwd: string = process.cwd(),
+): string[] {
+  const result = spawnSync(
+    "git",
+    [
+      "for-each-ref",
+      "--format=%(refname)",
+      "refs/heads/feature/",
+      "refs/remotes/origin/feature/",
+    ],
+    { cwd, stdio: "pipe" },
+  );
+  if (result.status !== 0) return [];
+  const prefix = `feature/${issueNumber}-`;
+  const names = new Set<string>();
+  for (const ref of result.stdout.toString().split("\n")) {
+    const name = ref
+      .trim()
+      .replace(/^refs\/heads\//, "")
+      .replace(/^refs\/remotes\/origin\//, "");
+    if (name.startsWith(prefix)) names.add(name);
+  }
+  return [...names].sort();
+}
+
+/**
+ * Pick the branch `ensureWorktree` uses for an issue (#1487). The issue
+ * number is the branch's identity, not the title: a failed `gh issue view`
+ * (title `Issue #N`) or a retitle must not cut a second branch from the base.
+ *
+ * - No branch for the issue: the title-derived name (first creation).
+ * - Exactly one: that branch, whatever the title.
+ * - Several: the title-derived name if it is one of them, else `null`
+ *   (ambiguous; the caller reports `candidates` and creates nothing).
+ *
+ * @internal Exported for testing
+ */
+export function selectIssueBranch(
+  titleBranch: string,
+  candidates: string[],
+): string | null {
+  if (candidates.length === 0) return titleBranch;
+  if (candidates.length === 1) return candidates[0];
+  return candidates.includes(titleBranch) ? titleBranch : null;
 }
 
 /**
@@ -174,15 +235,19 @@ function findExistingWorktree(branch: string): string | null {
  * 3. Fallback to "main"
  *
  * @param verbose - Log which branch was detected
+ * @param cwd - Repository to read; defaults to `process.cwd()` (#1460)
  * @returns The detected default branch name (e.g., "main", "master")
  * @internal Exported for testing
  */
-export function detectDefaultBranch(verbose: boolean = false): string {
+export function detectDefaultBranch(
+  verbose: boolean = false,
+  cwd: string = process.cwd(),
+): string {
   // Try reading the symbolic ref (no network call)
   const result = spawnSync(
     "git",
     ["symbolic-ref", "refs/remotes/origin/HEAD"],
-    { stdio: "pipe" },
+    { cwd, stdio: "pipe" },
   );
   if (result.status === 0) {
     const branch = result.stdout
@@ -201,13 +266,13 @@ export function detectDefaultBranch(verbose: boolean = false): string {
   const autoResult = spawnSync(
     "git",
     ["remote", "set-head", "origin", "--auto"],
-    { stdio: "pipe" },
+    { cwd, stdio: "pipe" },
   );
   if (autoResult.status === 0) {
     const retry = spawnSync(
       "git",
       ["symbolic-ref", "refs/remotes/origin/HEAD"],
-      { stdio: "pipe" },
+      { cwd, stdio: "pipe" },
     );
     if (retry.status === 0) {
       const branch = retry.stdout
@@ -732,9 +797,14 @@ export function installWorktreeDeps(
   // check `pm` falls back to `"npm"` (JS-only detection) and always attempts
   // `npm ci` against a tree with no package.json to install from (#1196).
   if (!hasManifestForPackageManager(pm, worktreePath)) {
+    // JS managers key off package.json alone; naming it (and the root) tells a
+    // subdirectory-package repo (`agent/package.json`) why nothing installed.
+    const isPython = pm === "pip" || pm === "poetry" || pm === "uv";
     console.log(
       chalk.gray(
-        `    Skipping dependency install — no manifest found for ${pm}`,
+        isPython
+          ? `    Skipping dependency install — no manifest found for ${pm}`
+          : `    Skipping dependency install — no package.json at the worktree root`,
       ),
     );
     return true;
@@ -812,20 +882,169 @@ export function resolveWorktreeRoot(
 
 /**
  * The ref a new worktree branch is cut from (#1234 extracted it so the
- * creation and reuse paths record the same value): a local branch (chain
- * mode, or a local `--base`) as-is, `origin/<x>` for a remote-style base,
- * else `origin/<default>`.
+ * creation and reuse paths record the same value): `origin/<x>` for a
+ * remote-style base or the detected default, else `origin/<default>`.
+ *
+ * A non-default bare base is `origin/<base>` too when the remote has it
+ * (#1406), so creation, staleness (`countCommitsBehind`) and the recorded
+ * base read one ref. Chain mode (a `--stacked` predecessor) and a base with
+ * no `origin/<base>` stay bare: those are local branches by design.
+ *
+ * @param opts.chainMode - the bare base is a stacked predecessor
+ * @param opts.hasRemote - whether `origin/<baseBranch>` exists locally
  *
  * @internal Exported for testing only.
  */
 export function computeWorktreeBaseRef(
   baseBranch: string | undefined,
   detectedDefault: string,
+  opts: { chainMode?: boolean; hasRemote?: boolean } = {},
 ): string {
   if (!baseBranch) return `origin/${detectedDefault}`;
   if (baseBranch.startsWith("origin/")) return baseBranch;
   if (baseBranch === detectedDefault) return `origin/${baseBranch}`;
+  if (!opts.chainMode && opts.hasRemote) return `origin/${baseBranch}`;
   return baseBranch;
+}
+
+/** Whether the remote-tracking ref `origin/<branch>` exists (local check). */
+function hasRemoteTrackingRef(cwd: string, branch: string): boolean {
+  return (
+    spawnSync(
+      "git",
+      [
+        "-C",
+        cwd,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `refs/remotes/origin/${branch}`,
+      ],
+      { stdio: "pipe" },
+    ).status === 0
+  );
+}
+
+/**
+ * The ref a worktree branch starts from when no local branch is kept (#1380,
+ * #1405): `origin/<branch>` when the remote has the branch and it is not
+ * already merged into `baseRef`, else `baseRef`. Both the first-creation path
+ * and the stale-recreate path resolve through here, so a pushed PR branch
+ * keeps its commits on either path.
+ *
+ * Local `git` only — no `gh` (#1322). Fetches the branch first: a remote that
+ * reports the branch gone makes a leftover tracking ref count as absent; any
+ * other fetch failure (offline) falls back to the tracking ref already present.
+ * "Merged" covers a merge commit (the branch is an ancestor of the base) and a
+ * squash merge (merging the branch into the base leaves the base's tree).
+ *
+ * @internal Exported for testing only.
+ */
+export function resolveBranchStartRef(
+  cwd: string,
+  branch: string,
+  baseRef: string,
+): string {
+  const remoteRef = `origin/${branch}`;
+  // LC_ALL=C: the check below matches git's English message, and git
+  // translates it under other locales (de: "Konnte Remote-Referenz …").
+  const fetch = spawnSync("git", ["-C", cwd, "fetch", "origin", branch], {
+    stdio: "pipe",
+    timeout: 30000,
+    env: { ...process.env, LC_ALL: "C" },
+  });
+  if (fetch.stderr?.toString().includes("couldn't find remote ref")) {
+    return baseRef;
+  }
+  const remoteCheck = spawnSync(
+    "git",
+    [
+      "-C",
+      cwd,
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/remotes/${remoteRef}`,
+    ],
+    { stdio: "pipe" },
+  );
+  if (remoteCheck.status !== 0) return baseRef;
+
+  const ancestor = spawnSync(
+    "git",
+    ["-C", cwd, "merge-base", "--is-ancestor", remoteRef, baseRef],
+    { stdio: "pipe" },
+  );
+  if (ancestor.status === 0) return baseRef;
+
+  // Squash merge: the branch's changes are already in the base. merge-tree
+  // --write-tree needs git >= 2.38; on error only the ancestor test applies.
+  const merged = spawnSync(
+    "git",
+    ["-C", cwd, "merge-tree", "--write-tree", baseRef, remoteRef],
+    { stdio: "pipe" },
+  );
+  const baseTree = spawnSync(
+    "git",
+    ["-C", cwd, "rev-parse", `${baseRef}^{tree}`],
+    { stdio: "pipe" },
+  );
+  if (
+    merged.status === 0 &&
+    baseTree.status === 0 &&
+    merged.stdout.toString().split("\n")[0].trim() ===
+      baseTree.stdout.toString().trim()
+  ) {
+    return baseRef;
+  }
+  return remoteRef;
+}
+
+/**
+ * The branch a PR is opened against (#1386): the same base value the worktree
+ * was cut from, as a bare branch name for `gh pr create --base`.
+ *
+ * `stackPrBase` (the `--stacked` predecessor) wins; else `baseBranch` with any
+ * `origin/` prefix stripped when it differs from the detected default; else
+ * `undefined`, so gh uses the repository's default branch as it always has.
+ * Passing the detected default explicitly is avoided on purpose: detection
+ * falls back to `"main"`, which `gh` would then reject on a repo whose default
+ * is something else.
+ *
+ * @internal Exported for testing only.
+ */
+export function resolvePrBase(
+  stackPrBase: string | undefined,
+  baseBranch: string | undefined,
+  detectedDefault: () => string,
+): string | undefined {
+  if (stackPrBase) return stackPrBase;
+  if (!baseBranch) return undefined;
+  const bare = baseBranch.replace(/^origin\//, "");
+  return bare === detectedDefault() ? undefined : bare;
+}
+
+/** Say when the #1234 base ref could not be recorded (#1469). */
+function warnBaseRefNotRecorded(
+  branch: string,
+  result: { ok: true } | { ok: false; error: string },
+): void {
+  if (result.ok) return;
+  console.log(
+    chalk.yellow(
+      `    !  Could not record the base ref for ${branch}: ${result.error} — the exec guard and pre-PR rebase fall back to the default base`,
+    ),
+  );
+}
+
+/**
+ * Provisioning side-channel (#1469). `failures` collects, per issue, why its
+ * worktree could not be created, so the run can fail that issue instead of
+ * running its phases in the main checkout.
+ */
+export interface WorktreeProvisioning {
+  failures?: Map<number, string>;
+  lockRetry?: ConfigLockRetryOptions;
 }
 
 /**
@@ -833,6 +1052,7 @@ export function computeWorktreeBaseRef(
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
  * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - failure sink and lock-retry options (#1469)
  */
 export async function ensureWorktree(
   issueNumber: number,
@@ -842,20 +1062,51 @@ export async function ensureWorktree(
   baseBranch?: string,
   chainMode?: boolean,
   worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
 ): Promise<WorktreeInfo | null> {
   const gitRoot = getGitRoot();
   if (!gitRoot) {
     console.log(chalk.red("    ❌ Not in a git repository"));
+    provisioning?.failures?.set(issueNumber, "not in a git repository");
     return null;
   }
 
   const slug = slugify(title);
-  const branch = `feature/${issueNumber}-${slug}`;
+  // #1487: reuse the issue's branch, found by number, before the title.
+  const candidates = findIssueBranches(issueNumber, gitRoot);
+  const branch = selectIssueBranch(
+    `feature/${issueNumber}-${slug}`,
+    candidates,
+  );
+  if (!branch) {
+    console.log(
+      chalk.red(
+        `    ❌ Issue #${issueNumber} has ${candidates.length} branches and none matches its title; not creating another:`,
+      ),
+    );
+    for (const candidate of candidates) {
+      console.log(chalk.red(`       ${candidate}`));
+    }
+    console.log(
+      chalk.yellow(
+        `    ℹ️  Delete or rename the branches that are not the issue's, then re-run.`,
+      ),
+    );
+    // The run fails this issue with this reason (#1469) rather than running
+    // it in the main checkout.
+    provisioning?.failures?.set(
+      issueNumber,
+      `${candidates.length} branches for #${issueNumber} and none matches its title: ${candidates.join(", ")}`,
+    );
+    return null;
+  }
   const worktreesDir = resolveWorktreeRoot(gitRoot, worktreeRoot);
   const worktreePath = path.join(worktreesDir, branch);
 
   // Check if worktree already exists
   let existingPath = findExistingWorktree(branch);
+  // #1380/#1405: set when the worktree is built from its remote branch
+  let recreateFrom: string | null = null;
   if (existingPath) {
     // AC-3: Check if worktree is stale and needs recreation
     const detectedBase = baseBranch || detectDefaultBranch(verbose);
@@ -890,15 +1141,69 @@ export async function ensureWorktree(
         );
         // Continue with existing worktree
       } else {
-        // Safe to recreate - no uncommitted/unpushed work
-        console.log(
-          chalk.yellow(
-            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
-          ),
+        // #1380: recreate from origin/<branch> when it exists, and only when
+        // the start ref already contains HEAD — otherwise the recreate drops
+        // the branch's commits (a pushed PR, or a local-only branch).
+        const startRef = resolveBranchStartRef(
+          existingPath,
+          branch,
+          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+            chainMode,
+            hasRemote:
+              !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+          }),
         );
+        const contained = spawnSync(
+          "git",
+          ["-C", existingPath, "merge-base", "--is-ancestor", "HEAD", startRef],
+          { stdio: "pipe" },
+        );
+        const wtPath = existingPath;
+        const revParse = (ref: string): string =>
+          spawnSync("git", ["-C", wtPath, "rev-parse", ref], {
+            stdio: "pipe",
+          })
+            .stdout.toString()
+            .trim();
+        if (
+          startRef === `origin/${branch}` &&
+          revParse("HEAD") === revParse(startRef)
+        ) {
+          // #1405: recreating from origin/<branch> would rebuild this exact
+          // commit, still behind the base, and every later run would recreate
+          // it again. The pre-PR rebase (#1069) brings in the base.
+          if (verbose) {
+            console.log(
+              chalk.gray(
+                `    Worktree already at ${startRef}; recreating would not change it`,
+              ),
+            );
+          }
+          // Continue with existing worktree
+        } else if (contained.status !== 0) {
+          console.log(
+            chalk.yellow(
+              `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but ${startRef} does not contain its commits`,
+            ),
+          );
+          console.log(
+            chalk.yellow(
+              `    ℹ️  Keeping existing worktree so the branch's commits are not dropped.`,
+            ),
+          );
+          // Continue with existing worktree
+        } else {
+          // Safe to recreate - no uncommitted/unpushed work
+          console.log(
+            chalk.yellow(
+              `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
+            ),
+          );
 
-        if (removeStaleWorktree(existingPath, branch, verbose)) {
-          existingPath = null; // Will fall through to create new worktree
+          if (removeStaleWorktree(existingPath, branch, verbose)) {
+            existingPath = null; // Will fall through to create new worktree
+            if (startRef === `origin/${branch}`) recreateFrom = startRef;
+          }
         }
       }
     }
@@ -912,10 +1217,18 @@ export async function ensureWorktree(
     // #1234: a worktree created before the base was recorded gets it now;
     // one that already has it keeps the ref it was actually cut from.
     if (!readRecordedBaseRef(existingPath, branch)) {
-      recordWorktreeBaseRef(
-        existingPath,
+      warnBaseRefNotRecorded(
         branch,
-        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose)),
+        recordWorktreeBaseRef(
+          existingPath,
+          branch,
+          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+            chainMode,
+            hasRemote:
+              !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+          }),
+          provisioning?.lockRetry,
+        ),
       );
     }
 
@@ -998,15 +1311,11 @@ export async function ensureWorktree(
   // For local branches (chain mode), use as-is
   const detectedDefault = detectDefaultBranch(verbose);
   const effectiveBase = baseBranch || detectedDefault;
-  const isLocalBranch =
-    baseBranch &&
-    !baseBranch.startsWith("origin/") &&
-    baseBranch !== detectedDefault;
-  const baseRef = computeWorktreeBaseRef(baseBranch, detectedDefault);
-
-  // Fetch the base branch to ensure worktree starts from fresh baseline
+  // Fetch the base branch to ensure worktree starts from fresh baseline.
+  // Chain mode cuts from a local predecessor, so there is nothing to fetch.
+  // A failed fetch is tolerated: a local-only base (#1406) has no remote.
   const branchToFetch = effectiveBase.replace(/^origin\//, "");
-  if (!isLocalBranch) {
+  if (!chainMode) {
     if (verbose) {
       console.log(chalk.gray(`    Fetching latest ${branchToFetch}...`));
     }
@@ -1023,44 +1332,100 @@ export async function ensureWorktree(
   } else if (verbose) {
     console.log(chalk.gray(`    🔗 Chaining from branch: ${baseBranch}`));
   }
+  // Resolve after the fetch so a freshly fetched origin/<base> is seen.
+  const baseRef = computeWorktreeBaseRef(baseBranch, detectedDefault, {
+    chainMode,
+    hasRemote: !!baseBranch && hasRemoteTrackingRef(gitRoot, baseBranch),
+  });
+
+  // #1405: on a fresh machine the PR branch may exist only on the remote.
+  // Start from origin/<branch> (unless it is already merged into the base)
+  // rather than cutting a new branch from the base. Chain mode keeps cutting
+  // from its predecessor.
+  if (!recreateFrom && !branchExists && !chainMode) {
+    const startRef = resolveBranchStartRef(gitRoot, branch, baseRef);
+    if (startRef === `origin/${branch}`) recreateFrom = startRef;
+  }
 
   // Ensure worktrees directory exists
   if (!existsSync(worktreesDir)) {
     spawnSync("mkdir", ["-p", worktreesDir], { stdio: "pipe" });
   }
 
-  // Create the worktree
-  let createResult;
-  let needsRebase = false;
-
-  if (branchExists) {
-    // Use existing branch
-    createResult = spawnSync("git", ["worktree", "add", worktreePath, branch], {
-      stdio: "pipe",
-    });
-
-    // In chain mode with existing branch, mark for rebase onto previous chain link
-    if (chainMode && baseBranch) {
-      needsRebase = true;
+  // Create the worktree. #1469: a lost `.git/config` lock (another CLI
+  // provisioning in this repo) is retried. A failed `-b` attempt can still
+  // have created the branch, so each retry re-checks and adds it as existing.
+  let cutNewBranch = false;
+  const addWorktree = (attempt: number) => {
+    if (recreateFrom) {
+      // #1380/#1405: build the local branch from origin/<branch>, never from
+      // the base, so the worktree keeps the PR's commits and tracks the remote.
+      return spawnSync(
+        "git",
+        ["worktree", "add", "-B", branch, worktreePath, recreateFrom],
+        { stdio: "pipe" },
+      );
     }
-  } else {
+    if (attempt > 0) {
+      spawnSync("git", ["worktree", "prune"], { stdio: "pipe" });
+    }
+    const branchNowExists =
+      branchExists ||
+      (attempt > 0 &&
+        spawnSync(
+          "git",
+          ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+          { stdio: "pipe" },
+        ).status === 0);
+    if (branchNowExists) {
+      // Use existing branch
+      return spawnSync("git", ["worktree", "add", worktreePath, branch], {
+        stdio: "pipe",
+      });
+    }
     // Create new branch from base reference (origin/main or previous branch in chain)
-    createResult = spawnSync(
+    cutNewBranch = true;
+    return spawnSync(
       "git",
       ["worktree", "add", worktreePath, "-b", branch, baseRef],
       { stdio: "pipe" },
     );
-  }
+  };
+  const createResult = retryOnConfigLock(
+    addWorktree,
+    (r) => (r.status === 0 ? null : r.stderr.toString()),
+    provisioning?.lockRetry,
+  );
+
+  // In chain mode with an existing branch, rebase onto the previous chain link
+  const needsRebase =
+    branchExists && !recreateFrom && !!chainMode && !!baseBranch;
 
   if (createResult.status !== 0) {
-    const error = createResult.stderr.toString();
+    const error = createResult.stderr.toString().trim();
     console.log(chalk.red(`    ❌ Failed to create worktree: ${error}`));
+    const lockNote =
+      CONFIG_LOCK_ERROR.test(error) && cutNewBranch
+        ? ` (branch ${branch} may exist without a worktree; the next run reuses it)`
+        : "";
+    provisioning?.failures?.set(
+      issueNumber,
+      `git worktree add failed: ${error || `exit ${createResult.status}`}${lockNote}`,
+    );
     return null;
   }
 
   // #1234: record the exact base so the exec guard and the pre-PR rebase
   // compare against what the worktree was actually cut from.
-  recordWorktreeBaseRef(worktreePath, branch, baseRef);
+  warnBaseRefNotRecorded(
+    branch,
+    recordWorktreeBaseRef(
+      worktreePath,
+      branch,
+      baseRef,
+      provisioning?.lockRetry,
+    ),
+  );
 
   // Rebase existing branch onto chain base if needed
   let rebased = false;
@@ -1168,6 +1533,7 @@ export async function ensureWorktree(
  * Ensure worktrees exist for all issues before execution
  * @param baseBranch - Optional base branch for worktree creation (default: main)
  * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - receives each failed issue's reason (#1469)
  */
 export async function ensureWorktrees(
   issues: Array<{ number: number; title: string }>,
@@ -1175,6 +1541,7 @@ export async function ensureWorktrees(
   packageManager?: string,
   baseBranch?: string,
   worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
@@ -1190,6 +1557,7 @@ export async function ensureWorktrees(
       baseBranch,
       false, // Non-chain mode: don't rebase existing branches
       worktreeRoot,
+      provisioning,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -1200,10 +1568,14 @@ export async function ensureWorktrees(
     (w) => !w.existed,
   ).length;
   const reused = Array.from(worktrees.values()).filter((w) => w.existed).length;
+  const failed = issues.length - worktrees.size;
 
-  if (created > 0 || reused > 0) {
+  if (created > 0 || reused > 0 || failed > 0) {
     console.log(
-      chalk.gray(`  Worktrees: ${created} created, ${reused} reused`),
+      chalk.gray(
+        `  Worktrees: ${created} created, ${reused} reused` +
+          (failed > 0 ? `, ${failed} failed` : ""),
+      ),
     );
   }
 
@@ -1215,6 +1587,7 @@ export async function ensureWorktrees(
  * Each issue branches from the previous issue's branch
  * @param baseBranch - Optional starting base branch for the chain (default: main)
  * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - receives each failed issue's reason (#1469)
  */
 export async function ensureWorktreesChain(
   issues: Array<{ number: number; title: string }>,
@@ -1222,6 +1595,7 @@ export async function ensureWorktreesChain(
   packageManager?: string,
   baseBranch?: string,
   worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
@@ -1233,7 +1607,7 @@ export async function ensureWorktreesChain(
   // First issue starts from the specified base branch (or main)
   let previousBranch: string | undefined = baseBranch;
 
-  for (const issue of issues) {
+  for (const [index, issue] of issues.entries()) {
     const worktree = await ensureWorktree(
       issue.number,
       issue.title,
@@ -1242,6 +1616,7 @@ export async function ensureWorktreesChain(
       previousBranch, // Chain from previous branch (or base branch for first issue)
       true, // Chain mode: rebase existing branches onto previous chain link
       worktreeRoot,
+      provisioning,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -1253,6 +1628,12 @@ export async function ensureWorktreesChain(
           `  ❌ Chain broken: could not create worktree for #${issue.number}`,
         ),
       );
+      for (const successor of issues.slice(index + 1)) {
+        provisioning?.failures?.set(
+          successor.number,
+          `chain broken: #${issue.number} has no worktree`,
+        );
+      }
       break;
     }
   }
@@ -2248,6 +2629,9 @@ export function buildAutomatedPRBody(
  *   issue carrying `prNoCloseLabel`, via {@link resolvePrLinkMode}.
  * @param prNoCloseLabel `settings.run.prNoCloseLabel` (#1197 AC-2), default
  *   `"no-autoclose"`.
+ * @param opts.baseBranch The run's resolved base (`ResolvedRun.baseBranch`,
+ *   #1386): the PR target when it is not the repo default and `--stacked`
+ *   sets no `prBase`. Resolved through {@link resolvePrBase}.
  * @param opts.execOutput The exec phase's captured output (#1223 AC-2),
  *   threaded through to {@link buildAutomatedPRBody}. Added as a trailing
  *   options object rather than another positional parameter.
@@ -2271,6 +2655,7 @@ export function createPR(
   prIssueLink?: "closes" | "refs",
   prNoCloseLabel?: string,
   opts?: {
+    baseBranch?: string;
     execOutput?: string;
     execSummary?: string;
     followups?: GapFinding[];
@@ -2278,6 +2663,10 @@ export function createPR(
   },
 ): PRCreationResult {
   const github = new GitHubProvider();
+  // #1386: one PR base for the create and update paths, resolved once.
+  const prBase = resolvePrBase(stackOptions?.prBase, opts?.baseBranch, () =>
+    detectDefaultBranch(verbose),
+  );
 
   // Title and body are built once, before Step 1, so the create path and the
   // update-existing path (#1247) publish the same content.
@@ -2334,8 +2723,8 @@ export function createPR(
         ),
       );
     }
-    if (stackOptions?.prBase) {
-      fields.base = stackOptions.prBase;
+    if (prBase) {
+      fields.base = prBase;
     }
     const update = github.updatePRSync(existing.number, fields, worktreePath);
     if (!update.success) {
@@ -2389,7 +2778,7 @@ export function createPR(
     prBody,
     branch,
     worktreePath,
-    stackOptions?.prBase,
+    prBase,
   );
 
   if (prResult.exitCode !== 0) {

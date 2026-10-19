@@ -31,6 +31,7 @@ import {
   type RunOutcome,
   type RunMetrics,
   type FailureCategory,
+  type RunSource,
   MetricsSchema,
   METRICS_FILE_PATH,
   createEmptyMetrics,
@@ -157,6 +158,8 @@ export class MetricsWriter {
     model?: string;
     flags?: string[];
     failureCategory?: FailureCategory;
+    /** Entry point that produced the record (#929). Defaults to `"run"`. */
+    source?: RunSource;
     /** Resolved per-phase model/effort overrides (#914/#975). See `createMetricRun`. */
     phasePolicies?: Record<
       string,

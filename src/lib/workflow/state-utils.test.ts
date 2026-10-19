@@ -18,6 +18,12 @@ import {
 import { StateManager } from "./state-manager.js";
 import { createIssueState, type WorkflowState } from "./state-schema.js";
 import type { RunLog } from "./run-log-schema.js";
+import {
+  FIXTURE_ISSUE_WORKTREES,
+  FIXTURE_SKIPPED_COUNT,
+  fixtureIssueTitle,
+  installWorktreeDiscoveryFixture,
+} from "./__fixtures__/worktree-discovery.fixture.js";
 
 // Mock child_process module for testing checkPRMergeStatus
 vi.mock("child_process", async (importOriginal) => {
@@ -31,6 +37,8 @@ vi.mock("child_process", async (importOriginal) => {
 // Get mocked spawnSync for configuring in tests
 import { spawnSync } from "child_process";
 const mockSpawnSync = vi.mocked(spawnSync);
+const { spawnSync: actualSpawnSync } =
+  await vi.importActual<typeof import("child_process")>("child_process");
 
 describe("state-utils", () => {
   let tempDir: string;
@@ -284,47 +292,54 @@ describe("state-utils", () => {
     });
   });
 
-  describe("discoverUntrackedWorktrees", { timeout: 30000 }, () => {
-    // Note: These tests run against the actual git worktree list output
-    // and call `gh api` per worktree for issue titles. Timeout is raised
-    // to accommodate multiple sequential GitHub API calls.
+  describe("discoverUntrackedWorktrees", () => {
+    // A fixture worktree list and canned `gh` titles (#1322): the real
+    // checkout made these tests slow, load-sensitive, and vacuous on CI.
+    beforeEach(() => {
+      installWorktreeDiscoveryFixture(mockSpawnSync, actualSpawnSync);
+    });
+
+    afterEach(() => {
+      mockSpawnSync.mockReset();
+    });
 
     it("should return success when called", async () => {
-      // This test verifies the function runs without error
-      // It will scan actual worktrees in the environment
       const result = await discoverUntrackedWorktrees({ statePath });
 
       expect(result.success).toBe(true);
-      expect(typeof result.worktreesScanned).toBe("number");
-      expect(Array.isArray(result.discovered)).toBe(true);
-      expect(Array.isArray(result.skipped)).toBe(true);
+      expect(result.worktreesScanned).toBe(
+        FIXTURE_ISSUE_WORKTREES.length + FIXTURE_SKIPPED_COUNT,
+      );
+      expect(result.skipped).toHaveLength(FIXTURE_SKIPPED_COUNT);
+      expect(result.discovered.map((d) => d.issueNumber)).toEqual(
+        FIXTURE_ISSUE_WORKTREES.map((wt) => wt.issueNumber),
+      );
+      expect(result.discovered[0].title).toBe(fixtureIssueTitle(9001));
     });
 
     it("should not discover worktrees that are already tracked", async () => {
-      // Get current worktrees first
       const initialResult = await discoverUntrackedWorktrees({ statePath });
+      expect(initialResult.discovered.length).toBeGreaterThanOrEqual(2);
+      expect(initialResult.alreadyTracked).toBe(0);
 
-      if (initialResult.discovered.length > 0) {
-        // Track the first discovered worktree
-        const worktree = initialResult.discovered[0];
-        const manager = new StateManager({ statePath });
-        await manager.initializeIssue(worktree.issueNumber, worktree.title, {
-          worktree: worktree.worktreePath,
-          branch: worktree.branch,
-        });
+      // Track the first discovered worktree
+      const worktree = initialResult.discovered[0];
+      const manager = new StateManager({ statePath });
+      await manager.initializeIssue(worktree.issueNumber, worktree.title, {
+        worktree: worktree.worktreePath,
+        branch: worktree.branch,
+      });
 
-        // Now run discovery again
-        const secondResult = await discoverUntrackedWorktrees({ statePath });
+      const secondResult = await discoverUntrackedWorktrees({ statePath });
 
-        // Should not re-discover the same worktree
-        expect(secondResult.discovered.length).toBeLessThan(
-          initialResult.discovered.length,
-        );
-        expect(secondResult.alreadyTracked).toBeGreaterThan(0);
-      } else {
-        // No worktrees to test with, just verify the function works
-        expect(initialResult.success).toBe(true);
-      }
+      // Exactly the tracked worktree drops out of the discovered list
+      expect(secondResult.discovered).toHaveLength(
+        initialResult.discovered.length - 1,
+      );
+      expect(secondResult.discovered.map((d) => d.issueNumber)).not.toContain(
+        worktree.issueNumber,
+      );
+      expect(secondResult.alreadyTracked).toBe(1);
     });
   });
 

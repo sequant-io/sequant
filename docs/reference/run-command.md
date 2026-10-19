@@ -242,10 +242,10 @@ SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
 
 | Failure | Waits? | Why |
 |---------|--------|-----|
-| Rate limit, reset within the remaining budget | ✅ | The window reopens on its own |
-| Rate limit, reset beyond the budget | ❌ | You said you would not wait that long — halts as before |
-| Rate limit with no reset time | ❌ | No timing signal; falls through to the existing short exponential backoff |
-| **Out of credits (billing)** | ❌ **never** | Credits are purchased, not waited out. Note these failures *do* carry a reset timestamp, so the gate is the error type, not the presence of a timestamp |
+| Rate limit, reset within the remaining budget | ✅ Yes | The window reopens on its own |
+| Rate limit, reset beyond the budget | ❌ No | You said you would not wait that long — halts as before |
+| Rate limit with no reset time | ❌ No | No timing signal; falls through to the existing short exponential backoff |
+| **Out of credits (billing)** | ❌ **No, never** | Credits are purchased, not waited out. Note these failures *do* carry a reset timestamp, so the gate is the error type, not the presence of a timestamp |
 
 **Bounds.** At most **2** waits per issue, and `--auto-wait` is a **total** budget across the whole issue, not a per-occurrence allowance. Two 20-minute waits spend 40 minutes of a 60-minute budget; a third window rejection halts with the usual labeled message. A window still closed on wake can therefore never produce an unbounded pause loop.
 
@@ -379,16 +379,16 @@ npx sequant ready 42 --models qa=sonnet
 
 A malformed spec (empty value, mixing a bare value with `phase=value` pairs, or an unrecognized phase name) fails fast with a usage error — it never silently resolves to "nothing configured".
 
-**What the aliases resolve to.** The examples use Claude Code's model aliases, which track the current model of each family. As of Claude Code 2.1.283:
+**What the aliases resolve to.** The examples use Claude Code's model aliases, which track the current model of each family. As of Claude Code 2.1.296:
 
 | Alias | Model | Full ID |
 |-------|-------|---------|
 | `opus` | Opus 5.5 | `claude-opus-5-5` |
-| `sonnet` | Sonnet 5 | `claude-sonnet-5` |
-| `haiku` | Haiku 4.5 | `claude-haiku-4-5-20251001` |
+| `sonnet` | Sonnet 5.5 | `claude-sonnet-5-5` |
+| `haiku` | Haiku 5.5 | `claude-haiku-5-5` |
 | `fable` | Fable 5.1 | `claude-fable-5-1` |
 
-A full ID pins a model across CLI upgrades (`--models spec=claude-opus-5-5,exec=claude-sonnet-5`); an alias moves with them. To check what an alias resolves to on your install, run `claude -p --model <alias> --output-format json "ok"` and read the `modelUsage` keys.
+A full ID pins a model across CLI upgrades (`--models spec=claude-opus-5-5,exec=claude-sonnet-5-5`); an alias moves with them. To check what an alias resolves to on your install, run `claude -p --model <alias> --output-format json "ok"` and read the `modelUsage` keys.
 
 **Precedence:** CLI flag > `.sequant/settings.json` > absent (SDK/CLI default). This is resolved by one shared function (`resolvePhasePolicies`) that both the `run` and `ready` execution-config builders call, so the two paths cannot drift apart on how a value resolves.
 
@@ -645,6 +645,19 @@ Example:
 PHASE_TIMEOUT=3600 npx sequant run 42  # 1 hour timeout
 SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 ```
+
+### Phase agent environment
+
+`sequant run` sets these for every phase agent it starts. Skills read them; you do not set them.
+
+| Variable | Value |
+|----------|-------|
+| `SEQUANT_ORCHESTRATOR` | `sequant-run` |
+| `SEQUANT_PHASE` | The phase being run (`spec`, `exec`, `qa`, ...) |
+| `SEQUANT_WORKTREE` | The issue worktree path (worktree phases only) |
+| `SEQUANT_ISSUE` | The issue number (worktree phases only) |
+| `SEQUANT_ISSUE_TYPE` | The issue type, when known |
+| `SEQUANT_BASE_BRANCH` | The base branch name, without `origin/` (#1460). It is the base recorded for the worktree, or the repository's default branch (`origin/HEAD`) when none is recorded, as for spec. On a repository whose default branch is `master`, it is `master`. |
 
 ## MCP Server Support
 

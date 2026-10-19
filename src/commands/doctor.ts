@@ -17,7 +17,7 @@ import {
   getSymlinkTarget,
 } from "../lib/fs.js";
 import { checkSkillsInstalled } from "../lib/skills-check.js";
-import { getManifest } from "../lib/manifest.js";
+import { getInstallScope, getManifest } from "../lib/manifest.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -40,12 +40,21 @@ import {
   getVersionWarning,
   resolveCliInvocation,
 } from "../lib/version-check.js";
-import { areSkillsOutdated } from "./sync.js";
+import {
+  areSkillsOutdated,
+  formatSkillsDriftRemedy,
+  scopedRemedy,
+  type SkillsOutdatedStatus,
+} from "./sync.js";
 import {
   readAgentsMd,
   isAgentsMdSequantOwned,
   AGENTS_MD_PATH,
 } from "../lib/agents-md.js";
+import {
+  formatSkillsCommitWarning,
+  getSkillsCommitState,
+} from "../lib/skills-commit-state.js";
 
 interface Check {
   name: string;
@@ -237,13 +246,16 @@ export const UPSTREAM_SUBAGENT_WARNING = {
  * AC-2: primary line + link, suppressible via `quiet`.
  * AC-4: when the user's `agents.model` differs from the shipped default,
  * append a second-line note flagging the field as inert.
+ *
+ * Returns true when the notice printed, so the caller counts it as a warning
+ * (#1387); false under `--quiet`.
  */
 export function emitUpstreamWarning(opts: {
   quiet?: boolean;
   agentsModel: string;
   defaultAgentsModel: string;
-}): void {
-  if (opts.quiet) return;
+}): boolean {
+  if (opts.quiet) return false;
   console.log("");
   console.log(chalk.yellow(`  !  ${UPSTREAM_SUBAGENT_WARNING.primary}`));
   console.log(chalk.yellow(`     ${UPSTREAM_SUBAGENT_WARNING.url}`));
@@ -252,6 +264,45 @@ export function emitUpstreamWarning(opts: {
       chalk.yellow(`     ${UPSTREAM_SUBAGENT_WARNING.inertFieldNote}`),
     );
   }
+  return true;
+}
+
+export interface DoctorSummary {
+  level: "error" | "warning" | "success";
+  title: string;
+  message: string;
+}
+
+/**
+ * Build the doctor summary box content from the check counts. `warn` must
+ * include every `!` line printed, the upstream notice among them (#1387).
+ */
+export function buildDoctorSummary(counts: {
+  pass: number;
+  warn: number;
+  fail: number;
+}): DoctorSummary {
+  const { pass, warn, fail } = counts;
+  const total = pass + warn + fail;
+  if (fail > 0) {
+    return {
+      level: "error",
+      title: `${fail} check${fail > 1 ? "s" : ""} failed`,
+      message: `Passed: ${pass}/${total}\nWarnings: ${warn}\nFailed: ${fail}\n\nRun \`sequant init\` to fix issues.`,
+    };
+  }
+  if (warn > 0) {
+    return {
+      level: "warning",
+      title: `All checks passed (${warn} warning${warn > 1 ? "s" : ""})`,
+      message: `Passed: ${pass}/${total}\nWarnings: ${warn}\n\nSequant should work correctly.`,
+    };
+  }
+  return {
+    level: "success",
+    title: `All ${total} checks passed!`,
+    message: `Your Sequant installation is healthy.`,
+  };
 }
 
 /**
@@ -487,6 +538,44 @@ function isInsideGitWorkTree(): boolean {
   }
 }
 
+/**
+ * The remediation printed under an outdated `Version` check. It belongs to
+ * that one counted warning, so it carries no `!` marker of its own: the
+ * summary's `Warnings:` count must match the `!` lines printed (#1387 AC-3).
+ */
+export function formatVersionRemediation(warning: string): string {
+  return `     ${warning}`;
+}
+
+/**
+ * The `Skills Version` warning for an outdated install. A partial install gets
+ * the scoped remedy; a bare `sync` there would widen it (#1485 AC-4).
+ */
+export function formatSkillsOutdatedMessage(
+  status: Pick<
+    SkillsOutdatedStatus,
+    "currentVersion" | "packageVersion" | "installScope"
+  >,
+  cli: string,
+): string {
+  const remedy = scopedRemedy(status.installScope, cli, true) ?? `${cli} sync`;
+  return `Outdated (${status.currentVersion || "unknown"} → ${status.packageVersion}) - run: ${remedy}`;
+}
+
+/**
+ * The `Skills Version` warning for content drift at a matching version. The
+ * remedy comes from the same producer as the pre-flight banner (#1490).
+ */
+export function formatSkillsDriftMessage(
+  status: Pick<
+    SkillsOutdatedStatus,
+    "packageVersion" | "installScope" | "contentDrift"
+  >,
+  cli: string,
+): string {
+  return `${status.contentDrift} file(s) differ from bundled content (version ${status.packageVersion}) - run: ${formatSkillsDriftRemedy(status.installScope, cli)}`;
+}
+
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
@@ -510,7 +599,13 @@ export async function doctorCommand(
       // Show remediation steps
       console.log(
         chalk.yellow(
-          `  !  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
+          formatVersionRemediation(
+            getVersionWarning(
+              versionResult.currentVersion,
+              versionResult.latestVersion,
+              versionResult.isLocalInstall,
+            ),
+          ),
         ),
       );
       console.log("");
@@ -585,13 +680,39 @@ export async function doctorCommand(
     checks.push({
       name: "Skills Version",
       status: "warn",
-      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: ${resolveCliInvocation()} sync`,
+      message: formatSkillsOutdatedMessage(
+        skillsStatus,
+        resolveCliInvocation(),
+      ),
+    });
+  } else if ((skillsStatus.contentDrift ?? 0) > 0) {
+    checks.push({
+      name: "Skills Version",
+      status: "warn",
+      message: formatSkillsDriftMessage(skillsStatus, resolveCliInvocation()),
     });
   } else {
     checks.push({
       name: "Skills Version",
       status: "pass",
       message: `Up to date (${skillsStatus.packageVersion})`,
+    });
+  }
+
+  // Legacy manifest (no `groups`) reads as a full install by design; when none
+  // of the non-skills groups exist, tell the user the hand edit (#1485).
+  if (
+    manifest &&
+    !Array.isArray(manifest.groups) &&
+    !(await fileExists(".claude/hooks")) &&
+    !(await fileExists(".claude/settings.json")) &&
+    !(await fileExists(".claude/agents"))
+  ) {
+    checks.push({
+      name: "Install Scope",
+      status: "warn",
+      message:
+        'Manifest has no "groups", so this reads as a full install, but .claude/hooks, .claude/settings.json and .claude/agents are absent. If this is a skills-only install, add "groups": ["skills"] to .sequant-manifest.json',
     });
   }
 
@@ -614,6 +735,14 @@ export async function doctorCommand(
           "user-owned (preserved by sync) - customized or predates the ownership marker",
       });
     }
+  } else if (manifest && getInstallScope(manifest).kind === "partial") {
+    // A skills-only install never writes AGENTS.md; `init --force` would widen it (#1489).
+    checks.push({
+      name: "AGENTS.md",
+      status: "pass",
+      message:
+        "Not part of the skills-only install (AGENTS.md is outside this install scope)",
+    });
   } else if (manifest) {
     checks.push({
       name: "AGENTS.md",
@@ -722,11 +851,20 @@ export async function doctorCommand(
           "Commit .claude/skills/ before your first `sequant run`",
       });
     } else {
-      checks.push({
-        name: "Skills Committed",
-        status: "pass",
-        message: "Core skills are committed",
-      });
+      // #1354: tracked but modified (an uncommitted sync) is the other way
+      // phases end up on different skills than the ones on disk.
+      const uncommitted = formatSkillsCommitWarning(
+        getSkillsCommitState(process.cwd()),
+      );
+      checks.push(
+        uncommitted
+          ? { name: "Skills Committed", status: "warn", message: uncommitted }
+          : {
+              name: "Skills Committed",
+              status: "pass",
+              message: "Core skills are committed",
+            },
+      );
     }
   }
 
@@ -1091,30 +1229,31 @@ export async function doctorCommand(
     else failCount++;
   }
 
-  // Upstream subagent routing notice (AC-2/AC-4)
-  emitUpstreamWarning({
-    quiet: options.quiet,
-    agentsModel: settings.agents.model,
-    defaultAgentsModel: DEFAULT_AGENT_SETTINGS.model,
-  });
+  // Upstream subagent routing notice (AC-2/AC-4). It prints a `!` line, so it
+  // counts as a warning in the summary (#1387).
+  if (
+    emitUpstreamWarning({
+      quiet: options.quiet,
+      agentsModel: settings.agents.model,
+      defaultAgentsModel: DEFAULT_AGENT_SETTINGS.model,
+    })
+  ) {
+    warnCount++;
+  }
 
   // Summary with boxed output
-  const totalChecks = passCount + warnCount + failCount;
-  let summaryTitle: string;
-  let summaryMessage: string;
+  const summary = buildDoctorSummary({
+    pass: passCount,
+    warn: warnCount,
+    fail: failCount,
+  });
 
-  if (failCount > 0) {
-    summaryTitle = `${failCount} check${failCount > 1 ? "s" : ""} failed`;
-    summaryMessage = `Passed: ${passCount}/${totalChecks}\nWarnings: ${warnCount}\nFailed: ${failCount}\n\nRun \`sequant init\` to fix issues.`;
-    console.log("\n" + ui.errorBox(summaryTitle, summaryMessage));
+  if (summary.level === "error") {
+    console.log("\n" + ui.errorBox(summary.title, summary.message));
     process.exit(1);
-  } else if (warnCount > 0) {
-    summaryTitle = `All checks passed (${warnCount} warning${warnCount > 1 ? "s" : ""})`;
-    summaryMessage = `Passed: ${passCount}/${totalChecks}\nWarnings: ${warnCount}\n\nSequant should work correctly.`;
-    console.log("\n" + ui.warningBox(summaryTitle, summaryMessage));
+  } else if (summary.level === "warning") {
+    console.log("\n" + ui.warningBox(summary.title, summary.message));
   } else {
-    summaryTitle = `All ${totalChecks} checks passed!`;
-    summaryMessage = `Your Sequant installation is healthy.`;
-    console.log("\n" + ui.successBox(summaryTitle, summaryMessage));
+    console.log("\n" + ui.successBox(summary.title, summary.message));
   }
 }

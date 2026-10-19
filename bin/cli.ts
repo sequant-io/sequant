@@ -21,7 +21,7 @@ import {
   buildHomeStrayWarning,
   getInstallRoot,
   isHomeStrayInstall,
-  isLocalNodeModulesInstall,
+  shouldWarnLocalInstall,
 } from "../src/lib/version-check.js";
 import { configureUI, banner } from "../src/lib/cli-ui.js";
 import {
@@ -163,7 +163,7 @@ if (!process.argv.includes("--quiet")) {
   const installRoot = getInstallRoot();
   if (installRoot && isHomeStrayInstall(installRoot)) {
     console.warn(chalk.yellow(buildHomeStrayWarning(installRoot)));
-  } else if (isLocalNodeModulesInstall()) {
+  } else if (shouldWarnLocalInstall()) {
     const pmCommands = getPackageManagerCommands(
       detectNodePackageManagerSync(),
     );
@@ -397,7 +397,7 @@ program
   )
   .option(
     "--no-rebase",
-    "Skip pre-PR rebase onto origin/main (use when you want to handle rebasing manually)",
+    "Skip pre-PR rebase onto the base branch (--base, default main; use when you want to handle rebasing manually)",
   )
   .option(
     "--no-pr",
