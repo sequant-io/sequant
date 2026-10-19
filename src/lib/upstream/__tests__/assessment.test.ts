@@ -11,6 +11,7 @@ import {
   getReleasesSince,
   loadBaseline,
   isAlreadyAssessed,
+  saveBaseline,
 } from "../assessment.js";
 import {
   analyzeChange,
@@ -18,7 +19,7 @@ import {
   selectIssueWorthy,
 } from "../relevance.js";
 import type { Baseline, Finding } from "../types.js";
-import { readFile, access } from "node:fs/promises";
+import { readFile, access, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,13 +54,19 @@ vi.mock("../../workflow/platforms/github.js", () => {
   return { GitHubProvider: MockGitHubProvider };
 });
 
-// Mock node:fs/promises
-vi.mock("node:fs/promises", () => ({
+// `lib/fs.ts` imports "fs/promises" while assessment.ts imports
+// "node:fs/promises". Mock both specifiers with the same functions so the real
+// `mkdir` never runs (#1473).
+const fsPromisesMock = vi.hoisted(() => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   access: vi.fn(),
   mkdir: vi.fn(),
 }));
+const mkdirMock = fsPromisesMock.mkdir;
+
+vi.mock("node:fs/promises", () => fsPromisesMock);
+vi.mock("fs/promises", () => fsPromisesMock);
 
 describe("validateVersion", () => {
   it("accepts valid semver versions", () => {
@@ -199,6 +206,33 @@ describe("isAlreadyAssessed", () => {
     const result = await isAlreadyAssessed("v2.1.29");
 
     expect(result).toBe(false);
+  });
+});
+
+describe("ensureDir", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("a write error rejects with the mkdir diagnostic", async () => {
+    const eacces = Object.assign(new Error("EACCES: mkdir denied"), {
+      code: "EACCES",
+    });
+    mkdirMock.mockRejectedValueOnce(eacces);
+
+    await expect(
+      saveBaseline({} as Baseline, "/nope/baseline.json"),
+    ).rejects.toThrow("mkdir denied");
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it("creates the parent directory before writing", async () => {
+    mkdirMock.mockResolvedValueOnce(undefined);
+
+    await saveBaseline({} as Baseline, "/ok/baseline.json");
+
+    expect(mkdirMock).toHaveBeenCalledWith("/ok", { recursive: true });
+    expect(writeFile).toHaveBeenCalledTimes(1);
   });
 });
 

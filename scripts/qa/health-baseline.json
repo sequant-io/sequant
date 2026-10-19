@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-19T22:39:49.649Z",
-  "commit": "3fb2041490f637d9a21ef0d8e6ac0d16a5d24924",
+  "generatedAt": "2026-10-19T22:49:13.559Z",
+  "commit": "f4509f9a809fc7ae327ae922ed9a43c5584426d9",
   "functions": {
     "over400": 4,
     "over200": 12,
@@ -11,7 +11,7 @@
     }
   },
   "emptyCatch": {
-    "total": 118,
+    "total": 117,
     "byFile": {
       "bin/cli.ts": 1,
       "bin/preflight.ts": 1,
@@ -38,7 +38,6 @@
       "src/lib/skill-version.ts": 1,
       "src/lib/stacks.ts": 4,
       "src/lib/templates.ts": 2,
-      "src/lib/upstream/assessment.ts": 1,
       "src/lib/upstream/issues.ts": 2,
       "src/lib/upstream/relevance.ts": 1,
       "src/lib/version-check.ts": 3,
@@ -68,7 +67,7 @@
   "testRatio28d": {
     "sum": 2.42,
     "median": 2.03,
-    "commits": 175
+    "commits": 176
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
@@ -78,5 +77,5 @@
     "memoryFiles": null
   },
   "adrWithoutActor": 11,
-  "unusedExports": 342
+  "unusedExports": 341
 }

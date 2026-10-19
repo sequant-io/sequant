@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { truncateToWidth } from "./truncate.js";
+import { truncateToWidth, truncateAtWord } from "./truncate.js";
 
 describe("truncateToWidth", () => {
   it("returns input unchanged when within budget", () => {
@@ -26,5 +26,17 @@ describe("truncateToWidth", () => {
 
   it("passes short input through even with wide glyphs", () => {
     expect(truncateToWidth("中", 2)).toBe("中");
+  });
+});
+
+describe("truncateAtWord", () => {
+  it("backs off to a word boundary when it keeps enough width", () => {
+    expect(truncateAtWord("alpha beta gamma delta", 18)).toBe(
+      "alpha beta gamma…",
+    );
+  });
+
+  it("cuts mid-word when the boundary wastes too much width", () => {
+    expect(truncateAtWord("abcdefghijklmnop qrs", 12)).toBe("abcdefghijk…");
   });
 });

@@ -58,7 +58,6 @@ import {
 } from "../errors.js";
 import { formatElapsedTime } from "../cli-ui/format.js";
 
-export { formatDuration } from "../cli-ui/format.js";
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
 
