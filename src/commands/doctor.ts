@@ -159,19 +159,6 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
 }
 
 /**
- * Info line (not a check, never counted) naming the issue form when
- * `.github/ISSUE_TEMPLATE/sequant-task.yml` is missing (#1528).
- */
-export function issueFormInfoLine(cwd: string = process.cwd()): string | null {
-  if (
-    existsSync(pathJoin(cwd, ".github", "ISSUE_TEMPLATE", "sequant-task.yml"))
-  ) {
-    return null;
-  }
-  return "i  Issue form: .github/ISSUE_TEMPLATE/sequant-task.yml is absent - see docs/guides/writing-issues.md (Optional: a GitHub issue form)";
-}
-
-/**
  * Warn when a `node_modules/sequant` sits in cwd's ancestor chain (npm's own
  * `npx` resolution order) or under `$HOME`, at a version that differs from
  * either comparator below. That local copy silently shadows an `npx -y
@@ -1253,10 +1240,6 @@ export async function doctorCommand(
   ) {
     warnCount++;
   }
-
-  // #1528: informational only; counts toward no total.
-  const issueFormLine = issueFormInfoLine();
-  if (issueFormLine) console.log(chalk.blue(`  ${issueFormLine}`));
 
   // Summary with boxed output
   const summary = buildDoctorSummary({

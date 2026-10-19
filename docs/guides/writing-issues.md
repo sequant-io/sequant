@@ -74,8 +74,36 @@ The last form, with no ID, works only under an `Acceptance Criteria` heading; Se
 
 ## Optional: a GitHub issue form
 
-To have every new issue start in this shape, use the issue form.
+To have every new issue start in this shape, save this as `.github/ISSUE_TEMPLATE/sequant-task.yml` in your repository:
 
-`sequant init` writes this form for you when your repository has no `.github/ISSUE_TEMPLATE/` directory, and never touches one that exists. To add it by hand, copy [`templates/github/ISSUE_TEMPLATE/sequant-task.yml`](../../templates/github/ISSUE_TEMPLATE/sequant-task.yml) to `.github/ISSUE_TEMPLATE/sequant-task.yml`. It has three fields: Problem, Acceptance Criteria (pre-filled with `- [ ] AC-1: <observable result>. Evidence: <test, file or command>`) and Non-Goals.
+```yaml
+name: Task for Sequant
+description: A change Sequant can plan, build and check
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing, with a concrete example.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: One checkbox per requirement, each on a single line, ending with Evidence.
+      value: |
+        - [ ] AC-1: <observable result>. Evidence: <test, file or command>
+        - [ ] AC-2: <observable result>. Evidence: <test, file or command>
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What this change should not do.
+      value: |
+        - <out of scope>
+```
 
 GitHub renders each field label as a heading, so the issue body gets an `### Acceptance Criteria` section that Sequant reads. [sequant-example](https://github.com/sequant-io/sequant-example) uses this form.
