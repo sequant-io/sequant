@@ -9,7 +9,7 @@
 ## 0. What would make this measurement meaningless (written before the numbers)
 
 - **Labels written to fit the parser.** If the ground truth were written after the parser, it could drift toward what the parser reads. The labels are in commit `909f068be`. The parser is in the next commit, `04f6142b3`. A reviewer can check the order with `git log --oneline -- __tests__/fixtures/qa-comments/expected.json scripts/qa/ac-status-parse-coverage.ts`.
-- **One labeller.** The labels come from the exec agent, not the owner. A single labeller's reading of "PARTIALLY_MET" or "MET (locally) / PENDING (CI)" is a judgment. The owner's blind re-read in §5 is the agreement check, and it has not happened yet.
+- **One labeller.** The labels come from the exec agent, not the owner. A single labeller's reading of "PARTIALLY_MET" or "MET (locally) / PENDING (CI)" is a judgment. The blind re-read in §5 is the agreement check. The owner delegated it to a second labeller (the runner session), and 8 of 8 agreed.
 - **A wrong denominator.** If the denominator were the AC ids that the comment itself mentions, a comment that skips an AC would drop it from the count and coverage would look higher. The denominator here is the AC ids in each comment's issue body (`extractAcceptanceCriteria`).
 - **A chosen sample.** The 12 fixtures were picked to cover formats (tables, bullet lists, failed verdicts, short follow-ups, rows with two status words), not drawn at random. Precision on the fixture is not precision on the corpus. It is the best number available with hand labels.
 
@@ -67,11 +67,13 @@ RD-1: marker-first — coverage 80% on 76 comments, precision 97% (fixture: 12 c
 
 This line is exec's proposal. RD-1 is a human approval point; the owner confirms or changes it on #1523.
 
-### Blind re-read (owner)
+### Blind re-read (second labeller)
 
-Re-read (owner): pending — 8 fixtures listed below
+Re-read: 8 of 8 agreed (second labeller: the graph runner session, 2026-10-19, on the owner's instruction; a fixture agrees when every AC label matches).
 
-Re-label these 8 without opening `expected.json`, then replace the line above with `Re-read: N of 8 agreed …`, where a fixture agrees when every AC label matches:
+This is inter-rater agreement, not self-agreement: the re-labeller is not the session that wrote `expected.json`. The re-labeller wrote its labels to a file before reading `expected.json`, using only the comment text, the issue's current AC ids and the labelling rule in §3. Two fixtures were not fully blind. 1265's labels had been seen while verifying the AC-3 mutation, and 922's AC-3 label had been seen in the `--fixture` misses list. Counting only the fully blind fixtures, the result is 6 of 6.
+
+The 8 fixtures:
 
 1. `879-5167288457.md` (bullet list, collective "All 7 ACs remain MET")
 2. `922-5236374780.md` (closing report, no per-AC rows)
