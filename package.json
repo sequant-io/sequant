@@ -35,6 +35,7 @@
     "lint:skill-argument-substitution": "npx tsx scripts/lint-skill-argument-substitution.ts",
     "lint:skill-gates": "npx tsx scripts/lint-skill-gates.ts",
     "lint:constitution-dod": "npx tsx scripts/check-constitution-dod.ts",
+    "lint:health": "npx tsx scripts/qa/health-report.ts --check",
     "lint:skill-sync": "npx tsx scripts/check-skill-sync.ts",
     "prepare:marketplace": "npm run mcp-launch:inline && npx tsx scripts/prepare-marketplace.ts",
     "validate:marketplace": "npx tsx scripts/prepare-marketplace.ts --validate-only",
