@@ -20,8 +20,8 @@ import {
   resolveBranches,
   resolveMergeBaseRef,
   findMostRecentLog,
-  resolveLogDir,
 } from "../lib/merge-check/index.js";
+import { resolveLogDir } from "../lib/run-logs.js";
 import type { MergeCommandOptions } from "../lib/merge-check/types.js";
 import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
 import { waitForChecks, resolveWatchTiming } from "../lib/merge-check/watch.js";

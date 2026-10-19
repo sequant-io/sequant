@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **One Non-Goals scanner for the ready gate and the scope analyzer (#1474).** `src/lib/non-goals.ts` now holds the only `parseNonGoals`; `ready-gate.ts` re-exports it and the scope analyzer wraps it as `assessNonGoals` (same `NonGoals { items, found, warning }` shape). The gate's heading rules are now the rules for both: any heading level, trailing text after `Non-Goals`/`Out of scope`, several sections unioned, items starting with `#` kept. Scope assessment therefore now finds Non-Goals in issues it used to report as missing (e.g. `## Out of scope (deferred, not rejected)`). The gate now ignores Non-Goals examples inside fenced code blocks and strips `[ ]`/`[x]` checkboxes from items. `Scope Boundaries` and `Non Goals` (with a space) are no longer recognised headings.
+- **Run-log helpers live in one module (#1471).** `parseLogFile`, `listLogFiles` and `resolveLogDir` are defined once in `src/lib/run-logs.ts` and `formatDuration` once in `src/lib/cli-ui/format.ts`; the duplicate copies in `sequant logs`, `sequant stats`, the `sequant_logs` and `sequant_run` MCP tools, `merge --check` and `phase-executor.ts` are removed. `resolveLogPath` is renamed `resolveLogDir`. No output, path or precedence changes.
+
+### Added
+
+- **`scripts/qa/health-report.ts` prints the fundamentals baseline and `--check` fails a raised metric (#1502).** One script measures function length, empty catches, child_process mock files, `gh` calls outside the provider, prose-gate tests, the 28-day test ratio, `@deprecated` tags without a removal version, harness size and ADRs without an actor. `--check` compares against the committed `scripts/qa/health-baseline.json` (the ratio and memory count are reported only); `--write-baseline` rewrites it. An advisory `health-advisory` CI job and `npm run lint:health` run the check.
 
 ## [2.20.0] - 2026-10-18
 

@@ -7,14 +7,13 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import { spawnSync } from "child_process";
 import { GitHubProvider } from "../workflow/platforms/github.js";
 import {
   RunLogSchema,
   type RunLog,
-  LOG_PATHS,
 } from "../workflow/run-log-schema.js";
+import { resolveLogDir } from "../run-logs.js";
 import { detectDefaultBranch } from "../workflow/worktree-manager.js";
 import type {
   BranchInfo,
@@ -37,24 +36,6 @@ import {
   formatBranchReportMarkdown,
   postReportToGitHub,
 } from "./report.js";
-
-/**
- * Resolve log directory path
- */
-export function resolveLogDir(customPath?: string): string {
-  if (customPath) {
-    return customPath.replace("~", os.homedir());
-  }
-  const projectPath = LOG_PATHS.project;
-  if (fs.existsSync(projectPath)) {
-    return projectPath;
-  }
-  const userPath = LOG_PATHS.user.replace("~", os.homedir());
-  if (fs.existsSync(userPath)) {
-    return userPath;
-  }
-  return projectPath;
-}
 
 /**
  * Find the most recent run log file
