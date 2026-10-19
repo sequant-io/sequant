@@ -1,6 +1,6 @@
 # graph-2026-10-review-surface — founding document
 
-**Status:** draft for plan review, 2026-10-18. Not filed. Seeds already filed: #1520 (review by exception) and #1521 (verdict attribution); both join as nodes without AC changes. Phase-0 measurements below were taken on `main` 96990daab and this checkout's `.sequant/` files on 2026-10-18.
+**Status:** approved and filed 2026-10-18 as #1523 (tracker) and #1524–#1529; #1520 and #1521 joined with the label and Epic line. Decisions taken at defaults: RD-1 90% on the 49 comments, OQ-2 USD with the estimate wording, OQ-3 `init` writes when absent, OQ-4 launch after #1502, OQ-5 the #1507 golden-run testbed; unfolded. Phase-0 measurements below were taken on `main` 96990daab and this checkout's `.sequant/` files on 2026-10-18.
 
 ## §1 Vision
 
