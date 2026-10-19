@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **knip runs as an advisory CI job (#1503).** `knip.json` and `npm run lint:knip` report unused exports; the `knip-advisory` job never blocks a PR, and `health-report.ts` carries the count as `unusedExports` (baseline 342). The 2026-01 "temporarily relaxed" lint rules (`no-unused-vars`, `no-empty-object-type`, `prefer-const`) are now `error`.
 - **`scripts/qa/health-report.ts` prints the fundamentals baseline and `--check` fails a raised metric (#1502).** One script measures function length, empty catches, child_process mock files, `gh` calls outside the provider, prose-gate tests, the 28-day test ratio, `@deprecated` tags without a removal version, harness size and ADRs without an actor. `--check` compares against the committed `scripts/qa/health-baseline.json` (the ratio and memory count are reported only); `--write-baseline` rewrites it. An advisory `health-advisory` CI job and `npm run lint:health` run the check.
 
 ## [2.20.0] - 2026-10-18
