@@ -7,8 +7,9 @@
  * is missing or ambiguous, so a renamed heading or a deleted fence fails the
  * test loudly instead of turning it vacuous.
  *
- * This module never spawns anything. The test file does, so the command it
- * runs stays visible where the assertion is.
+ * The extractors never spawn anything: the test file runs the skill's
+ * command, so it stays visible where the assertion is. The only spawn here is
+ * `git` inside the `makeDiffRepo` fixture builder.
  */
 
 import { execFileSync } from "child_process";
