@@ -29,7 +29,6 @@
  */
 
 import stringWidth from "string-width";
-import { truncateAtWord } from "../cli-ui/truncate.js";
 
 import type {
   AssessCleanup,
@@ -76,6 +75,15 @@ const BLOCK_INDENT = "  ";
 /** Gap between a label-block's first column and its aligned second column. */
 const BLOCK_GUTTER = 2;
 
+/**
+ * Below this fraction of the available width, a word-boundary truncation wastes
+ * too many columns to be worth it and we cut mid-word instead. Keeps
+ * `CI billing-lockout misclassified…` from collapsing to `CI billing-lockout…`.
+ */
+const WORD_BOUNDARY_MIN_FILL = 0.7;
+
+const ELLIPSIS = "…";
+
 /** Column at which the `Reason` field starts, given whether `ACs` is shown. */
 function reasonCol(withAcs: boolean): number {
   const base = TABLE_INDENT + NUMBER_WIDTH + COL_GAP + ACTION_WIDTH + COL_GAP;
@@ -103,9 +111,51 @@ function padTo(text: string, width: number): string {
   return w >= width ? text : text + " ".repeat(width - w);
 }
 
+/**
+ * Truncate `text` to `width` display columns, appending `…`.
+ *
+ * Prefers a word boundary, but only when the boundary retains at least
+ * {@link WORD_BOUNDARY_MIN_FILL} of the available width — otherwise a single
+ * long final word would leave a ragged gap before the `Run` column.
+ * Width-aware throughout, so wide glyphs cannot push the result past `width`.
+ */
+function truncateToWidth(text: string, width: number): string {
+  if (stringWidth(text) <= width) return text;
+  if (width <= 1) return ELLIPSIS.slice(0, Math.max(0, width));
+
+  const budget = width - stringWidth(ELLIPSIS);
+  const chars = Array.from(text);
+  let hard = "";
+  let used = 0;
+  let consumed = 0;
+  for (const ch of chars) {
+    const chWidth = stringWidth(ch);
+    if (used + chWidth > budget) break;
+    hard += ch;
+    used += chWidth;
+    consumed += 1;
+  }
+
+  // The hard cut already landed on a word boundary — the next character is the
+  // space that would have separated the following word. Backing off to the
+  // *previous* space here would drop a word that fit perfectly.
+  if (/\s/.test(chars[consumed] ?? "")) {
+    return hard.trimEnd() + ELLIPSIS;
+  }
+
+  const lastSpace = hard.lastIndexOf(" ");
+  if (lastSpace > 0) {
+    const wordCut = hard.slice(0, lastSpace).trimEnd();
+    if (stringWidth(wordCut) >= Math.floor(budget * WORD_BOUNDARY_MIN_FILL)) {
+      return wordCut + ELLIPSIS;
+    }
+  }
+  return hard.trimEnd() + ELLIPSIS;
+}
+
 /** Fit `text` into exactly `width` columns: truncate if long, pad if short. */
 function fit(text: string, width: number): string {
-  return padTo(truncateAtWord(text, width), width);
+  return padTo(truncateToWidth(text, width), width);
 }
 
 /**

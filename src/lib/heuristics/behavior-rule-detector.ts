@@ -36,7 +36,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { AcceptanceCriterion } from "../workflow/state-schema.js";
-import { escapeRegex } from "../regex.js";
 
 /**
  * Behavior keywords whose presence (≥2 distinct, OR matching the explicit
@@ -452,6 +451,10 @@ function matchesAnyTerm(line: string, terms: string[]): boolean {
     if (new RegExp(`\\b${escapeRegex(t)}\\b`, "i").test(line)) return true;
   }
   return false;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function deriveInverseTerms(keywords: BehaviorKeyword[]): string[] {

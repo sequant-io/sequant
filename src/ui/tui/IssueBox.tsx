@@ -11,7 +11,7 @@ import {
 } from "./theme.js";
 import { Spinner } from "./Spinner.js";
 import { ElapsedTimer, formatSinceActivity } from "./ElapsedTimer.js";
-import { truncateToWidth } from "../../lib/cli-ui/truncate.js";
+import { truncateToWidth } from "./truncate.js";
 
 /**
  * Three-cell rendering of a single issue's runtime state.

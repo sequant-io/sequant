@@ -27,12 +27,9 @@ export function formatElapsedTime(seconds: number): string {
 }
 
 /**
- * Format a wall-clock timestamp as `HH:MM:SS`. Accepts a `Date` or an ISO
- * string; an unparsable string is returned unchanged.
+ * Format a wall-clock timestamp as `HH:MM:SS`. Used by the non-TTY renderer.
  */
-export function formatTimestamp(input: Date | string): string {
-  const date = typeof input === "string" ? new Date(input) : input;
-  if (Number.isNaN(date.getTime())) return String(input);
+export function formatTimestamp(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }

@@ -10,7 +10,6 @@ import chalk from "chalk";
 import { outboxPathFor } from "../lib/relay/paths.js";
 import { listArchives } from "../lib/relay/archive.js";
 import { readPidFile } from "../lib/relay/pid.js";
-import { formatTimestamp } from "../lib/cli-ui/format.js";
 import { StateManager } from "../lib/workflow/state-manager.js";
 import { RelayResponseSchema, type RelayResponse } from "../lib/relay/types.js";
 
@@ -22,6 +21,18 @@ export interface WatchCommandOptions {
   signal?: AbortSignal;
   /** Override cwd for resolving the pid file + archive root (test seam). */
   cwd?: string;
+}
+
+function formatTimestamp(iso: string): string {
+  try {
+    const date = new Date(iso);
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+    const ss = String(date.getSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  } catch {
+    return iso;
+  }
 }
 
 function formatLine(reply: RelayResponse, json: boolean): string {

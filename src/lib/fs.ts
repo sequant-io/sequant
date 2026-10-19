@@ -14,12 +14,7 @@ import {
   unlink,
   readlink,
 } from "fs/promises";
-import {
-  lstatSync,
-  mkdirSync,
-  unlinkSync,
-  writeFileSync as fsWriteFileSync,
-} from "fs";
+import { lstatSync, unlinkSync, writeFileSync as fsWriteFileSync } from "fs";
 import { dirname } from "path";
 
 export async function fileExists(path: string): Promise<boolean> {
@@ -38,14 +33,6 @@ export async function isExecutable(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * Synchronously create the parent directory of `filePath` (recursive).
- * The sync, file-path counterpart of {@link ensureDir}.
- */
-export function ensureParentDirSync(filePath: string): void {
-  mkdirSync(dirname(filePath), { recursive: true });
 }
 
 export async function ensureDir(path: string): Promise<void> {

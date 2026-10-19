@@ -15,7 +15,6 @@ import { InvalidArgumentError } from "commander";
 import {
   parseWholeNumber,
   parsePositiveSeconds,
-  parseIssueNumber,
   type WholeNumberOptions,
 } from "./cli-flags.js";
 
@@ -241,22 +240,4 @@ describe("#845 the eight migrated flags", () => {
       expect(parseWholeNumber(flag, opts)(boundary)).toBe(expected);
     },
   );
-});
-
-describe("parseIssueNumber", () => {
-  it("returns the number for a valid issue argument", () => {
-    const before = process.exitCode;
-    expect(parseIssueNumber("12")).toBe(12);
-    expect(process.exitCode).toBe(before);
-  });
-
-  it("zero returns null", () => {
-    expect(parseIssueNumber("0")).toBeNull();
-  });
-
-  it("non-numeric input returns null", () => {
-    const before = process.exitCode;
-    expect(parseIssueNumber("abc")).toBeNull();
-    expect(process.exitCode).toBe(before);
-  });
 });

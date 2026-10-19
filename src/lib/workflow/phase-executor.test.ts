@@ -28,11 +28,11 @@ vi.mock("child_process", () => ({
 }));
 
 import { readFileSync } from "node:fs";
-import { formatDuration } from "../cli-ui/format.js";
 import { execSync, execFileSync } from "child_process";
 import {
   parseQaVerdict,
   parseQaSummary,
+  formatDuration,
   getPhasePrompt,
   executePhaseWithRetry,
   hasExecChanges,
