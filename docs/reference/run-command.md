@@ -423,6 +423,23 @@ A full ID pins a model across CLI upgrades (`--models spec=claude-opus-5-5,exec=
 
 **Validation:** an unknown driver name in `run.phases.<phase>.agent` fails when the run's config is resolved, before any phase runs, with the same `Unknown agent driver "<name>". Available drivers: …` message a bad `run.agent` gives. A role or ladder rung that has no entry for a phase's driver also fails at that point, naming the phase.
 
+#### Run the review on a different driver
+
+Every QA verdict comment ends with a line naming the reviewing session's driver and model and the author's, computed from the phase records (not from anything the agent wrote). To make the reviewer a different driver from the author, set `phases.qa.agent` (that is, `run.phases.qa.agent`) in `.sequant/settings.json`:
+
+```json
+{
+  "run": {
+    "agent": "claude-code",
+    "phases": {
+      "qa": { "agent": "codex" }
+    }
+  }
+}
+```
+
+The verdict line then reads `Reviewed in a separate session by codex (…); the change was written by claude-code (…)`. A separate session of the same model is a different context, not a different judge: it removes the author's transcript from the reviewer's view, but not the model's own blind spots. A different driver and model is the stronger step.
+
 ### Effort Escalation on Retries
 
 **Default: off** (#915) — raising effort raises token spend, which is a cost decision the user should opt into explicitly, not one sequant makes on your behalf.
