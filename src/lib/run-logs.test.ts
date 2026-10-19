@@ -16,7 +16,9 @@ describe("run-logs", () => {
     cwd = process.cwd();
     home = process.env.HOME;
     process.env.HOME = tmp;
-    process.chdir(tmp);
+    const proj = path.join(tmp, "proj");
+    fs.mkdirSync(proj);
+    process.chdir(proj);
   });
 
   afterEach(() => {
@@ -31,7 +33,9 @@ describe("run-logs", () => {
   });
 
   it("prefers the project log dir when it exists", () => {
-    fs.mkdirSync(path.join(tmp, LOG_PATHS.project), { recursive: true });
+    fs.mkdirSync(path.join(tmp, "proj", LOG_PATHS.project), {
+      recursive: true,
+    });
     fs.mkdirSync(LOG_PATHS.user.replace("~", os.homedir()), {
       recursive: true,
     });
