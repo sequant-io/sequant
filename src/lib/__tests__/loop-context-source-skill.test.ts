@@ -252,8 +252,9 @@ describe("Step 1A fallback fetch picks the latest QA Review comment", () => {
     JSON.stringify({
       comments: [
         { body: "## QA Review for Issue #5 (first pass)" },
-        { body: "The ## QA Review for Issue header is what QA posts" },
         { body: "## QA Review for Issue #5 (latest)" },
+        // Mentions the header without starting with it: must not be picked.
+        { body: "The ## QA Review for Issue header is what QA posts" },
         { body: "Unrelated comment" },
       ],
     }),
