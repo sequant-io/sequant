@@ -3054,7 +3054,7 @@ user_facing=$(git log origin/main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|f
 1. Do NOT give `READY_FOR_MERGE` verdict
 2. Set verdict to `AC_MET_BUT_NOT_A_PLUS` with note:
    ```markdown
-   **CHANGELOG:** Missing entry for user-facing changes. Add a fragment `changelog.d/<issue>-<slug>.md` (see `changelog.d/README.md`) before merging.
+   **CHANGELOG:** Missing entry for user-facing changes. Add a fragment `changelog.d/<issue>-<slug>.md` (see `changelog.d/README.md`) before merging; in a repo without `changelog.d/`, add the entry under `## [Unreleased]`.
    ```
 3. Include this in the draft review comment
 
@@ -3227,7 +3227,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Behavior-Rule Survival Check** - Required in simple fix mode too (see Section 6e): a #533-class stale-rule survival is very plausibly a sub-threshold diff. Cheap short-circuit — mark "N/A" when no AC triggers the behavior-rule heuristic
 - [ ] **Declared-Evidence Execution** - Required in simple fix mode too (see Section 6h): a declared-evidence AC marked MET without running its command is exactly the #853 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC declares evidence naming a runnable command
 - [ ] **Mutation Verification** - Required in simple fix mode too (see Section 6i): a gate-test AC merged without a recorded mutation result is exactly the #830 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC is a gate-test AC
-- [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs a `changelog.d/` fragment (or marked N/A)
+- [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs a `changelog.d/` fragment, or an `[Unreleased]` entry in a repo without `changelog.d/` (or marked N/A)
 - [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated
 - [ ] **Follow-up Ledger** - Required in simple fix mode too (see Section 7): every deferred item filed, fixed or dropped, or the status is Unresolved
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
@@ -3263,7 +3263,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
-- [ ] **CHANGELOG Verification** - User-facing changes have a `changelog.d/` fragment (or marked N/A)
+- [ ] **CHANGELOG Verification** - User-facing changes have a `changelog.d/` fragment, or an `[Unreleased]` entry in a repo without `changelog.d/` (or marked N/A)
 - [ ] **Trust-Boundary Check** - Required section: "Finding:" and "Status:" lines populated (see Section 6f); `Injection Acted On` floors the verdict at `AC_NOT_MET` via §7
 - [ ] **Follow-up Ledger** - Every deferred item filed, fixed or dropped (see Section 7); `Unresolved` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7
 - [ ] **Adversarial Re-Read** - Required structured section: all 5 sub-prompts answered with concrete content; "Findings:" and "Status:" lines populated; bare "No gaps" without specific reasoning fails verification (see Section 6d)

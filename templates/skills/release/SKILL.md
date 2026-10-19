@@ -251,7 +251,7 @@ Categorize by conventional commit prefix:
 
 ### Step 3: Update CHANGELOG.md (if exists)
 
-If `CHANGELOG.md` exists, collate the `changelog.d/` fragments (#1351). Do not edit `CHANGELOG.md` by hand and do not stamp `[Unreleased]`:
+If `CHANGELOG.md` and a `changelog.d/` directory both exist, collate the fragments (#1351). Do not edit `CHANGELOG.md` by hand and do not stamp `[Unreleased]`:
 
 ```bash
 # Validate first: a malformed fragment exits non-zero and nothing is written.
@@ -260,6 +260,8 @@ npm run changelog:collate -- {new_version} --date {YYYY-MM-DD}
 ```
 
 The script inserts `## [{new_version}] - {YYYY-MM-DD}` under an empty `## [Unreleased]` heading, grouped by kind (Added, Changed, Fixed, Removed, Security), carries over any bullets still under `[Unreleased]`, and deletes the fragments. If it fails, fix the named fragment and re-run.
+
+**Without `changelog.d/`** (the repo keeps entries under `[Unreleased]`, and has no `changelog:collate` script), use the **Edit tool** instead: rename the `## [Unreleased]` heading to `## [{new_version}] - {YYYY-MM-DD}`, then insert an empty `## [Unreleased]` heading above it, so the next cycle has a section ready.
 
 ### Step 4: Bump Version
 
@@ -528,7 +530,9 @@ passes the same checks (#1131). Do not push `main`; do not add a bypass.
 ```bash
 new_version=$(node -p "require('./package.json').version")
 git switch -c "chore/release-v${new_version}"
-git add package.json package-lock.json CHANGELOG.md changelog.d plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
+git add package.json package-lock.json CHANGELOG.md plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
+# Stage the fragments Step 3 deleted; a repo that never tracked changelog.d/ has nothing to stage.
+if git ls-files --error-unmatch changelog.d >/dev/null 2>&1; then git add -A changelog.d; fi
 # The shipped MCP config is gitignored-but-tracked; Step 4.7 re-pinned it to this version (#988), so force-add it into the release commit.
 git add -f .mcp.json
 git commit -m "chore: release v${new_version}"
