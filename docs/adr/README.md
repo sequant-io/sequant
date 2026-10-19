@@ -73,3 +73,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0015](0015-install-scope-recorded-in-manifest.md) | Record the install scope in the manifest | Accepted |
 | [0016](0016-external-pr-overlap-as-separate-check.md) | Report open-PR overlap as a separate, non-blocking merge check | Accepted |
 | [0017](0017-worktree-required-contract.md) | An issue context says whether a worktree is required; a failed worktree add fails the issue | Accepted |
+| [0018](0018-suppressed-error-counter.md) | Dropped errors are counted by a module-level counter that the run log persists | Proposed |

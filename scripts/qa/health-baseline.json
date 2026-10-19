@@ -7,11 +7,11 @@
     "longest": {
       "file": "src/lib/workflow/batch-executor.ts",
       "name": "runIssueWithLogging",
-      "lines": 1050
+      "lines": 1071
     }
   },
   "emptyCatch": {
-    "total": 117,
+    "total": 92,
     "byFile": {
       "bin/cli.ts": 1,
       "bin/preflight.ts": 1,
@@ -42,7 +42,6 @@
       "src/lib/upstream/relevance.ts": 1,
       "src/lib/version-check.ts": 3,
       "src/lib/version.ts": 1,
-      "src/lib/workflow/batch-executor.ts": 25,
       "src/lib/workflow/drivers/opencode.ts": 2,
       "src/lib/workflow/event-emitter.ts": 1,
       "src/lib/workflow/phase-detection.ts": 1,
