@@ -195,57 +195,67 @@ if [ "$STASH_FLAG" = true ]; then
 fi
 
 # Check if branch already exists
+BRANCH_EXISTS=false
 if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
+    BRANCH_EXISTS=true
     echo -e "${YELLOW}⚠️  Branch ${BRANCH_NAME} already exists${NC}"
 
-    # Check if worktree exists too
-    EXISTING_WORKTREE=$(git worktree list | grep "${BRANCH_NAME}" | awk '{print $1}')
+    # Check if a worktree has it checked out. Exact match on the branch ref:
+    # a substring match would take feature/7-x for feature/7-xy.
+    EXISTING_WORKTREE=$(git worktree list --porcelain | awk -v ref="branch refs/heads/${BRANCH_NAME}" '
+        /^worktree / { path = substr($0, 10) }
+        $0 == ref { print path; exit }')
     if [ -n "$EXISTING_WORKTREE" ]; then
         echo -e "${GREEN}✅ Worktree already exists at: ${EXISTING_WORKTREE}${NC}"
         echo -e "${BLUE}   cd ${EXISTING_WORKTREE}${NC}"
         exit 0
-    else
-        echo -e "${RED}❌ Branch exists but no worktree found${NC}"
-        echo -e "${YELLOW}   To create worktree from existing branch:${NC}"
-        echo -e "   git worktree add ${WORKTREE_DIR} ${BRANCH_NAME}"
-        echo -e "${YELLOW}   Or delete the branch first:${NC}"
-        echo -e "   git branch -D ${BRANCH_NAME}"
-        exit 1
     fi
 fi
 
-# Refresh the base branch's remote-tracking ref WITHOUT touching the main
-# checkout. The old flow — `git checkout <base>` then `git pull` — switched the
-# main checkout's branch and mutated its working tree, a global operation the
-# #901 checkout lock exists to serialize. But the pre-tool guard inspects only
-# the top-level Bash command the agent runs; that command is `new-feature.sh`,
-# which carries no guarded git verb, so the inner `checkout`/`pull` sailed past
-# the guard and a losing session could switch the holder's branch out from
-# under it (#910). Reading the ref instead of checking it out closes the gap at
-# its root: the main tree is never mutated, so no lock — and no guard — is
-# needed here at all.
-echo -e "${BLUE}📥 Fetching ${BASE_BRANCH} from origin...${NC}"
-git fetch origin "$BASE_BRANCH"
-
-# Branch the worktree directly off the freshly fetched remote ref.
-# `git worktree add -b <new> <path> <start-point>` resolves <start-point>
-# without changing the main checkout, and `origin/<base>` is exactly the
-# up-to-date commit the old `checkout`+`pull` used to land on.
-# When the remote already has the issue's branch (a pushed PR), start from it so
-# its commits are kept (#1486). -B matches the TS path and tolerates a stale ref.
-START_REF="$(resolve_branch_start_ref "$BRANCH_NAME" "origin/${BASE_BRANCH}")"
-echo -e "${BLUE}🌿 Creating new worktree from ${START_REF}...${NC}"
-if [ "$START_REF" = "origin/${BRANCH_NAME}" ]; then
-    git worktree add "$WORKTREE_DIR" -B "$BRANCH_NAME" "$START_REF"
+if [ "$BRANCH_EXISTS" = true ]; then
+    # Reuse the local branch as is, like ensureWorktree (worktree-manager.ts):
+    # no fetch, no reset, and never origin/<branch> (#1491).
+    echo -e "${BLUE}🌿 Creating worktree on existing branch ${BRANCH_NAME}...${NC}"
+    if ! git worktree add "$WORKTREE_DIR" "$BRANCH_NAME"; then
+        echo -e "${RED}❌ Could not create a worktree at ${WORKTREE_DIR} for ${BRANCH_NAME}${NC}"
+        exit 1
+    fi
 else
-    git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "$START_REF"
+    # Refresh the base branch's remote-tracking ref WITHOUT touching the main
+    # checkout. The old flow — `git checkout <base>` then `git pull` — switched the
+    # main checkout's branch and mutated its working tree, a global operation the
+    # #901 checkout lock exists to serialize. But the pre-tool guard inspects only
+    # the top-level Bash command the agent runs; that command is `new-feature.sh`,
+    # which carries no guarded git verb, so the inner `checkout`/`pull` sailed past
+    # the guard and a losing session could switch the holder's branch out from
+    # under it (#910). Reading the ref instead of checking it out closes the gap at
+    # its root: the main tree is never mutated, so no lock — and no guard — is
+    # needed here at all.
+    echo -e "${BLUE}📥 Fetching ${BASE_BRANCH} from origin...${NC}"
+    git fetch origin "$BASE_BRANCH"
+
+    # Branch the worktree directly off the freshly fetched remote ref.
+    # `git worktree add -b <new> <path> <start-point>` resolves <start-point>
+    # without changing the main checkout, and `origin/<base>` is exactly the
+    # up-to-date commit the old `checkout`+`pull` used to land on.
+    # When the remote already has the issue's branch (a pushed PR), start from it so
+    # its commits are kept (#1486). -B matches the TS path and tolerates a stale ref.
+    START_REF="$(resolve_branch_start_ref "$BRANCH_NAME" "origin/${BASE_BRANCH}")"
+    echo -e "${BLUE}🌿 Creating new worktree from ${START_REF}...${NC}"
+    if [ "$START_REF" = "origin/${BRANCH_NAME}" ]; then
+        git worktree add "$WORKTREE_DIR" -B "$BRANCH_NAME" "$START_REF"
+    else
+        git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "$START_REF"
+    fi
 fi
 
 # Record the base branch on the new branch so downstream tooling
 # (e.g. phase-executor zero-diff guard, see #537) can resolve the
 # correct comparison ref when the worktree was branched off something
-# other than origin/main.
-git -C "$WORKTREE_DIR" config "branch.${BRANCH_NAME}.sequantBase" "$BASE_BRANCH"
+# other than origin/main. An existing branch keeps a base recorded earlier.
+if [ "$BRANCH_EXISTS" != true ] || ! git -C "$WORKTREE_DIR" config "branch.${BRANCH_NAME}.sequantBase" >/dev/null 2>&1; then
+    git -C "$WORKTREE_DIR" config "branch.${BRANCH_NAME}.sequantBase" "$BASE_BRANCH"
+fi
 
 # Navigate to worktree
 cd "$WORKTREE_DIR"
