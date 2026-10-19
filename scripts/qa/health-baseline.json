@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-19T17:44:47.969Z",
-  "commit": "89af7db712b3a1fc5f760ba1fbde41a0e96b5c91",
+  "generatedAt": "2026-10-19T21:25:57.785Z",
+  "commit": "a1be0d6da0cf6046c400cf9d4e78e238fb60ac1a",
   "functions": {
     "over400": 4,
     "over200": 12,
@@ -63,12 +63,12 @@
   "ghCallFilesOutsideProvider": 3,
   "proseGate": {
     "files": 76,
-    "lines": 30693
+    "lines": 30694
   },
   "testRatio28d": {
     "sum": 2.24,
     "median": 2.11,
-    "commits": 168
+    "commits": 170
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
@@ -77,5 +77,6 @@
     "skillFiles": 19,
     "memoryFiles": null
   },
-  "adrWithoutActor": 11
+  "adrWithoutActor": 11,
+  "unusedExports": 342
 }
