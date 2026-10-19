@@ -413,4 +413,4 @@ jobs:
 
       - run: npm ci
       - name: Report unused exports (advisory)
-        run: npx knip || true
+        run: npx knip
