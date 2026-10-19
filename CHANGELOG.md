@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`sequant_run` no longer reports another run's issues and verdict when its own run log is missing (#1515).** A runId lookup miss fell back to the newest log in the time window, so parallel runs whose log was never written showed a sibling run's result. `resolveRunLog` now retries the exact runId lookup (3 × 200 ms) and returns `null` on a miss; the response carries `runLogMissing`, `requestedIssues` and a `note` saying the result is not a parsed log. The no-runId path is unchanged.
 - **`new-feature.sh` reuses the issue's local branch when no worktree has it (#1491).** It printed advice (one option was `git branch -D`) and exited 1, while `ensureWorktree` checks the branch out as is. It now runs `git worktree add <path> <branch>` with no fetch or reset, like the TS side, and keeps a recorded `sequantBase`. The existing-worktree lookup matches the branch exactly, so `feature/7-x` no longer matches `feature/7-xy`.
 
 ### Changed
