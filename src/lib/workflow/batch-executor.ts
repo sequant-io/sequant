@@ -1259,8 +1259,9 @@ export async function runIssueWithLogging(
       ? (wakeAtMs) => {
           void stateManager
             .updateAutoWait(issueNumber, phase, wakeAtMs)
-            .catch(() => {
-              // Never let state bookkeeping disturb a live wait.
+            .catch((err) => {
+              // Never let state bookkeeping disturb a live wait, but count it.
+              noteSuppressed("state", err, "updateAutoWait");
             });
         }
       : undefined;
