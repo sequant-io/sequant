@@ -6,6 +6,7 @@ import chalk from "chalk";
 import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { join, dirname } from "path";
+import { existsSync } from "fs";
 import { readdir, mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { ui, colors } from "../lib/cli-ui.js";
@@ -601,6 +602,41 @@ export async function writeCodexConfig(targetDir = "."): Promise<string> {
   return configPath;
 }
 
+/** Template and destination of the issue form (#1528). */
+export const ISSUE_FORM_TEMPLATE =
+  "templates/github/ISSUE_TEMPLATE/sequant-task.yml";
+const ISSUE_FORM_DIR = join(".github", "ISSUE_TEMPLATE");
+const ISSUE_FORM_FILE = "sequant-task.yml";
+
+export interface IssueFormOutcome {
+  written: boolean;
+  line: string;
+}
+
+/**
+ * Write the issue form into `.github/ISSUE_TEMPLATE/` when that directory is
+ * absent. A directory that exists is never touched. Returns the one line to
+ * print (#1528).
+ */
+export async function writeIssueFormIfAbsent(
+  targetDir = ".",
+): Promise<IssueFormOutcome> {
+  const dir = join(targetDir, ISSUE_FORM_DIR);
+  if (existsSync(dir)) {
+    return {
+      written: false,
+      line: `Issue form skipped: ${ISSUE_FORM_DIR}/ already exists (left untouched)`,
+    };
+  }
+  await ensureDir(dir);
+  const formPath = join(dir, ISSUE_FORM_FILE);
+  await writeFile(formPath, await getTemplateContent(ISSUE_FORM_TEMPLATE));
+  return {
+    written: true,
+    line: `Wrote ${join(ISSUE_FORM_DIR, ISSUE_FORM_FILE)} (issue form with an Acceptance Criteria field)`,
+  };
+}
+
 /**
  * Provision everything `sequant init --agent codex` needs to reach sequant's
  * skills and hook guards (#1059): the `.agents/skills` symlink plus
@@ -1054,6 +1090,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
       console.log(chalk.yellow(`   ${directoryCollisionMessage(dest)}`));
     }
   }
+
+  // #1528: the issue form, only into an absent `.github/ISSUE_TEMPLATE/`.
+  console.log(chalk.gray(`   ${(await writeIssueFormIfAbsent()).line}`));
 
   // #862: opencode reaches sequant's skills through per-phase command
   // wrappers, so provision them when the user initialises for that driver.

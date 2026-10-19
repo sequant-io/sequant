@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-19T21:18:42.969Z",
-  "commit": "368777829f950f9ff591ec0ad30de6ed71b88afb",
+  "generatedAt": "2026-10-19T22:15:12.823Z",
+  "commit": "da229f5e3ed27221f6bf59cd74d8e3dc40ec3b73",
   "functions": {
     "over400": 4,
     "over200": 12,
@@ -11,7 +11,7 @@
     }
   },
   "emptyCatch": {
-    "total": 118,
+    "total": 117,
     "byFile": {
       "bin/cli.ts": 1,
       "bin/preflight.ts": 1,
@@ -28,6 +28,7 @@
       "src/lib/locks/lock-manager.ts": 4,
       "src/lib/manifest.ts": 1,
       "src/lib/mcp-config.ts": 2,
+      "src/lib/process-group.ts": 1,
       "src/lib/project-name.ts": 5,
       "src/lib/relay/activation.ts": 3,
       "src/lib/relay/frame.ts": 1,
@@ -42,8 +43,7 @@
       "src/lib/version-check.ts": 3,
       "src/lib/version.ts": 1,
       "src/lib/workflow/batch-executor.ts": 25,
-      "src/lib/workflow/drivers/codex.ts": 1,
-      "src/lib/workflow/drivers/opencode.ts": 3,
+      "src/lib/workflow/drivers/opencode.ts": 2,
       "src/lib/workflow/event-emitter.ts": 1,
       "src/lib/workflow/phase-detection.ts": 1,
       "src/lib/workflow/phase-executor.ts": 4,
@@ -62,12 +62,12 @@
   "ghCallFilesOutsideProvider": 3,
   "proseGate": {
     "files": 76,
-    "lines": 30693
+    "lines": 30751
   },
   "testRatio28d": {
     "sum": 2.21,
     "median": 2.02,
-    "commits": 172
+    "commits": 173
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {

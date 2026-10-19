@@ -972,3 +972,60 @@ describe("996 AC-3 — fan-out disposition is documented on the driver", () => {
     expect(/\bbranches on the active driver\b/.test(doc)).toBe(true);
   });
 });
+
+// ── #1472 AC-2b: an escalated kill still reports as a timeout ───────────────
+
+describe("1472 AC-2b opencode: SIGKILL after a requested kill is a timeout", () => {
+  it("1472 AC-2b opencode SIGKILL with killRequested is reported as a timeout", () => {
+    const result = evaluateOpencodeRun(
+      parse(readFixture(), "qa"),
+      outcome({
+        exitCode: null,
+        signal: "SIGKILL",
+        killRequested: true,
+        phaseTimeout: 42,
+      }),
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Timeout after 42s");
+  });
+
+  it("1472 AC-2b opencode SIGKILL without killRequested is not a timeout", () => {
+    for (const killRequested of [false, undefined]) {
+      const result = evaluateOpencodeRun(
+        parse(readFixture(), "qa"),
+        outcome({ exitCode: null, signal: "SIGKILL", killRequested }),
+      );
+      expect(result.error).toBe("Process killed by signal: SIGKILL");
+    }
+  });
+
+  it("1472 AC-2b opencode driver passes killRequested so an aborted SIGKILL close reads as a timeout", async () => {
+    const realKill = process.kill;
+    process.kill = (() => true) as typeof process.kill;
+    try {
+      const proc = createMockProcess({
+        hang: true,
+        exitCode: null,
+        signal: "SIGKILL",
+      });
+      mockSpawn.mockReturnValue(proc as never);
+
+      const controller = new AbortController();
+      const pending = new OpencodeDriver().executePhase(
+        "/qa 1472",
+        baseConfig({ abortSignal: controller.signal, phaseTimeout: 42 }),
+      );
+
+      await new Promise((r) => setTimeout(r, 5));
+      controller.abort();
+      proc.close();
+      const result = await pending;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Timeout after 42s");
+    } finally {
+      process.kill = realKill;
+    }
+  });
+});
