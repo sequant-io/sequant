@@ -449,6 +449,220 @@ function printOwnershipDecisions(
   }
 }
 
+/** State `syncCommand` has resolved by the time it reaches a report step. */
+interface SyncStepContext {
+  manifest: NonNullable<Awaited<ReturnType<typeof getManifest>>>;
+  tokens: Record<string, string>;
+  skillsOnly: boolean;
+  force: boolean;
+  quiet: boolean;
+  agentsMdEnabled: boolean;
+  installScope: InstallScope;
+  mcpPinUpdated: boolean;
+}
+
+/**
+ * Version marker matches: verify content before claiming "up to date", and
+ * report (never mutate) any drift. Sets a non-zero exit code on drift.
+ */
+async function reportVersionCurrentDrift(ctx: SyncStepContext): Promise<void> {
+  const { manifest, tokens, skillsOnly, quiet, installScope } = ctx;
+  const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+  const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
+  const drifted = changes.filter(
+    (c) => c.status === "new" || c.status === "modified",
+  );
+
+  // #1030 second pass: the opencode shim is part of "content" too. This
+  // fast path is report-only by design (#708), so a stale shim is reported
+  // with the same exit-code signal and the same repair hint as any other
+  // drift — `update` (or `sync --force`) refreshes it — rather than being
+  // silently skipped, which left a drifted shim invisible to a
+  // version-current `sync` and `sync --dry-run`. Skipped entirely under
+  // `--only skills` (#1209 AC-3): the shim isn't part of that write-set.
+  const fastPathShim = skillsOnly ? "none" : await decideOpencodeShimSync();
+
+  // A directory at a destination is not drift — nothing would be written to
+  // it either way — but it is the reason a file sequant owns is missing, so
+  // the report-only path names it rather than claiming "up to date" (#1122).
+  if (!quiet) {
+    printDirectoryCollisions(changes);
+  }
+
+  if (drifted.length === 0 && fastPathShim !== "refresh") {
+    // Truthful no-op: content is actually identical.
+    if (!quiet) {
+      console.log(chalk.green("✔ Skills are already up to date!"));
+    }
+    return;
+  }
+
+  // Version current but content differs — report, don't mutate (report-only
+  // keeps the fast path from silently overwriting in-place customizations).
+  if (!quiet) {
+    if (fastPathShim !== "none") {
+      console.log(chalk.bold(`opencode shim: ${fastPathShim}`));
+    }
+    const what = [
+      ...(drifted.length > 0 ? [`${drifted.length} file(s) differ`] : []),
+      ...(fastPathShim === "refresh" ? ["the opencode shim is stale"] : []),
+    ].join(" and ");
+    const scoped = scopedRemedy(installScope, "sequant", false);
+    const remedy = scoped
+      ? `\`${scoped.replace(/^sequant /, "")}\``
+      : skillsOnly
+        ? `\`sync --only skills --force\``
+        : `\`update\` or \`sync --force\``;
+    console.log(
+      chalk.yellow(`!  Version current, but ${what} — run ${remedy}`),
+    );
+  }
+  // Signal drift with a non-zero exit code even under --quiet. The exit code
+  // is the machine signal the (suppressible) message is not, so the
+  // non-interactive / CI path we recommend can't treat a drifted tree as
+  // success — the original failure mode in #708.
+  process.exitCode = 1;
+}
+
+/** `--dry-run`: report exactly what the apply would write, without mutating. */
+async function previewDryRun(ctx: SyncStepContext): Promise<void> {
+  const { manifest, tokens, skillsOnly, force, quiet, agentsMdEnabled } = ctx;
+  const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+  const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
+  const newFiles = changes.filter((c) => c.status === "new");
+  const modifiedFiles = changes.filter((c) => c.status === "modified");
+  const localOverrides = changes.filter((c) => c.status === "local-override");
+  const preservedOverrides = force
+    ? []
+    : localOverrides.filter((c) => ownershipPolicy(c.path) === "user-owned");
+  const overwrittenOverrides = localOverrides.filter(
+    (c) => force || ownershipPolicy(c.path) !== "user-owned",
+  );
+  const toWrite = [...newFiles, ...modifiedFiles, ...overwrittenOverrides];
+
+  // #990 AC-6: preview both file-ownership decisions before any write.
+  // Under `--only skills` (#1209 AC-3), AGENTS.md, scripts/dev and the
+  // opencode shim are outside the write-set entirely — preview them as
+  // "none"/empty rather than computing a real decision.
+  const existingAgentsMd =
+    agentsMdEnabled && !skillsOnly ? await readAgentsMd() : null;
+  const agentsMdDecision = skillsOnly
+    ? "none"
+    : decideAgentsMdSync({
+        enabled: agentsMdEnabled,
+        existingContent: existingAgentsMd,
+        force,
+      });
+  const scriptsPreview = skillsOnly
+    ? []
+    : (await previewScriptsSymlinkTargets()).filter((e) => e.changed);
+  const opencodeShimDecision = skillsOnly
+    ? "none"
+    : await decideOpencodeShimSync();
+
+  if (!quiet) {
+    if (agentsMdDecision !== "none") {
+      console.log(chalk.bold(`AGENTS.md: ${agentsMdDecision}`));
+    }
+    if (opencodeShimDecision !== "none") {
+      console.log(chalk.bold(`opencode shim: ${opencodeShimDecision}`));
+    }
+    if (scriptsPreview.length > 0) {
+      console.log(chalk.bold("scripts/dev link targets:"));
+      for (const entry of scriptsPreview) {
+        console.log(
+          chalk.yellow(
+            `  ${entry.path}: ${entry.oldTarget ?? "(none)"} → ${entry.newTarget}`,
+          ),
+        );
+      }
+    }
+    console.log(chalk.bold("Summary (dry-run):"));
+    console.log(chalk.green(`  New files: ${newFiles.length}`));
+    console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
+    if (preservedOverrides.length > 0) {
+      console.log(
+        chalk.blue(`  Customizable (preserved): ${preservedOverrides.length}`),
+      );
+    }
+    if (overwrittenOverrides.length > 0) {
+      console.log(
+        chalk.blue(
+          `  Local overrides (overwritten): ${overwrittenOverrides.length}`,
+        ),
+      );
+    }
+
+    if (modifiedFiles.length > 0) {
+      console.log(chalk.bold("\nModified files:"));
+      for (const file of modifiedFiles) {
+        console.log(chalk.yellow(`  ${file.path}`));
+      }
+    }
+    if (newFiles.length > 0) {
+      console.log(chalk.bold("\nNew files:"));
+      for (const file of newFiles) {
+        console.log(chalk.green(`  ${file.path}`));
+      }
+    }
+    if (preservedOverrides.length > 0) {
+      console.log(
+        chalk.bold(
+          "\nCustomizable files (preserved — run `sync --force` to replace):",
+        ),
+      );
+      for (const file of preservedOverrides) {
+        console.log(chalk.blue(`  ${file.path}`));
+      }
+    }
+    if (overwrittenOverrides.length > 0) {
+      console.log(chalk.bold("\nLocal overrides (will be overwritten):"));
+      for (const file of overwrittenOverrides) {
+        console.log(chalk.blue(`  ${file.path}`));
+      }
+    }
+
+    // #1090 AC-5: the per-file policy decision, printed before any write
+    // would happen. The apply path prints the same list from the same
+    // resolver, so the preview and the write can never disagree.
+    printOwnershipDecisions(
+      resolveOwnershipDecisions(changes, force, ctx.mcpPinUpdated),
+    );
+    printDirectoryCollisions(changes);
+
+    if (toWrite.length === 0 && opencodeShimDecision !== "refresh") {
+      console.log(chalk.green("\n✔ Skills are already up to date!"));
+    } else {
+      console.log(chalk.gray("\n(dry-run mode - no changes made)"));
+    }
+  }
+
+  // Non-zero exit when work is pending so the documented preview surface can
+  // gate CI/automation (the #709 intent): a dry-run reporting nothing must
+  // mean nothing to do. The matching-version short-circuit signals drift the
+  // same way.
+  if (toWrite.length > 0 || opencodeShimDecision === "refresh") {
+    process.exitCode = 1;
+  }
+}
+
+/** Announce a `.mcp.json` pin refresh (or, on `--dry-run`, the one it would make). */
+function printMcpPinUpdate(
+  mcpPin: ReturnType<typeof syncSequantMcpPin>,
+  dryRun: boolean,
+): void {
+  const verb = dryRun ? "Would update" : "Updated";
+  // #1089: a migration can keep the same pin (legacy npx shape, or a stale
+  // inline launcher source), so name it — `from → to` alone reads as a no-op.
+  const migrated =
+    mcpPin.reason === "migrated" ? " (migrated to the inline launcher)" : "";
+  console.log(
+    chalk.blue(
+      `${verb} .mcp.json MCP pin: ${mcpPin.from} → ${mcpPin.to}${migrated}`,
+    ),
+  );
+}
+
 export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const {
     force = false,
@@ -530,79 +744,25 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const mcpPin = skillsOnly
     ? { updated: false, reason: "no-file" as const }
     : syncSequantMcpPin(process.cwd(), { dryRun });
-  if (mcpPin.updated && !quiet) {
-    const verb = dryRun ? "Would update" : "Updated";
-    // #1089: a migration can keep the same pin (legacy npx shape, or a stale
-    // inline launcher source), so name it — `from → to` alone reads as a no-op.
-    const migrated =
-      mcpPin.reason === "migrated" ? " (migrated to the inline launcher)" : "";
-    console.log(
-      chalk.blue(
-        `${verb} .mcp.json MCP pin: ${mcpPin.from} → ${mcpPin.to}${migrated}`,
-      ),
-    );
-  }
+  if (mcpPin.updated && !quiet) printMcpPinUpdate(mcpPin, dryRun);
+
+  const ctx: SyncStepContext = {
+    manifest,
+    tokens,
+    skillsOnly,
+    force,
+    quiet,
+    agentsMdEnabled,
+    installScope,
+    mcpPinUpdated: mcpPin.updated,
+  };
 
   // The version marker is only a fast-path hint — verify actual content before
   // claiming "up to date". On a version match we still diff bundled templates
   // against installed content (rendered with the same variables) so we never
   // declare success while real drift sits in place (#708).
   if (!force && skillsVersion === packageVersion) {
-    const allChanges = await computeTemplateChanges(manifest.stack, tokens);
-    const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
-    const drifted = changes.filter(
-      (c) => c.status === "new" || c.status === "modified",
-    );
-
-    // #1030 second pass: the opencode shim is part of "content" too. This
-    // fast path is report-only by design (#708), so a stale shim is reported
-    // with the same exit-code signal and the same repair hint as any other
-    // drift — `update` (or `sync --force`) refreshes it — rather than being
-    // silently skipped, which left a drifted shim invisible to a
-    // version-current `sync` and `sync --dry-run`. Skipped entirely under
-    // `--only skills` (#1209 AC-3): the shim isn't part of that write-set.
-    const fastPathShim = skillsOnly ? "none" : await decideOpencodeShimSync();
-
-    // A directory at a destination is not drift — nothing would be written to
-    // it either way — but it is the reason a file sequant owns is missing, so
-    // the report-only path names it rather than claiming "up to date" (#1122).
-    if (!quiet) {
-      printDirectoryCollisions(changes);
-    }
-
-    if (drifted.length === 0 && fastPathShim !== "refresh") {
-      // Truthful no-op: content is actually identical.
-      if (!quiet) {
-        console.log(chalk.green("✔ Skills are already up to date!"));
-      }
-      return;
-    }
-
-    // Version current but content differs — report, don't mutate (report-only
-    // keeps the fast path from silently overwriting in-place customizations).
-    if (!quiet) {
-      if (fastPathShim !== "none") {
-        console.log(chalk.bold(`opencode shim: ${fastPathShim}`));
-      }
-      const what = [
-        ...(drifted.length > 0 ? [`${drifted.length} file(s) differ`] : []),
-        ...(fastPathShim === "refresh" ? ["the opencode shim is stale"] : []),
-      ].join(" and ");
-      const scoped = scopedRemedy(installScope, "sequant", false);
-      const remedy = scoped
-        ? `\`${scoped.replace(/^sequant /, "")}\``
-        : skillsOnly
-          ? `\`sync --only skills --force\``
-          : `\`update\` or \`sync --force\``;
-      console.log(
-        chalk.yellow(`!  Version current, but ${what} — run ${remedy}`),
-      );
-    }
-    // Signal drift with a non-zero exit code even under --quiet. The exit code
-    // is the machine signal the (suppressible) message is not, so the
-    // non-interactive / CI path we recommend can't treat a drifted tree as
-    // success — the original failure mode in #708.
-    process.exitCode = 1;
+    await reportVersionCurrentDrift(ctx);
     return;
   }
 
@@ -619,125 +779,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // into preserved (plain sync) vs overwritten (--force, or a `sequant-owned`
   // `.local`-twin the tree copy still rewrites).
   if (dryRun) {
-    const allChanges = await computeTemplateChanges(manifest.stack, tokens);
-    const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
-    const newFiles = changes.filter((c) => c.status === "new");
-    const modifiedFiles = changes.filter((c) => c.status === "modified");
-    const localOverrides = changes.filter((c) => c.status === "local-override");
-    const preservedOverrides = force
-      ? []
-      : localOverrides.filter((c) => ownershipPolicy(c.path) === "user-owned");
-    const overwrittenOverrides = localOverrides.filter(
-      (c) => force || ownershipPolicy(c.path) !== "user-owned",
-    );
-    const toWrite = [...newFiles, ...modifiedFiles, ...overwrittenOverrides];
-
-    // #990 AC-6: preview both file-ownership decisions before any write.
-    // Under `--only skills` (#1209 AC-3), AGENTS.md, scripts/dev and the
-    // opencode shim are outside the write-set entirely — preview them as
-    // "none"/empty rather than computing a real decision.
-    const existingAgentsMd =
-      agentsMdEnabled && !skillsOnly ? await readAgentsMd() : null;
-    const agentsMdDecision = skillsOnly
-      ? "none"
-      : decideAgentsMdSync({
-          enabled: agentsMdEnabled,
-          existingContent: existingAgentsMd,
-          force,
-        });
-    const scriptsPreview = skillsOnly
-      ? []
-      : (await previewScriptsSymlinkTargets()).filter((e) => e.changed);
-    const opencodeShimDecision = skillsOnly
-      ? "none"
-      : await decideOpencodeShimSync();
-
-    if (!quiet) {
-      if (agentsMdDecision !== "none") {
-        console.log(chalk.bold(`AGENTS.md: ${agentsMdDecision}`));
-      }
-      if (opencodeShimDecision !== "none") {
-        console.log(chalk.bold(`opencode shim: ${opencodeShimDecision}`));
-      }
-      if (scriptsPreview.length > 0) {
-        console.log(chalk.bold("scripts/dev link targets:"));
-        for (const entry of scriptsPreview) {
-          console.log(
-            chalk.yellow(
-              `  ${entry.path}: ${entry.oldTarget ?? "(none)"} → ${entry.newTarget}`,
-            ),
-          );
-        }
-      }
-      console.log(chalk.bold("Summary (dry-run):"));
-      console.log(chalk.green(`  New files: ${newFiles.length}`));
-      console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
-      if (preservedOverrides.length > 0) {
-        console.log(
-          chalk.blue(
-            `  Customizable (preserved): ${preservedOverrides.length}`,
-          ),
-        );
-      }
-      if (overwrittenOverrides.length > 0) {
-        console.log(
-          chalk.blue(
-            `  Local overrides (overwritten): ${overwrittenOverrides.length}`,
-          ),
-        );
-      }
-
-      if (modifiedFiles.length > 0) {
-        console.log(chalk.bold("\nModified files:"));
-        for (const file of modifiedFiles) {
-          console.log(chalk.yellow(`  ${file.path}`));
-        }
-      }
-      if (newFiles.length > 0) {
-        console.log(chalk.bold("\nNew files:"));
-        for (const file of newFiles) {
-          console.log(chalk.green(`  ${file.path}`));
-        }
-      }
-      if (preservedOverrides.length > 0) {
-        console.log(
-          chalk.bold(
-            "\nCustomizable files (preserved — run `sync --force` to replace):",
-          ),
-        );
-        for (const file of preservedOverrides) {
-          console.log(chalk.blue(`  ${file.path}`));
-        }
-      }
-      if (overwrittenOverrides.length > 0) {
-        console.log(chalk.bold("\nLocal overrides (will be overwritten):"));
-        for (const file of overwrittenOverrides) {
-          console.log(chalk.blue(`  ${file.path}`));
-        }
-      }
-
-      // #1090 AC-5: the per-file policy decision, printed before any write
-      // would happen. The apply path prints the same list from the same
-      // resolver, so the preview and the write can never disagree.
-      printOwnershipDecisions(
-        resolveOwnershipDecisions(changes, force, mcpPin.updated),
-      );
-      printDirectoryCollisions(changes);
-
-      if (toWrite.length === 0 && opencodeShimDecision !== "refresh") {
-        console.log(chalk.green("\n✔ Skills are already up to date!"));
-      } else {
-        console.log(chalk.gray("\n(dry-run mode - no changes made)"));
-      }
-    }
-
-    // Non-zero exit when work is pending so the documented preview surface can
-    // gate CI/automation (the #709 intent): a dry-run reporting nothing must
-    // mean nothing to do. The matching-version short-circuit signals drift the
-    // same way.
-    if (toWrite.length > 0 || opencodeShimDecision === "refresh") {
-      process.exitCode = 1;
-    }
+    await previewDryRun(ctx);
     return;
   }
 

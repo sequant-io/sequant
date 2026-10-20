@@ -21,6 +21,7 @@ export {
   resolveMaxLockAgeMs,
 } from "./lock-manager.js";
 export type { LockManagerOptions } from "./lock-manager.js";
+export { formatSignalLine } from "./signal-line.js";
 export {
   CHECKOUT_LOCK_FILENAME,
   CheckoutLockFileSchema,

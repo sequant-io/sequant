@@ -362,16 +362,8 @@ export function checkWorktreeFreshness(
     timeout: 30000,
   });
 
-  // Check for uncommitted changes
-  const statusResult = spawnSync(
-    "git",
-    ["-C", worktreePath, "status", "--porcelain"],
-    { stdio: "pipe" },
-  );
-  if (statusResult.status === 0) {
-    result.hasUncommittedChanges =
-      statusResult.stdout.toString().trim().length > 0;
-  }
+  // Check for uncommitted changes (an unreadable status is not dirty here)
+  result.hasUncommittedChanges = worktreeStatus(worktreePath) === "dirty";
 
   // Count commits behind base branch (the fetch above refreshed the ref)
   const commitsBehind = countCommitsBehind(worktreePath, baseBranch);
@@ -455,20 +447,28 @@ export function removeStaleWorktree(
   return true;
 }
 
+/** What `git status --porcelain` says about a worktree (#1475). */
+export type WorktreeStatus = "clean" | "dirty" | "unknown";
+
 /**
  * Whether a worktree has uncommitted changes (tracked edits or untracked
- * files) — the state a #879 exec-failure message may promise is "preserved"
- * there. A `git status` failure is treated as dirty: fail toward keeping the
- * worktree rather than deleting an unknown state (#935).
+ * files). `unknown` means git could not read the status — a missing path, a
+ * directory that is not a repository, or a worktree whose admin dir is gone.
+ *
+ * Three states, not a boolean: a boolean has to be wrong in one direction on
+ * a git failure, and the callers need opposite defaults. Shutdown cleanup
+ * keeps an unknown worktree (#935); the chain-resume resolver treats it as
+ * not dirty and lets the branch-tip check decide (#760). Each caller maps
+ * `unknown` to its own default.
  */
-export function isWorktreeDirty(worktreePath: string): boolean {
+export function worktreeStatus(worktreePath: string): WorktreeStatus {
   const result = spawnSync(
     "git",
     ["-C", worktreePath, "status", "--porcelain"],
     { stdio: "pipe" },
   );
-  if (result.status !== 0) return true;
-  return result.stdout.toString().trim().length > 0;
+  if (result.error || result.status !== 0) return "unknown";
+  return result.stdout.toString().trim().length > 0 ? "dirty" : "clean";
 }
 
 /**
@@ -503,6 +503,8 @@ export function hasCommitsAheadOfBase(
  * worktree is preserved when any of these hold:
  * - it is dirty: uncommitted work exists only on disk, and removal destroys
  *   it even though the branch survives (#935);
+ * - its status is unreadable (`worktreeStatus` is `unknown`): an unknown
+ *   state is kept rather than deleted (#935);
  * - its issue has a phase actively running (`phaseInProgress`): the phase's
  *   work may not be committed yet, so a clean snapshot right now proves
  *   nothing about a moment later;
@@ -531,7 +533,11 @@ export function worktreePreserveReason(
   options?: { phaseInProgress?: boolean; baseRef?: string },
 ): string | null {
   if (abort === null) return null;
-  if (isWorktreeDirty(worktreePath)) return "uncommitted changes";
+  const status = worktreeStatus(worktreePath);
+  if (status === "dirty") return "uncommitted changes";
+  // Fail toward keeping an unreadable worktree (#935), without claiming it
+  // holds changes.
+  if (status === "unknown") return "worktree status unreadable";
   if (options?.phaseInProgress) return "phase in progress";
   if (hasCommitsAheadOfBase(worktreePath, options?.baseRef)) {
     return "commits ahead of base";

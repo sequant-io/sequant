@@ -28,6 +28,8 @@ import {
   hasCommitsAheadOfBase,
   cleanupWorktreeOnShutdown,
   registerWorktreeRemovalCleanup,
+  worktreePreserveReason,
+  worktreeStatus,
 } from "./worktree-manager.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import { ShutdownManager } from "../shutdown.js";
@@ -725,6 +727,79 @@ describe("#1222 AC-2: preserve a mid-flight worktree on signal shutdown", () => 
     expect(logs[0]).toContain("preserved");
     const remaining = git(clone, "worktree", "list", "--porcelain");
     expect(remaining).toContain(wt);
+  });
+});
+
+describe("worktreeStatus", () => {
+  let root: string;
+  let clone: string;
+  let wt: string;
+
+  beforeEach(() => {
+    // Under tmpdir, outside any repo: git must not walk up into one.
+    root = realpathSync(mkdtempSync(join(tmpdir(), "seq-1475-")));
+    clone = join(root, "clone");
+    wt = join(root, "wt");
+    mkdirSync(clone);
+    git(clone, "init", "-q", "-b", "main");
+    git(clone, "config", "user.name", "sequant-test");
+    git(clone, "config", "user.email", "sequant-test@example.com");
+    commitFile(clone, "base.txt", "base");
+    git(clone, "worktree", "add", "-q", "-b", "feature/1475", wt);
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("a clean worktree is clean", () => {
+    expect(worktreeStatus(wt)).toBe("clean");
+  });
+
+  it("an untracked file makes the worktree dirty", () => {
+    writeFileSync(join(wt, "x.txt"), "x\n");
+    expect(worktreeStatus(wt)).toBe("dirty");
+  });
+
+  it("a held index.lock still reads the real state", () => {
+    const gitDir = git(wt, "rev-parse", "--absolute-git-dir");
+    writeFileSync(join(gitDir, "index.lock"), "");
+    expect(worktreeStatus(wt)).toBe("clean");
+    writeFileSync(join(wt, "x.txt"), "x\n");
+    expect(worktreeStatus(wt)).toBe("dirty");
+  });
+
+  it("a non-existent path is unknown", () => {
+    expect(worktreeStatus(join(root, "missing"))).toBe("unknown");
+  });
+
+  it("a directory that is not a repository is unknown", () => {
+    const plain = join(root, "plain");
+    mkdirSync(plain);
+    expect(worktreeStatus(plain)).toBe("unknown");
+  });
+
+  it("a worktree whose admin dir was removed is unknown", () => {
+    rmSync(join(clone, ".git", "worktrees", "wt"), {
+      recursive: true,
+      force: true,
+    });
+    expect(existsSync(wt)).toBe(true);
+    expect(worktreeStatus(wt)).toBe("unknown");
+  });
+
+  it("worktreePreserveReason keeps a status-unknown path without claiming uncommitted changes", () => {
+    const abort = { signal: "SIGTERM", reason: "terminated" };
+    const reason = worktreePreserveReason(abort, "/nonexistent");
+    expect(reason).not.toBeNull();
+    expect(reason).not.toBe("uncommitted changes");
+    expect(reason).toBe("worktree status unreadable");
+  });
+
+  it("worktreePreserveReason still names uncommitted changes for a dirty worktree", () => {
+    writeFileSync(join(wt, "x.txt"), "x\n");
+    const abort = { signal: "SIGTERM", reason: "terminated" };
+    expect(worktreePreserveReason(abort, wt)).toBe("uncommitted changes");
   });
 });
 
