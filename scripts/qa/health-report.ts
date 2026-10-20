@@ -30,6 +30,7 @@ import { fileURLToPath } from "url";
 import { Linter } from "eslint";
 import tseslint from "typescript-eslint";
 import ts from "typescript";
+import { REMOVAL_VERSION_RE } from "../lint-deprecations.js";
 
 export interface HealthMetrics {
   generatedAt: string;
@@ -262,7 +263,7 @@ export function collectMetrics(root: string, env: NodeJS.ProcessEnv = process.en
   let deprecatedWithoutRemoval = 0;
   for (const f of srcFiles) {
     for (const line of read(root, f).split("\n")) {
-      if (line.includes("@deprecated") && !/remove in v\d+\.\d+/.test(line)) deprecatedWithoutRemoval++;
+      if (line.includes("@deprecated") && !REMOVAL_VERSION_RE.test(line)) deprecatedWithoutRemoval++;
     }
   }
 

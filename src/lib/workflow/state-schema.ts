@@ -354,7 +354,7 @@ export const IssueStateSchema = z.object({
   relay: RelayStateSchema.optional(),
   /**
    * Claude session ID (for resume).
-   * @deprecated Use {@link resumeHandle} (#674). Retained as a read-path
+   * @deprecated (remove in v3.0) Use {@link resumeHandle} (#674). Retained as a read-path
    * mirror of `resumeHandle.token` for one release so state files written by
    * prior sequant builds load cleanly. Legacy entries (token without
    * `originCwd`) intentionally do NOT resume — the driver-owned `canResume`

@@ -68,7 +68,7 @@
     "median": 2.02,
     "commits": 179
   },
-  "deprecatedWithoutRemoval": 18,
+  "deprecatedWithoutRemoval": 0,
   "harness": {
     "claudeMdLines": 25,
     "skillLines": 15542,

@@ -180,6 +180,10 @@ jobs:
       - name: Check skill sync
         run: npm run lint:skill-sync
 
+      # Every @deprecated tag names its removal release (#1510).
+      - name: Lint deprecations
+        run: npm run lint:deprecations
+
   typecheck:
     runs-on: ubuntu-latest
 
