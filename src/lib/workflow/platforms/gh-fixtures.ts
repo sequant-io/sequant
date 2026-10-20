@@ -41,7 +41,12 @@ export interface GhFixture {
   /** The argv the provider sends; what a call is matched against. */
   args: string[];
   capturedAt: string;
-  exitCode: number | null;
+  /**
+   * The shell's exit status (`$?`). For a killed or unspawnable gh (`signal`
+   * or `error` set) that is 128+signal or 127, and the runner reports
+   * `status: null`, as `spawnSync` does.
+   */
+  exitCode: number;
   stdout: string;
   stderr: string;
   provenance: "captured" | "hand-written" | "derived";
@@ -143,7 +148,7 @@ export function fixtureRunner(
     if (!fixture) throw new GhFixtureMissingError(args);
     if (fixture.once) spent.add(fixture);
     return {
-      status: fixture.exitCode,
+      status: fixture.signal || fixture.error ? null : fixture.exitCode,
       stdout: fixture.stdout,
       stderr: fixture.stderr,
       signal: fixture.signal ?? null,

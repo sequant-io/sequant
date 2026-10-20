@@ -287,9 +287,9 @@ export function capture(entry: Capture, dir: string = GH_FIXTURE_DIR): void {
     stdio: "pipe",
     timeout: 30000,
   });
-  if (result.error) {
+  if (result.error || result.status === null) {
     throw new Error(
-      `gh ${argv.join(" ")} could not run: ${result.error.message}`,
+      `gh ${argv.join(" ")} could not run: ${result.error?.message ?? `killed by ${result.signal}`}`,
     );
   }
   const fixture = {

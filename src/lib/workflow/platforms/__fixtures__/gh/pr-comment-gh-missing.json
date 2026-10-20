@@ -7,7 +7,7 @@
     "--body",
     "<*>"
   ],
-  "exitCode": null,
+  "exitCode": 127,
   "error": {
     "message": "spawnSync gh ENOENT",
     "code": "ENOENT"
@@ -16,5 +16,5 @@
   "stderr": "",
   "capturedAt": "2026-10-20T14:20:00.000Z",
   "provenance": "hand-written",
-  "note": "Write path: shape from gh's documented output; never captured by running it."
+  "note": "Hand-written: the failure mode, not gh output. exitCode is the shell status ($?); the runner reports status null, as spawnSync does, because signal/error is set."
 }
