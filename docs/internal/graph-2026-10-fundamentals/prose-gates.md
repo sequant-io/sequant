@@ -14,9 +14,11 @@ prose-gate file when its text contains `SKILL.md` and matches
 > **Redefined in #1566.** `collectMetrics` no longer counts a file just because it
 > contains `SKILL.md`. A file now counts only when it reads a skill file (a read
 > call whose path argument names `SKILL.md`, or a variable assigned from such a
-> path, or any use of `SKILL_ROOTS`) and calls `toContain|toMatch`, with comments
-> stripped first. The selection above is the old heuristic; the `not a prose gate:`
-> rows below are the files the new rule drops (30 of them net, 63 to 33).
+> path, or any use of `SKILL_ROOTS` outside a string), and calls `toContain|toMatch`, with
+> comments stripped first. A variable assigned a bare relative path literal is a scratch
+> fixture, not a read. The selection above is the old heuristic; the 34 files it drops
+> are all `not a prose gate:` rows below, and `__tests__/quality-checks-worktree-root.integration.test.ts`
+> joins (it reads through `SKILL_ROOTS` with no literal path). Net 63 to 30.
 
 **Classes** (from the issue):
 
