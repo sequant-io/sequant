@@ -11,7 +11,10 @@ import {
   getPackageVersion,
   getInstallScope,
 } from "../lib/manifest.js";
-import { computeTemplateChanges } from "../lib/templates.js";
+import {
+  computeTemplateChanges,
+  type TemplateChange,
+} from "../lib/templates.js";
 import { getConfig, saveConfig } from "../lib/config.js";
 import {
   getStackConfig,
@@ -64,6 +67,112 @@ function refuseNonInteractive(): void {
     chalk.yellow("   or use `--dry-run` to preview changes without applying."),
   );
   process.exitCode = 1;
+}
+
+/**
+ * Read the config tokens, backfilling PM_RUN or running the one-time setup for
+ * legacy installs. Returns null when a prompt is required but the shell is
+ * non-interactive (the refusal has already been printed).
+ */
+async function resolveTokens(
+  manifest: NonNullable<Awaited<ReturnType<typeof getManifest>>>,
+  pm: ReturnType<typeof resolvePackageManager>,
+  options: UpdateOptions,
+): Promise<Record<string, string> | null> {
+  let config = await getConfig();
+  let tokens: Record<string, string>;
+
+  if (config) {
+    tokens = config.tokens;
+    console.log(chalk.gray(`Dev URL: ${tokens.DEV_URL || "(not set)"}\n`));
+
+    // Add PM_RUN if missing (for existing installs before v1.3.0)
+    if (!tokens.PM_RUN) {
+      const pmConfig = getPackageManagerCommands(pm);
+      tokens.PM_RUN = pmConfig.run;
+      config.tokens = tokens;
+      await saveConfig(config);
+      console.log(chalk.blue(`Added PM_RUN token: ${tokens.PM_RUN}\n`));
+    }
+  } else {
+    // First-time config setup
+    console.log(chalk.blue("Setting up configuration (one-time setup)\n"));
+
+    const stackConfig = getStackConfig(manifest.stack);
+    const defaultDevUrl = stackConfig.devUrl;
+
+    // Get package manager run command
+    const pmConfig = getPackageManagerCommands(pm);
+
+    if (options.force || options.yes) {
+      tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
+      console.log(chalk.blue(`Using default dev URL: ${defaultDevUrl}`));
+    } else if (options.dryRun) {
+      // Dry-run is read-only: preview with defaults, never prompt or persist.
+      tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
+      console.log(
+        chalk.blue(`Using default dev URL for preview: ${defaultDevUrl}`),
+      );
+    } else if (isNonInteractive()) {
+      refuseNonInteractive();
+      return null;
+    } else {
+      const { inputDevUrl } = await inquirer.prompt([
+        {
+          type: "input",
+          name: "inputDevUrl",
+          message: "Development server URL:",
+          default: defaultDevUrl,
+        },
+      ]);
+      tokens = { DEV_URL: inputDevUrl, PM_RUN: pmConfig.run };
+    }
+
+    // Persist the new config — but not on a dry-run preview, which must leave
+    // the project untouched.
+    config = {
+      tokens,
+      stack: manifest.stack,
+      initialized: manifest.installedAt,
+    };
+    if (!options.dryRun) {
+      await saveConfig(config);
+      console.log(chalk.green("✔ Configuration saved\n"));
+    }
+  }
+  return tokens;
+}
+
+/** Print the per-file lists shown before the update is applied. */
+function printChangeList(
+  modifiedFiles: TemplateChange[],
+  newFiles: TemplateChange[],
+  localOverrides: TemplateChange[],
+  options: UpdateOptions,
+): void {
+  if (modifiedFiles.length > 0) {
+    console.log(chalk.bold("\nModified files:"));
+    for (const file of modifiedFiles) {
+      console.log(chalk.yellow(`  ${file.path}`));
+      if (options.dryRun && file.diff) {
+        console.log(chalk.gray(file.diff));
+      }
+    }
+  }
+
+  if (newFiles.length > 0) {
+    console.log(chalk.bold("\nNew files:"));
+    for (const file of newFiles) {
+      console.log(chalk.green(`  ${file.path}`));
+    }
+  }
+
+  if (options.force && localOverrides.length > 0) {
+    console.log(chalk.bold("\nLocal overrides (forced overwrite):"));
+    for (const file of localOverrides) {
+      console.log(chalk.blue(`  ${file.path}`));
+    }
+  }
 }
 
 export async function updateCommand(options: UpdateOptions): Promise<void> {
@@ -137,67 +246,8 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   }
 
   // Get config with tokens (or migrate legacy installs)
-  let config = await getConfig();
-  let tokens: Record<string, string>;
-
-  if (config) {
-    tokens = config.tokens;
-    console.log(chalk.gray(`Dev URL: ${tokens.DEV_URL || "(not set)"}\n`));
-
-    // Add PM_RUN if missing (for existing installs before v1.3.0)
-    if (!tokens.PM_RUN) {
-      const pmConfig = getPackageManagerCommands(pm);
-      tokens.PM_RUN = pmConfig.run;
-      config.tokens = tokens;
-      await saveConfig(config);
-      console.log(chalk.blue(`Added PM_RUN token: ${tokens.PM_RUN}\n`));
-    }
-  } else {
-    // First-time config setup
-    console.log(chalk.blue("Setting up configuration (one-time setup)\n"));
-
-    const stackConfig = getStackConfig(manifest.stack);
-    const defaultDevUrl = stackConfig.devUrl;
-
-    // Get package manager run command
-    const pmConfig = getPackageManagerCommands(pm);
-
-    if (options.force || options.yes) {
-      tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
-      console.log(chalk.blue(`Using default dev URL: ${defaultDevUrl}`));
-    } else if (options.dryRun) {
-      // Dry-run is read-only: preview with defaults, never prompt or persist.
-      tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
-      console.log(
-        chalk.blue(`Using default dev URL for preview: ${defaultDevUrl}`),
-      );
-    } else if (isNonInteractive()) {
-      refuseNonInteractive();
-      return;
-    } else {
-      const { inputDevUrl } = await inquirer.prompt([
-        {
-          type: "input",
-          name: "inputDevUrl",
-          message: "Development server URL:",
-          default: defaultDevUrl,
-        },
-      ]);
-      tokens = { DEV_URL: inputDevUrl, PM_RUN: pmConfig.run };
-    }
-
-    // Persist the new config — but not on a dry-run preview, which must leave
-    // the project untouched.
-    config = {
-      tokens,
-      stack: manifest.stack,
-      initialized: manifest.installedAt,
-    };
-    if (!options.dryRun) {
-      await saveConfig(config);
-      console.log(chalk.green("✔ Configuration saved\n"));
-    }
-  }
+  const tokens = await resolveTokens(manifest, pm, options);
+  if (!tokens) return;
 
   // Re-pin the project .mcp.json MCP server to the installed version (#793).
   // Independent of template changes: a version-only upgrade leaves every
@@ -309,30 +359,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     );
   }
 
-  // Show changes
-  if (modifiedFiles.length > 0) {
-    console.log(chalk.bold("\nModified files:"));
-    for (const file of modifiedFiles) {
-      console.log(chalk.yellow(`  ${file.path}`));
-      if (options.dryRun && file.diff) {
-        console.log(chalk.gray(file.diff));
-      }
-    }
-  }
-
-  if (newFiles.length > 0) {
-    console.log(chalk.bold("\nNew files:"));
-    for (const file of newFiles) {
-      console.log(chalk.green(`  ${file.path}`));
-    }
-  }
-
-  if (options.force && localOverrides.length > 0) {
-    console.log(chalk.bold("\nLocal overrides (forced overwrite):"));
-    for (const file of localOverrides) {
-      console.log(chalk.blue(`  ${file.path}`));
-    }
-  }
+  printChangeList(modifiedFiles, newFiles, localOverrides, options);
 
   if (options.dryRun) {
     console.log(chalk.gray("\n(dry-run mode - no changes made)"));

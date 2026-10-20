@@ -98,6 +98,19 @@ export default tseslint.config(
       },
     },
   },
+  // #1509: command entry points are linear sequences of steps; past 200
+  // counted lines the steps belong in their own functions (same file, or a
+  // sibling module under `src/commands/<name>/` when the file itself grows
+  // too large). Tests are excluded by the global ignores below.
+  {
+    files: ["src/commands/**/*.ts"],
+    rules: {
+      "max-lines-per-function": [
+        "error",
+        { max: 200, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
   {
     ignores: [
       "dist/",
