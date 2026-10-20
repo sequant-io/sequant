@@ -278,7 +278,8 @@ function argvFor(capture: Capture): string[] {
     : [...capture.args, "--repo", REPO];
 }
 
-function capture(entry: Capture): void {
+/** Run real `gh` for one capture and write its fixture into `dir`. */
+export function capture(entry: Capture, dir: string = GH_FIXTURE_DIR): void {
   const argv = argvFor(entry);
   assertReadOnly(argv);
   const result = spawnSync("gh", argv, {
@@ -301,7 +302,7 @@ function capture(entry: Capture): void {
     provenance: "captured",
     ...(entry.scrub ? { note: "stdout and stderr scrubbed" } : {}),
   };
-  const path = join(GH_FIXTURE_DIR, `${entry.name}.json`);
+  const path = join(dir, `${entry.name}.json`);
   writeFileSync(path, JSON.stringify(fixture, null, 2) + "\n");
   console.log(`${entry.name}: exit ${result.status} -> ${path}`);
 }
