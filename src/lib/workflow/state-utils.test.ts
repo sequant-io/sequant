@@ -23,9 +23,33 @@ import {
   FIXTURE_SKIPPED_COUNT,
   fixtureIssueTitle,
   installWorktreeDiscoveryFixture,
+  discoveryTitleFixtures,
 } from "./__fixtures__/worktree-discovery.fixture.js";
+import {
+  deriveGhFixture,
+  loadGhFixture,
+  type GhReplay,
+} from "./platforms/gh-fixtures.js";
 
-// Mock child_process module for testing checkPRMergeStatus
+// checkPRMergeStatus builds its own GitHubProvider; swap in one that replays
+// captured gh output (#1506). child_process stays mocked for git only.
+const gh = vi.hoisted((): GhReplay => ({ fixtures: [], calls: [] }));
+vi.mock("./platforms/github.js", async (importOriginal) =>
+  (await import("./platforms/gh-fixtures.js")).replayGitHubModule(
+    importOriginal,
+    gh,
+  ),
+);
+
+/** gh's captured `pr view --json state` answer, for PR `n` in `state`. */
+function prState(n: number, state: "MERGED" | "OPEN" | "CLOSED") {
+  return deriveGhFixture(loadGhFixture("pr-view-state"), {
+    number: n,
+    stdout: `${state}\n`,
+  });
+}
+
+// Mock child_process module for git calls
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
   return {
@@ -46,6 +70,7 @@ describe("state-utils", () => {
   let statePath: string;
 
   beforeEach(() => {
+    gh.fixtures = [];
     // Create temp directory for test files
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "state-utils-test-"));
     logPath = path.join(tempDir, ".sequant", "logs");
@@ -297,6 +322,7 @@ describe("state-utils", () => {
     // checkout made these tests slow, load-sensitive, and vacuous on CI.
     beforeEach(() => {
       installWorktreeDiscoveryFixture(mockSpawnSync, actualSpawnSync);
+      gh.fixtures = discoveryTitleFixtures();
     });
 
     afterEach(() => {
@@ -349,66 +375,45 @@ describe("state-utils", () => {
     });
 
     it("should return MERGED when gh returns merged state", () => {
-      // Mock spawnSync to return merged state
-      mockSpawnSync.mockReturnValueOnce({
-        status: 0,
-        stdout: Buffer.from("merged\n"),
-        stderr: Buffer.from(""),
-        pid: 0,
-        output: [null, Buffer.from("merged\n"), Buffer.from("")],
-        signal: null,
-      });
+      gh.fixtures = [prState(123, "MERGED")];
 
       const result = checkPRMergeStatus(123);
       expect(result).toBe("MERGED");
     });
 
     it("should return CLOSED when gh returns closed state", () => {
-      mockSpawnSync.mockReturnValueOnce({
-        status: 0,
-        stdout: Buffer.from("CLOSED\n"),
-        stderr: Buffer.from(""),
-        pid: 0,
-        output: [null, Buffer.from("CLOSED\n"), Buffer.from("")],
-        signal: null,
-      });
+      gh.fixtures = [prState(456, "CLOSED")];
 
       const result = checkPRMergeStatus(456);
       expect(result).toBe("CLOSED");
     });
 
     it("should return OPEN when gh returns open state", () => {
-      mockSpawnSync.mockReturnValueOnce({
-        status: 0,
-        stdout: Buffer.from("open\n"),
-        stderr: Buffer.from(""),
-        pid: 0,
-        output: [null, Buffer.from("open\n"), Buffer.from("")],
-        signal: null,
-      });
+      gh.fixtures = [prState(789, "OPEN")];
 
       const result = checkPRMergeStatus(789);
       expect(result).toBe("OPEN");
     });
 
     it("should return null when gh command fails", () => {
-      mockSpawnSync.mockReturnValueOnce({
-        status: 1,
-        stdout: Buffer.from(""),
-        stderr: Buffer.from("not found"),
-        pid: 0,
-        output: [null, Buffer.from(""), Buffer.from("not found")],
-        signal: null,
-      });
+      gh.fixtures = [
+        deriveGhFixture(prState(999, "OPEN"), {
+          exitCode: 1,
+          stdout: "",
+          stderr: loadGhFixture("issue-view-not-found").stderr,
+        }),
+      ];
 
       const result = checkPRMergeStatus(999);
       expect(result).toBe(null);
     });
 
-    it("should return null when gh throws an error", () => {
-      mockSpawnSync.mockImplementationOnce(() => {
-        throw new Error("gh not installed");
-      });
+    it("should return null when gh is not installed", () => {
+      gh.fixtures = [
+        deriveGhFixture(loadGhFixture("pr-comment-gh-missing"), {
+          args: prState(123, "OPEN").args,
+        }),
+      ];
 
       const result = checkPRMergeStatus(123);
       expect(result).toBe(null);
@@ -436,23 +441,9 @@ describe("state-utils", () => {
       };
       fs.writeFileSync(statePath, JSON.stringify(state));
 
-      // Mock gh to return merged status
+      // gh reports the PR merged (#1506: a fixture, not a spawn mock)
+      gh.fixtures = [prState(100, "MERGED")];
       mockSpawnSync.mockImplementation((cmd, args) => {
-        if (
-          cmd === "gh" &&
-          args?.includes("pr") &&
-          args?.includes("view") &&
-          args?.includes("100")
-        ) {
-          return {
-            status: 0,
-            stdout: Buffer.from("MERGED\n"),
-            stderr: Buffer.from(""),
-            pid: 0,
-            output: [null, Buffer.from("MERGED\n"), Buffer.from("")],
-            signal: null,
-          };
-        }
         // Mock git worktree list to return empty (no worktrees)
         if (cmd === "git" && args?.includes("worktree")) {
           return {
@@ -501,18 +492,9 @@ describe("state-utils", () => {
       };
       fs.writeFileSync(statePath, JSON.stringify(state));
 
-      // Mock gh to return open status
+      // gh reports the PR open (#1506: a fixture, not a spawn mock)
+      gh.fixtures = [prState(101, "OPEN")];
       mockSpawnSync.mockImplementation((cmd, args) => {
-        if (cmd === "gh" && args?.includes("pr") && args?.includes("101")) {
-          return {
-            status: 0,
-            stdout: Buffer.from("OPEN\n"),
-            stderr: Buffer.from(""),
-            pid: 0,
-            output: [null, Buffer.from("OPEN\n"), Buffer.from("")],
-            signal: null,
-          };
-        }
         // Mock git worktree list to return empty
         if (cmd === "git" && args?.includes("worktree")) {
           return {
@@ -647,23 +629,9 @@ describe("state-utils", () => {
       };
       fs.writeFileSync(statePath, JSON.stringify(state));
 
-      // Mock gh to return merged status
+      // gh reports the PR merged (#1506: a fixture, not a spawn mock)
+      gh.fixtures = [prState(100, "MERGED")];
       mockSpawnSync.mockImplementation((cmd, args) => {
-        if (
-          cmd === "gh" &&
-          args?.includes("pr") &&
-          args?.includes("view") &&
-          args?.includes("100")
-        ) {
-          return {
-            status: 0,
-            stdout: Buffer.from("MERGED\n"),
-            stderr: Buffer.from(""),
-            pid: 0,
-            output: [null, Buffer.from("MERGED\n"), Buffer.from("")],
-            signal: null,
-          };
-        }
         return {
           status: 1,
           stdout: Buffer.from(""),
@@ -700,18 +668,9 @@ describe("state-utils", () => {
       };
       fs.writeFileSync(statePath, JSON.stringify(state));
 
-      // Mock gh to return open status
+      // gh reports the PR open (#1506: a fixture, not a spawn mock)
+      gh.fixtures = [prState(101, "OPEN")];
       mockSpawnSync.mockImplementation((cmd, args) => {
-        if (cmd === "gh" && args?.includes("pr") && args?.includes("101")) {
-          return {
-            status: 0,
-            stdout: Buffer.from("OPEN\n"),
-            stderr: Buffer.from(""),
-            pid: 0,
-            output: [null, Buffer.from("OPEN\n"), Buffer.from("")],
-            signal: null,
-          };
-        }
         // Mock git branch -a to return no matching branches
         if (cmd === "git" && args?.includes("branch") && args?.includes("-a")) {
           return {

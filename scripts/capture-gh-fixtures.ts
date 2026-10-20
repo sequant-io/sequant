@@ -29,6 +29,10 @@ const REPO = "sequant-io/sequant";
 /** A closed issue with comments, and the merged PR that closed it. */
 const ISSUE = "1475";
 const PR = "1563";
+const PR_HEAD_BRANCH =
+  "feature/1475-refactor-workflow-locks-worktreestatus-tri-state-r";
+/** No PR has ever had this head branch. */
+const MISSING_BRANCH = "feature/0-no-such-branch";
 const PR_HEAD_SHA = "80e63c3f1bf6c38b8b5c734432bffb1ed06e4cfe";
 /** No issue or PR has this number, so gh exits 1 with its not-found error. */
 const MISSING_ISSUE = "999999";
@@ -123,6 +127,14 @@ export const CAPTURES: Capture[] = [
       "-q",
       ".statusCheckRollup",
     ],
+  },
+  {
+    name: "pr-view-by-branch",
+    args: ["pr", "view", PR_HEAD_BRANCH, "--json", "number,url,body"],
+  },
+  {
+    name: "pr-view-by-branch-none",
+    args: ["pr", "view", MISSING_BRANCH, "--json", "number,url,body"],
   },
   {
     name: "pr-list-open-files",

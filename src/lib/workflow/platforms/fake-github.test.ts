@@ -138,3 +138,17 @@ describe("deriveGhFixture", () => {
     });
   });
 });
+
+describe("once fixtures", () => {
+  it("answer one call, then an earlier match answers the retry", () => {
+    const found = loadGhFixture("pr-view-by-branch");
+    const none = deriveGhFixture(loadGhFixture("pr-view-by-branch-none"), {
+      args: found.args,
+      once: true,
+    });
+    const fake = new FakeGitHubProvider(found, none);
+    const branch = found.args[2];
+    expect(fake.viewPRByBranchSync(branch)).toBeNull();
+    expect(fake.viewPRByBranchSync(branch)?.number).toBe(1563);
+  });
+});

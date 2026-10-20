@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-20T02:42:02.892Z",
-  "commit": "5bd5f77242205698c9a7027c691b07204904de34",
+  "generatedAt": "2026-10-20T14:25:14.359Z",
+  "commit": "21dfd8ccda63f2bb771337080d0e81d6ce25e09c",
   "functions": {
     "over400": 2,
     "over200": 7,
@@ -57,14 +57,14 @@
       "src/mcp/tools/run.ts": 1
     }
   },
-  "childProcessMockFiles": 31,
-  "ghCallFilesOutsideProvider": 3,
+  "childProcessMockFiles": 26,
+  "ghCallFilesOutsideProvider": 0,
   "proseGate": {
     "files": 63,
-    "lines": 29533
+    "lines": 29548
   },
   "testRatio28d": {
-    "sum": 2.17,
+    "sum": 2.09,
     "median": 2.02,
     "commits": 179
   },

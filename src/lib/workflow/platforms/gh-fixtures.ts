@@ -15,7 +15,12 @@ import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-import type { GhRunner, GhRunOptions, GhRunResult } from "./github.js";
+import type {
+  GitHubProvider,
+  GhRunner,
+  GhRunOptions,
+  GhRunResult,
+} from "./github.js";
 
 export const GH_FIXTURE_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -23,7 +28,7 @@ export const GH_FIXTURE_DIR = join(
   "gh",
 );
 
-export const GH_CAPTURE_SCRIPT = "scripts/capture-gh-fixtures.ts";
+const GH_CAPTURE_SCRIPT = "scripts/capture-gh-fixtures.ts";
 
 /** An argv token in a fixture that matches any single token in the call. */
 export const ANY_ARG = "<*>";
@@ -45,6 +50,8 @@ export interface GhFixture {
   error?: { message: string; code: string };
   /** The fixture this one was derived from. */
   derivedFrom?: string;
+  /** Answer one call only, then let an earlier match answer (a retry). */
+  once?: boolean;
 }
 
 /** A `gh` call no fixture matches. Capture one rather than inventing output. */
@@ -68,20 +75,28 @@ export function loadGhFixture(name: string): GhFixture {
 
 /**
  * A variant of a fixture. `json` rewrites the parsed stdout, so the variant
- * keeps the captured shape; every other field replaces the base's.
+ * keeps the captured shape; `number` retargets a `<noun> <verb> <number>`
+ * call at another issue or PR; every other field replaces the base's.
  */
 export function deriveGhFixture(
   base: GhFixture,
   changes: Partial<
     Pick<
       GhFixture,
-      "args" | "exitCode" | "stdout" | "stderr" | "signal" | "error"
+      "args" | "exitCode" | "stdout" | "stderr" | "signal" | "error" | "once"
     >
   > & {
     json?: (data: unknown) => unknown;
+    number?: number;
   },
 ): GhFixture {
-  const { json, ...rest } = changes;
+  const { json, number, ...rest } = changes;
+  if (number !== undefined) {
+    if (!/^\d+$/.test(base.args[2] ?? "")) {
+      throw new Error(`fixture ${base.name} does not name an issue or PR`);
+    }
+    rest.args ??= base.args.map((a, i) => (i === 2 ? String(number) : a));
+  }
   const stdout = json
     ? JSON.stringify(json(JSON.parse(base.stdout)))
     : base.stdout;
@@ -101,6 +116,9 @@ function matches(pattern: string[], args: string[]): boolean {
   );
 }
 
+/** `once` fixtures that have answered their call. */
+const spent = new WeakSet<GhFixture>();
+
 /** One call a fixture runner answered. */
 export interface GhCall {
   args: string[];
@@ -109,7 +127,8 @@ export interface GhCall {
 
 /**
  * A {@link GhRunner} that answers from fixtures. The last matching fixture
- * wins, so a test can layer a variant over a default. Every call is pushed
+ * wins, so a test can layer a variant over a default; a `once` fixture
+ * answers a single call and then steps aside. Every call is pushed
  * onto `calls`; an unmatched one throws {@link GhFixtureMissingError}.
  */
 export function fixtureRunner(
@@ -118,8 +137,11 @@ export function fixtureRunner(
 ): GhRunner {
   return (args, opts): GhRunResult => {
     calls.push({ args, opts });
-    const fixture = [...fixtures].reverse().find((f) => matches(f.args, args));
+    const fixture = [...fixtures]
+      .reverse()
+      .find((f) => !spent.has(f) && matches(f.args, args));
     if (!fixture) throw new GhFixtureMissingError(args);
+    if (fixture.once) spent.add(fixture);
     return {
       status: fixture.exitCode,
       stdout: fixture.stdout,
@@ -133,5 +155,50 @@ export function fixtureRunner(
           }
         : {}),
     };
+  };
+}
+
+/** Fixtures and calls shared between a test and a replaying provider class. */
+export interface GhReplay {
+  fixtures: GhFixture[];
+  calls: GhCall[];
+}
+
+/**
+ * A `GitHubProvider` subclass whose every instance answers from
+ * `replay.fixtures`, read at call time. For a test whose code under test
+ * builds its own provider, via {@link replayGitHubModule}: the test mocks
+ * the provider module (a type this repo owns), not `child_process`. `Base` is
+ * passed in so this module never imports `github.ts` at runtime.
+ */
+function replayGitHubProvider(
+  Base: typeof GitHubProvider,
+  replay: GhReplay,
+): typeof GitHubProvider {
+  return class ReplayGitHubProvider extends Base {
+    constructor() {
+      super({
+        run: (args, opts) =>
+          fixtureRunner(replay.fixtures, replay.calls)(args, opts),
+      });
+    }
+  };
+}
+
+/**
+ * A `vi.mock` factory body for the provider module: the real module, with
+ * `GitHubProvider` replaced by {@link replayGitHubProvider}.
+ *
+ *   vi.mock("…/platforms/github.js", async (importOriginal) =>
+ *     (await import("…/platforms/gh-fixtures.js")).replayGitHubModule(importOriginal, gh));
+ */
+export async function replayGitHubModule(
+  importOriginal: () => Promise<unknown>,
+  replay: GhReplay,
+): Promise<typeof import("./github.js")> {
+  const actual = (await importOriginal()) as typeof import("./github.js");
+  return {
+    ...actual,
+    GitHubProvider: replayGitHubProvider(actual.GitHubProvider, replay),
   };
 }

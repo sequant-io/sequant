@@ -19,10 +19,20 @@ import {
 import {
   FIXTURE_ISSUE_WORKTREES,
   installWorktreeDiscoveryFixture,
+  discoveryTitleFixtures,
 } from "../lib/workflow/__fixtures__/worktree-discovery.fixture.js";
+import type { GhReplay } from "../lib/workflow/platforms/gh-fixtures.js";
 
 // Discovery reads `git worktree list` and runs `gh issue view` per worktree;
-// the fixture answers both, everything else passes through (#1322).
+// the fixture answers git, everything else passes through (#1322). gh's
+// titles replay through the provider's runner seam (#1506).
+const gh = vi.hoisted((): GhReplay => ({ fixtures: [], calls: [] }));
+vi.mock("../lib/workflow/platforms/github.js", async (importOriginal) =>
+  (await import("../lib/workflow/platforms/gh-fixtures.js")).replayGitHubModule(
+    importOriginal,
+    gh,
+  ),
+);
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
   return {
@@ -49,6 +59,7 @@ describe("state command", () => {
     fs.mkdirSync(path.dirname(statePath), { recursive: true });
     fs.mkdirSync(logPath, { recursive: true });
     installWorktreeDiscoveryFixture(mockSpawnSync, actualSpawnSync);
+    gh.fixtures = discoveryTitleFixtures();
   });
 
   afterEach(() => {
