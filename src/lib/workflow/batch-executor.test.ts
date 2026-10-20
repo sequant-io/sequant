@@ -108,6 +108,7 @@ vi.mock("./error-classifier.js", async (importOriginal) => ({
 
 import { executePhaseWithRetry, hasExecChanges } from "./phase-executor.js";
 import { createPhaseLogFromTiming } from "./log-writer.js";
+import { GitHubProvider } from "./platforms/github.js";
 import {
   runIssueWithLogging,
   recordIssueCompletion,
@@ -193,6 +194,13 @@ function successResult(phase: string): PhaseResult {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // resolveSpecRecommendation defaults to a real GitHubProvider, whose
+  // fetchIssueCommentBodiesSync spawns `gh issue view`; [] is what it returns
+  // when gh fails (#1560).
+  vi.spyOn(
+    GitHubProvider.prototype,
+    "fetchIssueCommentBodiesSync",
+  ).mockReturnValue([]);
   // Default: all phases succeed
   mockExecutePhase.mockResolvedValue(successResult("exec"));
 });
