@@ -59,7 +59,7 @@ export interface AgentSettings {
    * Default model for sub-agents (free string — any alias or dated ID accepted).
    * Default: "haiku" — currently inert per anthropics/claude-code#43869.
    * See `run.modelRoles` for semantic role indirection (#975).
-   * @deprecated currently inert; see anthropics/claude-code#43869. Subagents (remove in v3.0)
+   * @deprecated (remove in v3.0) currently inert; see anthropics/claude-code#43869. Subagents
    * inherit the parent session's model regardless of this value. Kept so
    * existing user settings.json files continue to parse without error.
    */

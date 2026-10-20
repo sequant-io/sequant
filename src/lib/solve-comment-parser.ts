@@ -1,7 +1,7 @@
 /**
  * Solve Comment Parser — Backward Compatibility Re-exports
  *
- * @deprecated This module is deprecated. Use `assess-comment-parser` instead (remove in v3.0)
+ * @deprecated (remove in v3.0) This module is deprecated. Use `assess-comment-parser` instead
  * All exports are re-exported from the unified assess-comment-parser module.
  *
  * Migration:

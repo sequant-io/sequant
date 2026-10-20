@@ -20,7 +20,8 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { dirname, join, relative } from "path";
 import { fileURLToPath } from "url";
 
-const REMOVAL = /remove in v\d+\.\d+/;
+/** A `@deprecated` tag is versioned when its line names `remove in vX.Y` (#1510). Shared with health-report.ts. */
+export const REMOVAL_VERSION_RE = /remove in v\d+\.\d+/;
 
 function collect(dir: string, out: string[]): void {
   if (!existsSync(dir)) return;
@@ -44,7 +45,7 @@ export function findUnversionedDeprecations(root: string): string[] {
     readFileSync(f, "utf8")
       .split("\n")
       .forEach((line, i) => {
-        if (line.includes("@deprecated") && !REMOVAL.test(line)) {
+        if (line.includes("@deprecated") && !REMOVAL_VERSION_RE.test(line)) {
           violations.push(`${relative(root, f)}:${i + 1}`);
         }
       });
