@@ -185,7 +185,7 @@ export function isAssessComment(body: string): boolean {
 
 /**
  * Check if a comment is a solve command output (legacy format)
- * @deprecated Use isAssessComment instead
+ * @deprecated Use isAssessComment instead (remove in v3.0)
  */
 export function isSolveComment(body: string): boolean {
   return isAssessComment(body);
@@ -220,7 +220,7 @@ export function findAllAssessComments(
 
 /**
  * Find the most recent solve comment from a list of comments
- * @deprecated Use findAssessComment instead
+ * @deprecated Use findAssessComment instead (remove in v3.0)
  */
 export function findSolveComment(
   comments: IssueComment[],
@@ -292,7 +292,7 @@ function applyMarker(markers: AssessMarkers, key: string, value: string): void {
 
 /**
  * Parse HTML comment markers (backward-compatible alias)
- * @deprecated Use parseAssessMarkers instead
+ * @deprecated Use parseAssessMarkers instead (remove in v3.0)
  */
 export function parseSolveMarkers(body: string): AssessMarkers {
   return parseAssessMarkers(body);
@@ -413,7 +413,7 @@ export function parseAssessWorkflow(body: string): AssessWorkflowResult {
 
 /**
  * Parse a solve comment to extract workflow information
- * @deprecated Use parseAssessWorkflow instead
+ * @deprecated Use parseAssessWorkflow instead (remove in v3.0)
  */
 export function parseSolveWorkflow(body: string): AssessWorkflowResult {
   return parseAssessWorkflow(body);
@@ -456,7 +456,7 @@ export function assessWorkflowToSignals(
  * Preserves "/solve" wording in reason strings for backward compatibility
  * with existing tests and consumers.
  *
- * @deprecated Use assessWorkflowToSignals instead
+ * @deprecated Use assessWorkflowToSignals instead (remove in v3.0)
  */
 export function solveWorkflowToSignals(
   workflow: AssessWorkflowResult,
@@ -498,7 +498,7 @@ export function assessCoversIssue(
 
 /**
  * Check if solve comment covers the current issue
- * @deprecated Use assessCoversIssue instead
+ * @deprecated Use assessCoversIssue instead (remove in v3.0)
  */
 export function solveCoversIssue(
   workflow: AssessWorkflowResult,

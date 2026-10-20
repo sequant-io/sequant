@@ -33,7 +33,7 @@ export type SignalSource = "label" | "assess" | "solve" | "title" | "body";
 export const SIGNAL_PRIORITY: Record<SignalSource, number> = {
   label: 4, // Highest priority - explicit labels
   assess: 3, // Assess command analysis
-  /** @deprecated Use `assess` instead */
+  /** @deprecated Use `assess` instead (remove in v3.0) */
   solve: 3, // Solve command analysis (backward compat)
   title: 2, // Title keyword detection
   body: 1, // Body pattern detection (lowest)

@@ -37,7 +37,7 @@ export type TriggerType = "workflow_dispatch" | "label" | "comment" | "unknown";
 export const TRIGGER_LABELS = {
   /** Full workflow: spec → exec → qa */
   ASSESS: "sequant:assess",
-  /** @deprecated Use ASSESS instead */
+  /** @deprecated Use ASSESS instead (remove in v3.0) */
   SOLVE: "sequant:solve",
   /** Spec phase only */
   SPEC_ONLY: "sequant:spec-only",

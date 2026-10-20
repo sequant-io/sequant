@@ -248,6 +248,7 @@ patterns:
 - Use `chalk` for colored output
 - Use async/await for asynchronous operations
 - Export types from `src/index.ts` for public API
+- A `@deprecated` tag says `remove in vX.Y` on the same line as the tag (v3.0 for anything users can reach, the next minor for internals). `npm run lint:deprecations` enforces it in CI.
 
 ### Commit Messages
 

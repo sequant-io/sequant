@@ -642,7 +642,7 @@ export class StateManager {
   /**
    * Update session ID for an issue (for resume).
    *
-   * @deprecated Use {@link updateResumeHandle} (#674). This entry point only
+   * @deprecated Use {@link updateResumeHandle} (#674). This entry point only (remove in v3.0)
    * writes the legacy `sessionId` field — without an `originCwd`, the next
    * phase's driver-owned `canResume()` fail-safe will decline resume, so the
    * data is effectively inert. Retained for one release to keep callers from
