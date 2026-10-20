@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-20T02:33:02.091Z",
-  "commit": "f7802c799eb763159a872493ebfcafae4f8957e2",
+  "generatedAt": "2026-10-20T02:42:02.892Z",
+  "commit": "5bd5f77242205698c9a7027c691b07204904de34",
   "functions": {
     "over400": 2,
     "over200": 7,
@@ -64,9 +64,9 @@
     "lines": 29533
   },
   "testRatio28d": {
-    "sum": 2.07,
-    "median": 1.98,
-    "commits": 180
+    "sum": 2.17,
+    "median": 2.02,
+    "commits": 179
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
@@ -76,5 +76,5 @@
     "memoryFiles": null
   },
   "adrWithoutActor": 11,
-  "unusedExports": 341
+  "unusedExports": 339
 }
