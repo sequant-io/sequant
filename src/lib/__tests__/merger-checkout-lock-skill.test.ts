@@ -7,10 +7,10 @@
  * refused when another session held the tree. These tests assert the prompt now
  * acquires once before its first guarded verb and releases on every exit path.
  *
- * This is prose with no runtime twin — the lock mechanism (`CheckoutLock`,
- * `sequant locks checkout`, `pre-tool.sh`) is unchanged; only the skill prompt
- * gains participation. So the gate asserts the prompt text, scoped per CLAUDE.md
- * to the delimited region it means to check.
+ * The acquire fence and every release site run against the built CLI and a
+ * temp lock dir (#1512): a release that names a different holder, or lost
+ * `--issue`, is refused and leaves `checkout.lock` behind. The placement and
+ * orchestrator claims stay text checks, scoped per CLAUDE.md to their region.
  *
  * The real contention assertion from the issue's Test plan (session A holds,
  * session B's first guarded command is refused) drives the hook and therefore
@@ -22,11 +22,20 @@
  * partial edit fails here too.
  */
 
+import { spawnSync, type SpawnSyncReturns } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
+import {
+  fill,
+  skillEnv,
+  skillFence,
+  skillFences,
+  withBuiltCli,
+} from "../../../__tests__/helpers/skill-fence.js";
 
 /** src/lib/__tests__ -> repo root (anchor to this file, not process.cwd()). */
 const REPO_ROOT = path.resolve(
@@ -90,18 +99,6 @@ describe("#911/AC-1: /merger acquires the checkout lock before its first guarded
   });
 
   it.each(SKILL_ROOTS)(
-    "%s — the acquire fence carries --issue and --skip-pid-check",
-    (root) => {
-      const fence = bashBlocks(skillText(root)).find((b) =>
-        b.includes("locks checkout acquire"),
-      );
-      expect(fence, "checkout acquire fence not found").toBeDefined();
-      expect(fence).toMatch(/--issue=<first-issue>/);
-      expect(fence).toMatch(/--skip-pid-check/);
-    },
-  );
-
-  it.each(SKILL_ROOTS)(
     "%s — the acquire precedes the baseline `git checkout main`",
     (root) => {
       const full = skillText(root);
@@ -129,49 +126,71 @@ describe("#911/AC-3: acquire/release name the same holder (first issue)", () => 
   );
 });
 
-describe("#911/AC-2: every checkout release proves ownership with --issue", () => {
-  it.each(SKILL_ROOTS)(
-    "%s — no `locks checkout release` in a bash block lacks --issue",
-    (root) => {
-      // Negative over executable content only. NOT anchored on `npx `: a bare
-      // `sequant locks checkout release` is just as broken. Scoping to bash
-      // fences keeps the inline prose reference (the release-contract note) from
-      // reading as an unflagged invocation.
-      const missing = bashBlocks(skillText(root)).flatMap((block) => [
-        ...block.matchAll(/\bsequant locks checkout release(?! --issue=)/g),
-      ]);
-      expect(
-        missing,
-        `${missing.length} release site(s) without --issue`,
-      ).toHaveLength(0);
-    },
-  );
+const FIRST_ISSUE = "4242";
 
-  it.each(SKILL_ROOTS)(
-    "%s — exactly the expected number of release sites, each on <first-issue>",
-    (root) => {
-      const release =
-        /npx sequant locks checkout release --issue=<first-issue> \|\| true/;
-      const releaseBlocks = bashBlocks(skillText(root)).filter((b) =>
-        release.test(b),
-      );
-      expect(releaseBlocks).toHaveLength(EXPECTED_RELEASE_SITES);
-    },
-  );
+/** The merger fences that release the checkout lock, in document order. */
+const releaseFences = skillFences("merger", {
+  contains: "locks checkout release",
+});
 
-  it.each(SKILL_ROOTS)(
-    "%s — the regression-gate halt releases before it stops",
-    (root) => {
-      // The regression `else` branch is a terminal halt that does NOT continue
-      // to Step 8, so a leak here wedges the tree after a blocked merge.
-      const gate = bashBlocks(skillText(root)).find((b) =>
-        b.includes("REGRESSION DETECTED — merge is blocked"),
+let locksDir: string;
+beforeEach(() => {
+  locksDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-merger-lock-"));
+});
+afterEach(() => fs.rmSync(locksDir, { recursive: true, force: true }));
+
+function runSkill(script: string): SpawnSyncReturns<string> {
+  return spawnSync("bash", ["-c", withBuiltCli(script)], {
+    cwd: locksDir,
+    encoding: "utf-8",
+    env: skillEnv({ SEQUANT_LOCKS_DIR: locksDir }),
+  });
+}
+
+describe("#911/AC-2: every release site frees the lock the acquire fence took", () => {
+  it("there are exactly the expected release sites", () => {
+    expect(releaseFences).toHaveLength(EXPECTED_RELEASE_SITES);
+  });
+
+  it.each(releaseFences.map((fence, i) => [i + 1, fence]))(
+    "release site %i releases the checkout lock held under <first-issue>",
+    (_n, fence) => {
+      const acquire = runSkill(
+        fill(
+          skillFence("merger", {
+            section: "### Acquire the Checkout Lock",
+            contains: "locks checkout acquire",
+          }),
+          {
+            "<first-issue>": FIRST_ISSUE,
+            "<issue-numbers>": `${FIRST_ISSUE} 4243`,
+          },
+        ),
       );
-      expect(gate, "regression-gate halt block not found").toBeDefined();
-      expect(gate).toMatch(
-        /npx sequant locks checkout release --issue=<first-issue> \|\| true/,
+      expect(acquire.status, acquire.stderr).toBe(0);
+      const lock = JSON.parse(
+        fs.readFileSync(path.join(locksDir, "checkout.lock"), "utf-8"),
       );
+      expect(lock).toMatchObject({
+        issue: Number(FIRST_ISSUE),
+        skipPidCheck: true,
+      });
+
+      // Only the release line: the rest of a site (the regression halt, the
+      // summary) is the surrounding workflow, not the lock contract.
+      const release = runSkill(
+        fill(
+          String(fence)
+            .split("\n")
+            .filter((line) => line.includes("locks checkout release"))
+            .join("\n"),
+          { "<first-issue>": FIRST_ISSUE },
+        ),
+      );
+      expect(release.status, release.stderr).toBe(0);
+      expect(fs.existsSync(path.join(locksDir, "checkout.lock"))).toBe(false);
     },
+    20_000,
   );
 });
 

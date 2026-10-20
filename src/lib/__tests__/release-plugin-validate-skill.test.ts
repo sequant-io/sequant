@@ -39,7 +39,7 @@ const MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json";
 /**
  * The release skill copy under `root`, found through `collectFiles` — the
  * walker `lint:skill-sync` uses — so a layout change moves this gate instead
- * of silently passing (precedent: release-skill-soak.test.ts).
+ * of silently passing.
  */
 function releaseSkillPath(root: string): string {
   const base = path.join(REPO_ROOT, root);
