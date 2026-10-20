@@ -25,6 +25,8 @@ vi.mock("../lib/workflow/platforms/github.js", async (importOriginal) =>
   ),
 );
 
+// The binary the captured fixtures ran; doctor probes it with commandExists.
+const GH_BIN = loadGhFixture("gh-version").command.split(" ")[0];
 const CLOSED_LIST = loadGhFixture("issue-list-closed");
 const CLOSED_LIST_ARGS = CLOSED_LIST.args.map((a) => (a === "3" ? "100" : a));
 
@@ -483,7 +485,7 @@ describe("doctor command", () => {
     });
 
     it("fails when gh CLI is not installed", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
       mockIsGhAuthenticated.mockReturnValue(false);
 
       await doctorCommand();
@@ -518,7 +520,7 @@ describe("doctor command", () => {
     });
 
     it("skips auth check when gh CLI is not installed", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
 
       await doctorCommand();
 
@@ -1014,7 +1016,7 @@ describe("doctor command", () => {
     });
 
     it("exits with failure when gh is missing even if jq is present", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
 
       await doctorCommand();
 
@@ -1277,7 +1279,7 @@ describe("doctor command", () => {
     });
 
     it("skips check when gh is not available", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
 
       await doctorCommand();
 
