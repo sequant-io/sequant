@@ -599,7 +599,7 @@ export function recordIssueCompletion(
 }
 
 /**
- * @deprecated No live caller — `sequant run` executes issues via
+ * @deprecated (remove in v2.22) No live caller — `sequant run` executes issues via
  * `RunOrchestrator.executeOneIssue`; this survives only as a
  * `commands/run-compat` re-export. Do not build a new execution loop on it:
  * any path that completes an issue MUST go through

@@ -68,7 +68,7 @@ export class LogWriter {
   private runLog: Omit<RunLog, "endTime"> | null = null;
   /** Active issues being tracked concurrently, keyed by issue number */
   private activeIssues: Map<number, Partial<IssueLog>> = new Map();
-  /** @deprecated Single-issue slot for backwards compatibility — use activeIssues */
+  /** @deprecated (remove in v2.22) Single-issue slot for backwards compatibility — use activeIssues */
   private currentIssue: Partial<IssueLog> | null = null;
   /**
    * Issue slots forced to `failure` by {@link markIssueFailed} (#879). Keyed on
