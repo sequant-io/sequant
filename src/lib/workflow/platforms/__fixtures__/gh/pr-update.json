@@ -1,0 +1,17 @@
+{
+  "command": "gh api -X PATCH repos/{owner}/{repo}/pulls/1563 --input -",
+  "args": [
+    "api",
+    "-X",
+    "PATCH",
+    "repos/{owner}/{repo}/pulls/1563",
+    "--input",
+    "-"
+  ],
+  "exitCode": 0,
+  "stdout": "{\"number\":1563,\"html_url\":\"https://github.com/sequant-io/sequant/pull/1563\",\"state\":\"closed\"}\n",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

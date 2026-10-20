@@ -1,0 +1,17 @@
+{
+  "command": "gh pr view 1563 --json mergeable -q .mergeable --repo sequant-io/sequant",
+  "args": [
+    "pr",
+    "view",
+    "1563",
+    "--json",
+    "mergeable",
+    "-q",
+    ".mergeable"
+  ],
+  "capturedAt": "2026-10-20T14:10:39.978Z",
+  "exitCode": 0,
+  "stdout": "UNKNOWN\n",
+  "stderr": "",
+  "provenance": "captured"
+}

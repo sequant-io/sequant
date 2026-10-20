@@ -1,0 +1,18 @@
+{
+  "command": "gh issue comment 1475 --repo sequant-io/sequant --body-file <*>",
+  "args": [
+    "issue",
+    "comment",
+    "1475",
+    "--repo",
+    "sequant-io/sequant",
+    "--body-file",
+    "<*>"
+  ],
+  "exitCode": 0,
+  "stdout": "https://github.com/sequant-io/sequant/issues/1475#issuecomment-3400000002\n",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

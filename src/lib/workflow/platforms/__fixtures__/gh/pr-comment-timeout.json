@@ -1,0 +1,21 @@
+{
+  "command": "gh pr comment 1563 --body <*>",
+  "args": [
+    "pr",
+    "comment",
+    "1563",
+    "--body",
+    "<*>"
+  ],
+  "exitCode": null,
+  "signal": "SIGTERM",
+  "error": {
+    "message": "spawnSync gh ETIMEDOUT",
+    "code": "ETIMEDOUT"
+  },
+  "stdout": "",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

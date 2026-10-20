@@ -1,0 +1,20 @@
+{
+  "command": "gh pr comment 1563 --body <*>",
+  "args": [
+    "pr",
+    "comment",
+    "1563",
+    "--body",
+    "<*>"
+  ],
+  "exitCode": null,
+  "error": {
+    "message": "spawnSync gh ENOENT",
+    "code": "ENOENT"
+  },
+  "stdout": "",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}
