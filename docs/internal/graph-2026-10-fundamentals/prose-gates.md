@@ -11,6 +11,13 @@ prose-gate file when its text contains `SKILL.md` and matches
 (`scripts/qa/health-report.ts`), so the list below is the same list that
 `proseGate.files` counts. At `ec9d583b4` it selects 76 files, 30,693 lines.
 
+> **Redefined in #1566.** `collectMetrics` no longer counts a file just because it
+> contains `SKILL.md`. A file now counts only when it reads a skill file (a read
+> call whose path argument names `SKILL.md`, or a variable assigned from such a
+> path, or any use of `SKILL_ROOTS`) and calls `toContain|toMatch`, with comments
+> stripped first. The selection above is the old heuristic; the `not a prose gate:`
+> rows below are the files the new rule drops (30 of them net, 63 to 33).
+
 **Classes** (from the issue):
 
 - **execute** — the skill section names a command or pattern the test can run
