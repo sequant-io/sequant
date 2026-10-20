@@ -1,7 +1,8 @@
 /**
  * Smoke tests for assess skill phase vocabulary and CLI flag accuracy
  *
- * AC-2: Verify assess SKILL.md examples only reference valid phases and CLI flags
+ * AC-2: Verify assess SKILL.md examples only reference valid phases and CLI
+ *       flags — each example `npx sequant run` line runs as `--dry-run` (#1512)
  * AC-3: Label→phase table only uses valid phases
  * AC-4: All 3 skill directories stay in sync
  *
@@ -11,11 +12,18 @@
  * - Wrong flag descriptions
  */
 
+import { spawnSync } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
-import { describe, expect, it, beforeAll } from "vitest";
+import { afterAll, describe, expect, it, beforeAll } from "vitest";
 import { getPhaseNames } from "../workflow/phase-registry.ts";
 import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
+import {
+  skillEnv,
+  skillSection,
+  withBuiltCli,
+} from "../../../__tests__/helpers/skill-fence.js";
 
 const SKILL_DIRS = SKILL_ROOTS.map((root) => `${root}/assess/SKILL.md`);
 
@@ -121,20 +129,6 @@ describe("assess skill CLI flag accuracy", () => {
     }
   });
 
-  it("should only reference valid CLI flags in example commands", () => {
-    // Find lines that look like example commands: sequant run, npx sequant run
-    const exampleLines = skillContent
-      .split("\n")
-      .filter((line) => /sequant\s+run\b/.test(line));
-
-    for (const line of exampleLines) {
-      const flags = line.match(/--[a-z][a-z-]*/g) || [];
-      for (const flag of flags) {
-        expect(validRunFlags).toContain(flag);
-      }
-    }
-  });
-
   it("should not restate default phases or non-additive testgen/security-review in example commands", () => {
     const exampleLines = skillContent
       .split("\n")
@@ -159,4 +153,46 @@ describe("assess skill 3-directory sync", () => {
     expect(contents[0]).toBe(contents[1]);
     expect(contents[0]).toBe(contents[2]);
   });
+});
+
+describe("assess skill example commands run", () => {
+  // Every example command line the skill shows a user, comment stripped.
+  const examples = [
+    ...new Set(
+      skillSection("assess")
+        .split("\n")
+        .map((line) => line.replace(/#.*$/, "").trim())
+        .filter((line) => /^npx sequant run \d/.test(line)),
+    ),
+  ];
+
+  // `run` needs only a manifest to plan; --dry-run executes nothing.
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-assess-"));
+  fs.writeFileSync(
+    path.join(project, ".sequant-manifest.json"),
+    JSON.stringify({ version: "0.0.0", stack: "generic", files: {} }),
+  );
+  afterAll(() => fs.rmSync(project, { recursive: true, force: true }));
+
+  it("finds the example commands", () => {
+    expect(examples.length).toBeGreaterThan(0);
+  });
+
+  it.each(examples)(
+    "%s --dry-run plans without error",
+    (line) => {
+      const result = spawnSync(
+        "bash",
+        ["-c", withBuiltCli(`${line} --dry-run`)],
+        {
+          cwd: project,
+          encoding: "utf-8",
+          env: skillEnv(),
+        },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("planned");
+    },
+    20_000,
+  );
 });

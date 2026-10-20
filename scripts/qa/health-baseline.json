@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-10-19T22:15:12.823Z",
-  "commit": "da229f5e3ed27221f6bf59cd74d8e3dc40ec3b73",
+  "generatedAt": "2026-10-20T02:33:02.091Z",
+  "commit": "f7802c799eb763159a872493ebfcafae4f8957e2",
   "functions": {
-    "over400": 4,
-    "over200": 12,
+    "over400": 2,
+    "over200": 7,
     "longest": {
       "file": "src/lib/workflow/batch-executor.ts",
       "name": "runIssueWithLogging",
-      "lines": 1050
+      "lines": 1072
     }
   },
   "emptyCatch": {
-    "total": 117,
+    "total": 92,
     "byFile": {
       "bin/cli.ts": 1,
       "bin/preflight.ts": 1,
@@ -42,7 +42,6 @@
       "src/lib/upstream/relevance.ts": 1,
       "src/lib/version-check.ts": 3,
       "src/lib/version.ts": 1,
-      "src/lib/workflow/batch-executor.ts": 25,
       "src/lib/workflow/drivers/opencode.ts": 2,
       "src/lib/workflow/event-emitter.ts": 1,
       "src/lib/workflow/phase-detection.ts": 1,
@@ -61,13 +60,13 @@
   "childProcessMockFiles": 31,
   "ghCallFilesOutsideProvider": 3,
   "proseGate": {
-    "files": 76,
-    "lines": 30751
+    "files": 63,
+    "lines": 29533
   },
   "testRatio28d": {
-    "sum": 2.21,
-    "median": 2.02,
-    "commits": 173
+    "sum": 2.07,
+    "median": 1.98,
+    "commits": 180
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
