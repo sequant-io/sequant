@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-20T02:12:05.685Z",
-  "commit": "25639b5de0560afe2d82e5cd1aac8f355ba69a09",
+  "generatedAt": "2026-10-20T02:22:11.345Z",
+  "commit": "f038400349e9fb26bbae833491af4aff2299ded9",
   "functions": {
     "over400": 4,
     "over200": 12,
@@ -60,13 +60,13 @@
   "childProcessMockFiles": 31,
   "ghCallFilesOutsideProvider": 3,
   "proseGate": {
-    "files": 76,
-    "lines": 30751
+    "files": 63,
+    "lines": 29533
   },
   "testRatio28d": {
-    "sum": 2.29,
+    "sum": 2.39,
     "median": 2.03,
-    "commits": 177
+    "commits": 178
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
