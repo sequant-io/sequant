@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-10-19T22:49:13.559Z",
-  "commit": "f4509f9a809fc7ae327ae922ed9a43c5584426d9",
+  "generatedAt": "2026-10-20T02:22:11.345Z",
+  "commit": "f038400349e9fb26bbae833491af4aff2299ded9",
   "functions": {
     "over400": 4,
     "over200": 12,
     "longest": {
       "file": "src/lib/workflow/batch-executor.ts",
       "name": "runIssueWithLogging",
-      "lines": 1050
+      "lines": 1072
     }
   },
   "emptyCatch": {
-    "total": 117,
+    "total": 92,
     "byFile": {
       "bin/cli.ts": 1,
       "bin/preflight.ts": 1,
@@ -42,7 +42,6 @@
       "src/lib/upstream/relevance.ts": 1,
       "src/lib/version-check.ts": 3,
       "src/lib/version.ts": 1,
-      "src/lib/workflow/batch-executor.ts": 25,
       "src/lib/workflow/drivers/opencode.ts": 2,
       "src/lib/workflow/event-emitter.ts": 1,
       "src/lib/workflow/phase-detection.ts": 1,
@@ -65,9 +64,9 @@
     "lines": 29533
   },
   "testRatio28d": {
-    "sum": 2.42,
+    "sum": 2.39,
     "median": 2.03,
-    "commits": 176
+    "commits": 178
   },
   "deprecatedWithoutRemoval": 18,
   "harness": {
