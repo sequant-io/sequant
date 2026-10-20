@@ -19,7 +19,7 @@ import { spawnSync } from "child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { rebaseOntoLocalBranch } from "./worktree-manager.js";
+import { rebaseOntoLocalBranch, worktreeStatus } from "./worktree-manager.js";
 import {
   computeChainResumePlan,
   type CompletedLinkResolver,
@@ -102,15 +102,10 @@ describe("chain resume (integration, #760)", () => {
     return {
       resolveBranchTip: (branch) => branchTip(mainRepo, branch),
       resolveBaseTip: () => branchTip(mainRepo, "main"),
-      isWorktreeDirty: (worktreePath) => {
-        // Mirrors run-orchestrator's isWorktreeDirty against real git.
-        const r = spawnSync(
-          "git",
-          ["-C", worktreePath, "status", "--porcelain"],
-          { encoding: "utf-8" },
-        );
-        return r.status === 0 && r.stdout.trim().length > 0;
-      },
+      // The same expression as run-orchestrator's resolver: `unknown` is
+      // not dirty.
+      isWorktreeDirty: (worktreePath) =>
+        worktreeStatus(worktreePath) === "dirty",
     };
   }
 
@@ -297,6 +292,41 @@ describe("chain resume (integration, #760)", () => {
     expect(plan.failFast).toBeUndefined();
     expect(plan.resumeBase).toBe(link1Branch);
     expect(plan.resumeBaseCommit).toBe(link1Checkpoint);
+  });
+
+  it("resumes on the branch tip when the completed link's worktree dir is gone (#1475)", () => {
+    // #1 committed its work, then its worktree directory was deleted outside
+    // git. The branch is intact, so its tip is a valid resume base; the
+    // unreadable status must not read as uncommitted changes.
+    writeFileSync(join(link1Worktree, "feature-1.ts"), "export const a = 1;\n");
+    git(link1Worktree, "add", "feature-1.ts");
+    git(link1Worktree, "commit", "-m", "feat(#1): exec work");
+    const link1Tip = git(link1Worktree, "rev-parse", "HEAD");
+    rmSync(link1Worktree, { recursive: true, force: true });
+    expect(worktreeStatus(link1Worktree)).toBe("unknown");
+
+    const plan = computeChainResumePlan(
+      [
+        {
+          issueNumber: 1,
+          status: "ready_for_merge",
+          branch: link1Branch,
+          worktree: link1Worktree,
+        },
+        {
+          issueNumber: 2,
+          status: "in_progress",
+          branch: link2Branch,
+          worktree: link2Worktree,
+        },
+      ],
+      "main",
+      repoResolver(),
+    );
+
+    expect(plan.failFast).toBeUndefined();
+    expect(plan.resumeBase).toBe(link1Branch);
+    expect(plan.resumeBaseCommit).toBe(link1Tip);
   });
 
   it("resumes from the base branch when the completed prefix was merged (AC-3 merged)", () => {

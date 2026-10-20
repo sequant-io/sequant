@@ -466,6 +466,17 @@ export const RunLogSchema = z.object({
    * `"claude-code"`, `"opencode"`. Threaded from `LogWriterOptions.driver`.
    */
   driver: z.string().optional(),
+  /**
+   * Errors the run dropped on purpose, counted by scope (#1504). Written by
+   * `LogWriter.finalize()` on every run, `total: 0` included; absent only in
+   * logs from older versions. Optional, so `version` stays 1.
+   */
+  suppressed: z
+    .object({
+      total: z.number().int().nonnegative(),
+      byScope: z.record(z.string(), z.number().int().nonnegative()),
+    })
+    .optional(),
 });
 
 export type RunLog = z.infer<typeof RunLogSchema>;
