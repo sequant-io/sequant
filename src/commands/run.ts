@@ -98,11 +98,7 @@ export async function runCommand(
     );
   }
 
-  const init = {
-    options,
-    settings,
-    manifest: manifestForRun(manifest),
-  };
+  const init = { options, settings, manifest: manifestForRun(manifest) };
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
   displayConfig(resolved);
 
