@@ -20,6 +20,7 @@
 import { spawnSync } from "child_process";
 import { GitHubProvider } from "./platforms/github.js";
 import type { PRMergeStatus } from "./platforms/github.js";
+import { noteSuppressed } from "./suppressed.js";
 
 export type { PRMergeStatus };
 
@@ -92,8 +93,9 @@ export function isBranchMergedIntoMain(
         }
       }
     }
-  } catch {
+  } catch (err) {
     // git command failed - return false
+    noteSuppressed("platform", err, "pr-status:95");
   }
 
   return false;
@@ -173,8 +175,9 @@ export function isIssueMergedIntoMain(
         return true;
       }
     }
-  } catch {
+  } catch (err) {
     // git command failed - return false
+    noteSuppressed("platform", err, "pr-status:176");
   }
 
   return false;

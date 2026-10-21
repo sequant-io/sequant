@@ -8,6 +8,7 @@ import type { PackageManager } from "./stacks.js";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 const MANIFEST_PATH = ".sequant-manifest.json";
 
@@ -24,8 +25,9 @@ function findPackageJson(): string {
       if (pkg.name === "sequant") {
         return content;
       }
-    } catch {
+    } catch (err) {
       // Not found, continue searching
+      noteSuppressed("other", err, "manifest:27");
     }
     dir = dirname(dir);
   }

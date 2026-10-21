@@ -18,6 +18,7 @@ import {
   PhaseMarkerSchema,
   WORKFLOW_PHASES,
 } from "./state-schema.js";
+import { noteSuppressed } from "./suppressed.js";
 
 /** Regex to extract phase marker JSON from HTML comments */
 const PHASE_MARKER_REGEX = /<!-- SEQUANT_PHASE: (\{[^}]+\}) -->/g;
@@ -83,8 +84,9 @@ export function parsePhaseMarkers(commentBody: string): PhaseMarker[] {
       if (result.success) {
         markers.push(result.data);
       }
-    } catch {
+    } catch (err) {
       // Malformed JSON — skip silently
+      noteSuppressed("state", err, "phase-detection:86");
     }
   }
 

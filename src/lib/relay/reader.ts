@@ -21,6 +21,7 @@ import {
 import { dirname, join } from "path";
 import { RelayMessageSchema, type RelayMessage } from "./types.js";
 import { cursorPathFor, inboxPathFor, type RelayPathOptions } from "./paths.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 export interface ReadResult {
   /** Newly read inbox messages, ordered by file appearance (timestamp). */
@@ -74,8 +75,9 @@ export function writeCursor(
     if (existsSync(tmp)) {
       try {
         unlinkSync(tmp);
-      } catch {
+      } catch (err) {
         /* swallow */
+        noteSuppressed("other", err, "reader:77");
       }
     }
     throw err;

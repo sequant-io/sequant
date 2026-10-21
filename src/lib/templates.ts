@@ -24,6 +24,7 @@ const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 import { getStackConfig, getStackNotes, getMultiStackNotes } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /**
  * Offsets from this module's directory to the bundled `templates/` root, in
@@ -102,9 +103,10 @@ function rankTemplatesCandidate(candidate: string): TemplatesCandidateRank {
     if (pkg.name === "sequant") {
       return "package-root";
     }
-  } catch {
+  } catch (err) {
     // No readable/parseable package.json beside it — still a usable directory,
     // just not a positively identified package root.
+    noteSuppressed("other", err, "templates:105");
   }
   return "exists";
 }
@@ -208,8 +210,9 @@ export async function listTemplateFiles(): Promise<string[]> {
           files.push(join("templates", relativePath));
         }
       }
-    } catch {
+    } catch (err) {
       // Directory doesn't exist
+      noteSuppressed("other", err, "templates:211");
     }
   }
 

@@ -25,6 +25,7 @@ import { latestPhaseResult } from "../../lib/workflow/latest-phase.js";
 import { registerRun, unregisterRun } from "../run-registry.js";
 import { DEFAULT_FORCE_EXIT_TIMEOUT_MS } from "../../lib/shutdown.js";
 import { killProcessGroup } from "../../lib/process-group.js";
+import { noteSuppressed } from "../../lib/workflow/suppressed.js";
 
 /** Maximum total response size in bytes (64 KB) */
 const MAX_RESPONSE_SIZE = 64 * 1024;
@@ -791,8 +792,9 @@ export function registerRunTool(server: McpServer): void {
             .catch(() => {
               // Swallow notification delivery errors (AC-6)
             });
-        } catch {
+        } catch (err) {
           // Swallow synchronous errors (AC-6)
+          noteSuppressed("other", err, "run:794");
         }
       };
 

@@ -28,6 +28,7 @@ import {
 import { getSettingsWithWarnings } from "../lib/settings.js";
 import { getSkillVersions } from "../lib/skill-version.js";
 import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface StatusCommandOptions {
   /** Show only issues state */
@@ -421,8 +422,9 @@ export async function statusCommand(
           chalk.gray("    Run `sequant init --upgrade-skills` to update."),
         );
       }
-    } catch {
+    } catch (err) {
       // Ignore errors
+      noteSuppressed("other", err, "status:424");
     }
   }
 
@@ -454,8 +456,9 @@ export async function statusCommand(
         const offlineNote = options.offline ? " (offline)" : "";
         console.log(chalk.gray(`\n  Last synced: ${syncedAgo}${offlineNote}`));
       }
-    } catch {
+    } catch (err) {
       // Ignore state read errors
+      noteSuppressed("other", err, "status:457");
     }
   }
 

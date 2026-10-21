@@ -10,6 +10,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import type { RelayMessage } from "./types.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 const TEMPLATE_REL_PATH = "templates/relay/frame.txt";
 
@@ -35,8 +36,9 @@ export function resolveFrameTemplatePath(): string {
     try {
       readFileSync(candidate, "utf-8");
       return candidate;
-    } catch {
+    } catch (err) {
       // continue
+      noteSuppressed("other", err, "frame:38");
     }
     dir = dirname(dir);
   }

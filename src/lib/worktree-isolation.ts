@@ -18,6 +18,7 @@ import {
   rmdirSync,
 } from "fs";
 import { join, basename, dirname } from "path";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /** Result of creating a sub-worktree */
 export interface SubWorktreeInfo {
@@ -388,8 +389,9 @@ export function cleanupOrphanedSubWorktrees(issueWorktreePath: string): void {
     if (entries.length === 0) {
       rmdirSync(subDir);
     }
-  } catch {
+  } catch (err) {
     // Ignore errors during directory cleanup
+    noteSuppressed("other", err, "worktree-isolation:391");
   }
 }
 

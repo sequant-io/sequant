@@ -6,6 +6,7 @@ import { readdir } from "fs/promises";
 import { join } from "path";
 import { parse as parseYaml } from "yaml";
 import { readFile, fileExists } from "./fs.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 export interface SkillVersionInfo {
   name: string;
@@ -80,8 +81,9 @@ export async function getSkillVersions(
         updateAvailable,
       });
     }
-  } catch {
+  } catch (err) {
     // Ignore errors reading skills directory
+    noteSuppressed("other", err, "skill-version:83");
   }
 
   return results.sort((a, b) => a.name.localeCompare(b.name));

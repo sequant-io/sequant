@@ -16,6 +16,7 @@ import { cleanupStalePid, readPidFile } from "../lib/relay/pid.js";
 import { outboxPathFor } from "../lib/relay/paths.js";
 import { StateManager } from "../lib/workflow/state-manager.js";
 import type { IssueState } from "../lib/workflow/state-schema.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface PromptCommandOptions {
   type?: string;
@@ -160,8 +161,9 @@ export async function promptCommand(argsAndOptions: {
     if (issueState?.relay) {
       try {
         await stateManager.setRelayState(issueNumber, null);
-      } catch {
+      } catch (err) {
         /* swallow */
+        noteSuppressed("other", err, "prompt:163");
       }
     }
     if (options.json) {
@@ -206,8 +208,9 @@ export async function promptCommand(argsAndOptions: {
   // Increment relay messageCount in state.
   try {
     await stateManager.incrementRelayMessageCount(issueNumber, 1);
-  } catch {
+  } catch (err) {
     /* swallow */
+    noteSuppressed("other", err, "prompt:209");
   }
 
   // Re-fetch state with a fresh manager to bypass any cached snapshot from
@@ -325,13 +328,15 @@ async function waitForReply(
               ) {
                 return parsed.data;
               }
-            } catch {
+            } catch (err) {
               /* skip malformed */
+              noteSuppressed("other", err, "prompt:328");
             }
           }
         }
-      } catch {
+      } catch (err) {
         /* transient — try again */
+        noteSuppressed("other", err, "prompt:333");
       }
     }
     await new Promise((r) => setTimeout(r, options.pollIntervalMs));

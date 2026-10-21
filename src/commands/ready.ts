@@ -47,6 +47,7 @@ import {
   type ReadyPhaseRunner,
   type ReadyResult,
 } from "../lib/workflow/ready-gate.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface ReadyCommandOptions {
   policy?: string;
@@ -430,8 +431,9 @@ export async function readyCommand(
       });
     }
     await stateManager.updateIssueStatus(issueNumber, result.issueStatus);
-  } catch {
+  } catch (err) {
     // State persistence is non-fatal — the report is the primary output.
+    noteSuppressed("other", err, "ready:433");
   }
 
   // #929: one `source: "ready"` MetricRun per resolved gate pass. After the

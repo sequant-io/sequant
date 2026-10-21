@@ -13,6 +13,7 @@
 import { basename } from "path";
 import { spawnSync } from "child_process";
 import { fileExists, readFile } from "./fs.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /**
  * Result of project name detection
@@ -44,8 +45,9 @@ async function fromPackageJson(): Promise<string | null> {
     if (typeof pkg.name === "string" && pkg.name.trim()) {
       return pkg.name.trim();
     }
-  } catch {
+  } catch (err) {
     // Parse error or missing name field
+    noteSuppressed("other", err, "project-name:47");
   }
 
   return null;
@@ -69,8 +71,9 @@ async function fromCargoToml(): Promise<string | null> {
     if (match && match[1]) {
       return match[1].trim();
     }
-  } catch {
+  } catch (err) {
     // Parse error
+    noteSuppressed("other", err, "project-name:72");
   }
 
   return null;
@@ -102,8 +105,9 @@ async function fromPyprojectToml(): Promise<string | null> {
     if (poetryMatch && poetryMatch[1]) {
       return poetryMatch[1].trim();
     }
-  } catch {
+  } catch (err) {
     // Parse error
+    noteSuppressed("other", err, "project-name:105");
   }
 
   return null;
@@ -130,8 +134,9 @@ async function fromGoMod(): Promise<string | null> {
         return lastSegment;
       }
     }
-  } catch {
+  } catch (err) {
     // Parse error
+    noteSuppressed("other", err, "project-name:133");
   }
 
   return null;
@@ -164,8 +169,9 @@ function fromGitRemote(): string | null {
     if (httpsMatch && httpsMatch[1]) {
       return httpsMatch[1];
     }
-  } catch {
+  } catch (err) {
     // Git not available or not a git repo
+    noteSuppressed("other", err, "project-name:167");
   }
 
   return null;

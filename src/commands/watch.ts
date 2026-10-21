@@ -13,6 +13,7 @@ import { readPidFile } from "../lib/relay/pid.js";
 import { formatTimestamp } from "../lib/cli-ui/format.js";
 import { StateManager } from "../lib/workflow/state-manager.js";
 import { RelayResponseSchema, type RelayResponse } from "../lib/relay/types.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface WatchCommandOptions {
   json?: boolean;
@@ -70,8 +71,9 @@ function readNewLines(
         try {
           const parsed = RelayResponseSchema.safeParse(JSON.parse(line));
           if (parsed.success) replies.push(parsed.data);
-        } catch {
+        } catch (err) {
           /* skip malformed */
+          noteSuppressed("other", err, "watch:73");
         }
       }
       resolve(replies);
@@ -178,8 +180,9 @@ export async function watchCommand(argsAndOptions: {
     try {
       const replies = await readNewLines(outboxPath, tail);
       emit(replies);
-    } catch {
+    } catch (err) {
       /* transient — try again next tick */
+      noteSuppressed("other", err, "watch:181");
     }
 
     // Dead-relay detection (#645, Gap 3). Once we've seen a live pidfile, its
@@ -190,8 +193,9 @@ export async function watchCommand(argsAndOptions: {
       try {
         const finalReplies = await readNewLines(outboxPath, tail);
         emit(finalReplies);
-      } catch {
+      } catch (err) {
         /* swallow */
+        noteSuppressed("other", err, "watch:193");
       }
       stop("relay-ended");
       break;
@@ -204,8 +208,9 @@ export async function watchCommand(argsAndOptions: {
   if (watcher) {
     try {
       watcher.close();
-    } catch {
+    } catch (err) {
       /* swallow */
+      noteSuppressed("other", err, "watch:207");
     }
   }
   void useWatcher; // currently unused beyond best-effort init

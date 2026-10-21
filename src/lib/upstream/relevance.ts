@@ -14,6 +14,7 @@ import type {
   FindingCategory,
   ImpactLevel,
 } from "./types.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 /**
  * Default detection patterns for categorizing changes
@@ -249,8 +250,9 @@ export function listShippedSkillNames(
           e.isDirectory() && !e.name.startsWith("_") && e.name !== "references",
       )
       .map((e) => e.name);
-  } catch {
+  } catch (err) {
     // reported below
+    noteSuppressed("other", err, "relevance:252");
   }
   if (names.length === 0) {
     console.warn(

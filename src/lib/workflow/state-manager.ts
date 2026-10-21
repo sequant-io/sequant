@@ -45,6 +45,7 @@ import {
 } from "./state-schema.js";
 import { getSettings } from "../settings.js";
 import type { ScopeAssessment } from "../scope/types.js";
+import { noteSuppressed } from "./suppressed.js";
 
 export interface StateManagerOptions {
   /** Path to state file (default: .sequant/state.json) */
@@ -121,8 +122,9 @@ export class StateManager {
             // Stale lock — remove and retry
             try {
               fs.unlinkSync(lockPath);
-            } catch {
+            } catch (err) {
               // Another process may have removed it
+              noteSuppressed("state", err, "state-manager:124");
             }
             continue;
           }
@@ -147,8 +149,9 @@ export class StateManager {
   private releaseLock(lockPath: string): void {
     try {
       fs.unlinkSync(lockPath);
-    } catch {
+    } catch (err) {
       // Ignore — lock may have been cleaned up by stale detection
+      noteSuppressed("state", err, "state-manager:150");
     }
   }
 
@@ -230,8 +233,9 @@ export class StateManager {
           `State: Pruned ${pruned.length} expired issue(s): ${pruned.map((k) => `#${k}`).join(", ")}`,
         );
       }
-    } catch {
+    } catch (err) {
       // Settings read failure should not block state writes
+      noteSuppressed("state", err, "state-manager:233");
     }
 
     // Ensure directory exists

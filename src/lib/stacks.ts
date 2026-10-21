@@ -13,6 +13,7 @@ import {
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { fileExists, readFile } from "./fs.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /**
  * Detected stack with location information
@@ -855,8 +856,9 @@ export async function detectStack(): Promise<string | null> {
       if (deps["@sveltejs/kit"]) return "sveltekit";
       if (deps["@remix-run/react"]) return "remix";
       if (deps.nuxt) return "nuxt";
-    } catch {
+    } catch (err) {
       // Ignore parse errors
+      noteSuppressed("other", err, "stacks:858");
     }
   }
 
@@ -938,8 +940,9 @@ export async function detectStackInDirectory(
       if (deps["@sveltejs/kit"]) return "sveltekit";
       if (deps["@remix-run/react"]) return "remix";
       if (deps.nuxt) return "nuxt";
-    } catch {
+    } catch (err) {
       // Ignore parse errors
+      noteSuppressed("other", err, "stacks:941");
     }
   }
 
@@ -1009,8 +1012,9 @@ export async function detectAllStacks(): Promise<DetectedStack[]> {
         }
       }
     }
-  } catch {
+  } catch (err) {
     // Directory read failed, return what we have
+    noteSuppressed("other", err, "stacks:1012");
   }
 
   return results;
@@ -1041,8 +1045,9 @@ export function detectTestRunner(
     const deps = { ...pkg.dependencies, ...pkg.devDependencies };
     if (deps.vitest) return "vitest";
     if (deps.jest) return "jest";
-  } catch {
+  } catch (err) {
     // no package.json, or unreadable: not a JS project
+    noteSuppressed("other", err, "stacks:1044");
   }
   return null;
 }

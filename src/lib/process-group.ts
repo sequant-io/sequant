@@ -7,6 +7,7 @@
  */
 
 import type { ChildProcess } from "child_process";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /**
  * Grace before the drivers escalate a timed-out or aborted agent to SIGKILL.
@@ -75,8 +76,9 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
       // than a run that ignores its timeout.
       try {
         process.kill(pid, signal);
-      } catch {
+      } catch (err) {
         // Already gone.
+        noteSuppressed("other", err, "process-group:78");
       }
     }
   }

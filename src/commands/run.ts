@@ -16,6 +16,7 @@ import {
   resolveTuiEnabled,
   warnDeprecatedFlags,
 } from "./run-flags.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 // Re-export public API for backwards compatibility
 export * from "./run-compat.js";
@@ -49,8 +50,9 @@ export async function runCommand(
         );
         console.log("");
       }
-    } catch {
+    } catch (err) {
       /* non-critical */
+      noteSuppressed("other", err, "run:52");
     }
   }
 

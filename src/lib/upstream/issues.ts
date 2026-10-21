@@ -22,6 +22,7 @@ import {
   FINDING_EXTRA_LABELS,
   generateFindingIssue,
 } from "./report.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 /**
  * Regex pattern for valid GitHub owner/repo names
@@ -210,8 +211,9 @@ export async function createIssue(
     // Clean up temp file
     try {
       await unlink(tempFile);
-    } catch {
+    } catch (err) {
       // Ignore cleanup errors
+      noteSuppressed("other", err, "issues:213");
     }
   }
 }
@@ -251,8 +253,9 @@ export async function addIssueComment(
     // Clean up temp file
     try {
       await unlink(tempFile);
-    } catch {
+    } catch (err) {
       // Ignore cleanup errors
+      noteSuppressed("other", err, "issues:254");
     }
   }
 }
