@@ -1,0 +1,17 @@
+{
+  "command": "gh pr view 1563 --json headRefOid -q .headRefOid --repo sequant-io/sequant",
+  "args": [
+    "pr",
+    "view",
+    "1563",
+    "--json",
+    "headRefOid",
+    "-q",
+    ".headRefOid"
+  ],
+  "capturedAt": "2026-10-20T14:10:39.167Z",
+  "exitCode": 0,
+  "stdout": "80e63c3f1bf6c38b8b5c734432bffb1ed06e4cfe\n",
+  "stderr": "",
+  "provenance": "captured"
+}

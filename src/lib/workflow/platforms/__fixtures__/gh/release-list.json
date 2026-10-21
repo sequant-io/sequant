@@ -1,0 +1,18 @@
+{
+  "command": "gh release list --repo sequant-io/sequant --limit 3 --json tagName,publishedAt",
+  "args": [
+    "release",
+    "list",
+    "--repo",
+    "sequant-io/sequant",
+    "--limit",
+    "3",
+    "--json",
+    "tagName,publishedAt"
+  ],
+  "capturedAt": "2026-10-20T14:10:41.333Z",
+  "exitCode": 0,
+  "stdout": "[{\"publishedAt\":\"2026-10-19T01:38:24Z\",\"tagName\":\"v2.20.0\"},{\"publishedAt\":\"2026-10-02T03:13:00Z\",\"tagName\":\"v2.19.0\"},{\"publishedAt\":\"2026-09-26T18:20:11Z\",\"tagName\":\"v2.18.0\"}]\n",
+  "stderr": "",
+  "provenance": "captured"
+}

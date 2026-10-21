@@ -1,0 +1,16 @@
+{
+  "command": "gh pr comment 1563 --body <*>",
+  "args": [
+    "pr",
+    "comment",
+    "1563",
+    "--body",
+    "<*>"
+  ],
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "HTTP 502: Bad Gateway (https://api.github.com/graphql)\n",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}
