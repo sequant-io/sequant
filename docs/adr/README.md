@@ -74,3 +74,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0016](0016-external-pr-overlap-as-separate-check.md) | Report open-PR overlap as a separate, non-blocking merge check | Accepted |
 | [0017](0017-worktree-required-contract.md) | An issue context says whether a worktree is required; a failed worktree add fails the issue | Accepted |
 | [0018](0018-suppressed-error-counter.md) | Dropped errors are counted by a module-level counter that the run log persists | Proposed |
+| [0019](0019-gh-runner-seam-and-fixture-replay.md) | Every `gh` call goes through one runner seam; tests replay captured output through it | Proposed |

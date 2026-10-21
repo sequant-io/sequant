@@ -326,7 +326,7 @@ export async function runMergeChecks(
 
   // Post to GitHub if requested
   if (options.post) {
-    postReportToGitHub(report);
+    await postReportToGitHub(report, ghProvider);
   }
 
   return report;

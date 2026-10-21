@@ -1,0 +1,21 @@
+{
+  "command": "gh pr create --title <*> --body <*> --head <*> --base <*>",
+  "args": [
+    "pr",
+    "create",
+    "--title",
+    "<*>",
+    "--body",
+    "<*>",
+    "--head",
+    "<*>",
+    "--base",
+    "<*>"
+  ],
+  "exitCode": 0,
+  "stdout": "https://github.com/sequant-io/sequant/pull/1563\n",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

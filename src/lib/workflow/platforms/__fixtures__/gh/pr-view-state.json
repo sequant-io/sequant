@@ -1,0 +1,17 @@
+{
+  "command": "gh pr view 1563 --json state -q .state --repo sequant-io/sequant",
+  "args": [
+    "pr",
+    "view",
+    "1563",
+    "--json",
+    "state",
+    "-q",
+    ".state"
+  ],
+  "capturedAt": "2026-10-20T14:10:38.220Z",
+  "exitCode": 0,
+  "stdout": "MERGED\n",
+  "stderr": "",
+  "provenance": "captured"
+}

@@ -1,0 +1,22 @@
+{
+  "command": "gh issue list --repo sequant-io/sequant --label planned --search PlatformProvider --json number,title --limit 5",
+  "args": [
+    "issue",
+    "list",
+    "--repo",
+    "sequant-io/sequant",
+    "--label",
+    "planned",
+    "--search",
+    "PlatformProvider",
+    "--json",
+    "number,title",
+    "--limit",
+    "5"
+  ],
+  "capturedAt": "2026-10-20T14:11:00.537Z",
+  "exitCode": 0,
+  "stdout": "[{\"number\":1506,\"title\":\"refactor(platform): every gh call goes through PlatformProvider; FakeGitHubProvider replays captured gh output so no test fakes gh through child_process\"}]\n",
+  "stderr": "",
+  "provenance": "captured"
+}
