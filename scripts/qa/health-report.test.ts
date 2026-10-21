@@ -93,3 +93,40 @@ describe("health-report --check ratchet", () => {
     expect(compare(cur, base)).toEqual({ raised: [], lowered: [] });
   });
 });
+
+describe("prose gate", () => {
+  // The fixture bodies are built with S so this file holds no literal skill file name.
+  const S = "SKILL" + ".md";
+  const proseFiles = (): number => collectMetrics(root, {}).proseGate.files;
+
+  it("counts a file that reads a skill file and asserts on its text", () => {
+    put("src/gate.test.ts", `const t = readFileSync(join(dir, "qa", "${S}"), "utf8");\nexpect(t).toContain("x");\n`);
+    put(
+      "src/via-var.test.ts",
+      `const P = join(dir, "${S}");\nconst t = fs.readFileSync(P, "utf8");\nexpect(t).toMatch(/x/);\n`,
+    );
+    put("src/via-roots.test.ts", `for (const r of SKILL_ROOTS) read(r);\nexpect(t).toContain("x");\n`);
+    expect(proseFiles()).toBe(3);
+  }, T);
+
+  it("does not count a file that names the skill file only in a comment or a path string", () => {
+    put("src/comment.test.ts", `// reads ${S} elsewhere\nexpect(out).toContain("x");\n`);
+    put("src/path.test.ts", `const p = "docs/${S}";\nexpect(run(p)).toContain("${S}");\n`);
+    put("src/fixture.test.ts", `writeFileSync(join(dir, "${S}"), "# s");\nexpect(out).toMatch(/ok/);\n`);
+    put(
+      "src/scratch.test.ts",
+      `const P = ".claude/skills/demo/${S}";\nconst t = await readFile(join(tmp, P), "utf8");\nexpect(t).toContain("x");\n`,
+    );
+    expect(proseFiles()).toBe(0);
+  }, T);
+
+  it("does not count a file whose only SKILL_ROOTS is inside a string", () => {
+    put("src/roots-string.test.ts", `const msg = "iterates SKILL_ROOTS";\nexpect(run()).toContain(msg);\n`);
+    expect(proseFiles()).toBe(0);
+  }, T);
+
+  it("does not count a file that reads a skill file but asserts nothing on it", () => {
+    put("src/no-assert.test.ts", `const t = readFileSync(join(dir, "${S}"), "utf8");\nexpect(t.length).toBe(3);\n`);
+    expect(proseFiles()).toBe(0);
+  }, T);
+});

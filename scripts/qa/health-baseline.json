@@ -60,8 +60,8 @@
   "childProcessMockFiles": 31,
   "ghCallFilesOutsideProvider": 3,
   "proseGate": {
-    "files": 63,
-    "lines": 29533
+    "files": 30,
+    "lines": 7374
   },
   "testRatio28d": {
     "sum": 2.17,
