@@ -6,6 +6,7 @@ import chalk from "chalk";
 import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { join, dirname } from "path";
+import { existsSync } from "fs";
 import { readdir, mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { ui, colors } from "../lib/cli-ui.js";
@@ -601,6 +602,41 @@ export async function writeCodexConfig(targetDir = "."): Promise<string> {
   return configPath;
 }
 
+/** Template and destination of the issue form (#1528). */
+export const ISSUE_FORM_TEMPLATE =
+  "templates/github/ISSUE_TEMPLATE/sequant-task.yml";
+const ISSUE_FORM_DIR = join(".github", "ISSUE_TEMPLATE");
+const ISSUE_FORM_FILE = "sequant-task.yml";
+
+export interface IssueFormOutcome {
+  written: boolean;
+  line: string;
+}
+
+/**
+ * Write the issue form into `.github/ISSUE_TEMPLATE/` when that directory is
+ * absent. A directory that exists is never touched. Returns the one line to
+ * print (#1528).
+ */
+export async function writeIssueFormIfAbsent(
+  targetDir = ".",
+): Promise<IssueFormOutcome> {
+  const dir = join(targetDir, ISSUE_FORM_DIR);
+  if (existsSync(dir)) {
+    return {
+      written: false,
+      line: `Issue form skipped: ${ISSUE_FORM_DIR}/ already exists (left untouched)`,
+    };
+  }
+  await ensureDir(dir);
+  const formPath = join(dir, ISSUE_FORM_FILE);
+  await writeFile(formPath, await getTemplateContent(ISSUE_FORM_TEMPLATE));
+  return {
+    written: true,
+    line: `Wrote ${join(ISSUE_FORM_DIR, ISSUE_FORM_FILE)} (issue form with an Acceptance Criteria field)`,
+  };
+}
+
 /**
  * Provision everything `sequant init --agent codex` needs to reach sequant's
  * skills and hook guards (#1059): the `.agents/skills` symlink plus
@@ -615,148 +651,12 @@ export async function writeCodexProvisioning(
   return { symlinkStatus, configPath };
 }
 
-export async function initCommand(options: InitOptions): Promise<void> {
-  // Fail loudly on a missing templates root before any prompt or write, so a
-  // broken install can never half-provision a project. Placed ahead of the
-  // --upgrade-skills branch, which reads the same directory (#822).
-  try {
-    await assertTemplatesDirExists();
-  } catch (error) {
-    console.log(chalk.red(`❌ ${(error as Error).message}`));
-    process.exitCode = 1;
-    return;
-  }
-
-  // Handle --upgrade-skills: update skill files from installed package templates
-  if (options.upgradeSkills) {
-    await upgradeSkills();
-    return;
-  }
-
-  // Handle --manifest-only: write just the manifest `sequant run` needs and
-  // stop — no directories, templates, or settings touched (#1209 AC-2).
-  if (options.manifestOnly) {
-    const existing = await getManifest();
-    if (existing) {
-      console.log(
-        chalk.yellow(
-          "Manifest already exists — left untouched: .sequant-manifest.json",
-        ),
-      );
-      return;
-    }
-    const stack = options.stack ?? (await detectStack()) ?? "generic";
-    const packageManager = await detectPackageManager();
-    // Record an empty install scope: nothing is installed yet, so a later
-    // `sync --only skills` scopes drift to what it wrote (#1409).
-    await createManifest(stack, packageManager ?? undefined, { groups: [] });
-    console.log(
-      chalk.green(`✔ Created .sequant-manifest.json (stack: ${stack})`),
-    );
-    return;
-  }
-
-  // Show banner
-  console.log(ui.banner());
-  console.log(colors.success("\nInitializing Sequant...\n"));
-
-  // Determine if we should use interactive mode
-  const useInteractive = shouldUseInteractiveMode(options.interactive);
-  const skipPrompts = options.yes || !useInteractive;
-
-  // Show non-interactive mode message if applicable
-  if (!useInteractive && !options.yes) {
-    const reason = getNonInteractiveReason();
-    console.log(
-      chalk.yellow(
-        `⚡ Non-interactive mode detected${reason ? ` (${reason})` : ""}`,
-      ),
-    );
-    console.log(
-      chalk.gray("   Using defaults. Use --interactive to force prompts.\n"),
-    );
-  }
-
-  // Check dependencies and run setup wizard if needed
-  const depCheckResult = checkAllDependencies();
-  let wizardRemainingIssues: string[] = [];
-
-  if (
-    shouldRunSetupWizard({ skipSetup: options.skipSetup, yes: options.yes })
-  ) {
-    // Display dependency status
-    displayDependencyStatus(depCheckResult);
-
-    // Run wizard if there are missing required dependencies
-    if (depCheckResult.hasMissing) {
-      const wizardResult = await runSetupWizard(depCheckResult, {
-        skipPrompts,
-      });
-      wizardRemainingIssues = wizardResult.remainingIssues;
-    }
-  } else if (options.skipSetup) {
-    // User explicitly skipped - show brief status
-    console.log(
-      chalk.gray("Skipping dependency setup wizard (--skip-setup)\n"),
-    );
-  }
-
-  // Fall back to legacy warning system for any remaining issues
-  const { warnings, suggestions } = checkPrerequisites();
-
-  // Only show warnings if wizard didn't already handle them or if there are remaining issues
-  if (
-    wizardRemainingIssues.length > 0 ||
-    (options.skipSetup && warnings.length > 0)
-  ) {
-    if (wizardRemainingIssues.length > 0) {
-      console.log(chalk.yellow("!  Remaining setup issues:\n"));
-      for (const issue of wizardRemainingIssues) {
-        console.log(chalk.yellow(`   • ${issue}`));
-      }
-      console.log();
-    } else if (warnings.length > 0) {
-      console.log(chalk.yellow("!  Prerequisites:\n"));
-      for (const warning of warnings) {
-        console.log(chalk.yellow(`   • ${warning}`));
-      }
-      for (const suggestion of suggestions.filter(
-        (s) => !s.startsWith("Optional"),
-      )) {
-        console.log(chalk.gray(`     ${suggestion}`));
-      }
-      console.log();
-    }
-  }
-
-  // Check if already initialized
-  const configExists = await fileExists(".claude/settings.json");
-  if (configExists && !options.force) {
-    console.log(
-      chalk.yellow(
-        "!  Sequant appears to be already initialized (.claude/settings.json exists)",
-      ),
-    );
-    console.log(chalk.gray("   Use --force to reinitialize\n"));
-
-    if (!skipPrompts) {
-      const { proceed } = await inquirer.prompt([
-        {
-          type: "confirm",
-          name: "proceed",
-          message: "Continue anyway?",
-          default: false,
-        },
-      ]);
-      if (!proceed) {
-        console.log(chalk.gray("Aborted."));
-        return;
-      }
-    }
-  }
-
-  // Detect or prompt for stack
-  let stack = options.stack;
+/** Detect the project stack(s), prompting unless `skipPrompts` is set. */
+async function resolveStacks(
+  optionStack: string | undefined,
+  skipPrompts: boolean,
+): Promise<{ stack: string | undefined; additionalStacks: string[] }> {
+  let stack = optionStack;
   let additionalStacks: string[] = [];
 
   if (!stack) {
@@ -873,6 +773,524 @@ export async function initCommand(options: InitOptions): Promise<void> {
       }
     }
   }
+  return { stack, additionalStacks };
+}
+
+/** #862: per-phase command wrappers, subagents, hook shim and MCP entry. */
+async function provisionOpencode(): Promise<void> {
+  const opencodeSpinner = ui.spinner("Writing opencode command wrappers...");
+  opencodeSpinner.start();
+  try {
+    const phases = await writeOpencodeCommands();
+    const agents = await writeOpencodeAgents();
+    await writeOpencodePlugin();
+    await writeOpencodeMcpConfig();
+    opencodeSpinner.succeed(
+      `Wrote ${phases.length} opencode command wrappers, ${agents.length} subagent definitions, the hook shim plugin, and the MCP entry`,
+    );
+  } catch (err) {
+    opencodeSpinner.fail(
+      `Could not write opencode provisioning: ${(err as Error).message}`,
+    );
+  }
+
+  // The guards only reach a phase worktree if `.opencode/` is committed —
+  // git worktrees carry tracked files only.
+  console.log(
+    chalk.yellow(
+      "\n⚠️  Commit .opencode/ so worktree phases inherit the hook guards:\n" +
+        '    git add .opencode && git commit -m "chore: add opencode provisioning"',
+    ),
+  );
+}
+
+/** #1059: `.agents/skills` symlink and `.codex/config.toml` hook wrapper. */
+async function provisionCodex(force: boolean | undefined): Promise<void> {
+  const codexSpinner = ui.spinner("Writing codex provisioning...");
+  codexSpinner.start();
+  try {
+    const { symlinkStatus, configPath } = await writeCodexProvisioning(
+      ".",
+      force,
+    );
+    if (symlinkStatus === "unsupported") {
+      codexSpinner.warn(
+        `Could not create the .agents/skills symlink (symlinks need elevated privileges or Developer Mode on Windows) - codex will not discover sequant's skills until it exists. Wrote ${configPath}`,
+      );
+    } else if (symlinkStatus === "skipped-foreign") {
+      codexSpinner.warn(
+        `.agents/skills exists and is not the expected symlink - skipped (use --force to overwrite; a real directory is never replaced). Wrote ${configPath}`,
+      );
+    } else if (symlinkStatus === "already-correct") {
+      // Report the no-op as a no-op: claiming "Symlinked ..." on an
+      // idempotent re-run tells the user work happened that did not.
+      codexSpinner.succeed(
+        `.agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} already in place; wrote ${configPath}`,
+      );
+    } else {
+      codexSpinner.succeed(
+        `Symlinked .agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} and wrote ${configPath}`,
+      );
+    }
+  } catch (err) {
+    codexSpinner.fail(
+      `Could not write codex provisioning: ${(err as Error).message}`,
+    );
+  }
+
+  // #1059 AC-5: codex only loads project-layer hooks (.codex/config.toml)
+  // when the project is marked trusted in the USER config
+  // (~/.codex/config.toml) — silently skipped otherwise, no error.
+  console.log(
+    chalk.yellow(
+      "\n⚠️  Codex only loads these hooks once the project is trusted in " +
+        "~/.codex/config.toml:\n" +
+        `    [projects."${process.cwd()}"]\n` +
+        `    ${CODEX_TRUST_LEVEL_TOML}\n`,
+    ),
+  );
+  console.log(
+    chalk.yellow(
+      "⚠️  Commit .codex/ and .agents/ so worktree phases inherit the hook guards:\n" +
+        '    git add .codex .agents && git commit -m "chore: add codex provisioning"',
+    ),
+  );
+}
+
+type CopyTemplatesResult = Awaited<ReturnType<typeof copyTemplates>>;
+
+/** Report symlink status for scripts/dev. */
+function reportSymlinks(
+  scriptsSymlinked: CopyTemplatesResult["scriptsSymlinked"],
+  symlinkResults: CopyTemplatesResult["symlinkResults"],
+  noSymlinks: boolean | undefined,
+): void {
+  if (scriptsSymlinked) {
+    ui.printStatus("success", "Created symlinks for scripts/dev/");
+  } else if (!noSymlinks && symlinkResults) {
+    // Some symlinks may have fallen back to copies
+    const fallbacks = symlinkResults.filter((r) => r.fallbackToCopy);
+    if (fallbacks.length > 0) {
+      console.log(
+        chalk.yellow("!  Some scripts were copied instead of symlinked:"),
+      );
+      for (const fb of fallbacks) {
+        console.log(chalk.gray(`   ${fb.path}: ${fb.reason}`));
+      }
+    }
+    // Directory collisions are announced above with their own message.
+    const skipped = symlinkResults.filter(
+      (r) => r.skipped && !r.directoryCollision,
+    );
+    if (skipped.length > 0) {
+      console.log(
+        chalk.yellow("!  Some scripts were skipped (existing files found):"),
+      );
+      for (const s of skipped) {
+        console.log(chalk.gray(`   ${s.path}: ${s.reason}`));
+      }
+    }
+  }
+}
+
+/** Generate AGENTS.md (unless --no-agents-md). */
+async function writeAgentsMdForInit(
+  options: InitOptions,
+  stack: string,
+): Promise<void> {
+  // A hand-written (unmarked or hash-mismatched) AGENTS.md is user-owned:
+  // re-running init must not replace it, the same rule `sync` applies (#990).
+  // Only `--force` overrides. Found by the downstream canary (#1098).
+  const agentsDecision =
+    options.agentsMd !== false
+      ? decideAgentsMdSync({
+          enabled: true,
+          existingContent: await readAgentsMd(),
+          force: options.force === true,
+        })
+      : "skipped (--no-agents-md)";
+  if (agentsDecision === "preserved") {
+    console.log(
+      chalk.blue(
+        `  preserved: ${AGENTS_MD_PATH} — user-owned (run \`init --force\` to replace)`,
+      ),
+    );
+  } else if (options.agentsMd !== false) {
+    const agentsSpinner = ui.spinner("Generating AGENTS.md...");
+    agentsSpinner.start();
+    try {
+      const stackConfig = getStackConfig(stack);
+      const { getProjectName } = await import("../lib/project-name.js");
+      const projectName = await getProjectName();
+      const agentsMdContent = await generateAgentsMd({
+        projectName,
+        stack: stack,
+        buildCommand: stackConfig.variables.BUILD_COMMAND,
+        testCommand: stackConfig.variables.TEST_COMMAND,
+        lintCommand: stackConfig.variables.LINT_COMMAND,
+      });
+      await writeAgentsMd(agentsMdContent);
+      agentsSpinner.succeed("Generated AGENTS.md");
+    } catch {
+      agentsSpinner.warn("Could not generate AGENTS.md (non-blocking)");
+    }
+  } else {
+    console.log(chalk.gray("Skipping AGENTS.md generation (--no-agents-md)"));
+  }
+}
+
+/** Create `.mcp.json` and offer the MCP server to detected global clients. */
+async function configureMcp(
+  skipPrompts: boolean,
+  mcp: boolean | undefined,
+): Promise<void> {
+  // Create .mcp.json for Claude Code (always, regardless of --mcp flag)
+  const { createProjectMcpJson, detectMcpClients, addSequantToMcpConfig } =
+    await import("../lib/mcp-config.js");
+  const mcpJsonResult = createProjectMcpJson();
+  if (mcpJsonResult.created) {
+    ui.printStatus("success", "Created .mcp.json (Claude Code MCP config)");
+  } else if (mcpJsonResult.merged) {
+    ui.printStatus("success", "Added Sequant to existing .mcp.json");
+  } else if (mcpJsonResult.corrupt) {
+    // Report the skip rather than silently replacing the user's file (#1123)
+    // — the same "report the decision" precedent as the AGENTS.md skip above.
+    console.log(
+      chalk.yellow(
+        "⚠  .mcp.json is not valid JSON — left untouched. Fix it manually, then re-run init to add Sequant.",
+      ),
+    );
+  } else {
+    console.log(
+      chalk.gray("   .mcp.json: sequant already configured (skipped)"),
+    );
+  }
+
+  // Offer MCP server configuration for detected clients (global configs)
+  const mcpClients = detectMcpClients();
+  const detectedClients = mcpClients.filter((c) => c.exists);
+
+  if (detectedClients.length > 0) {
+    console.log(
+      chalk.blue(
+        `\nDetected ${detectedClients.length} MCP-compatible client(s):`,
+      ),
+    );
+    for (const client of detectedClients) {
+      console.log(chalk.gray(`   • ${client.name}`));
+    }
+
+    let addMcp: boolean;
+    if (skipPrompts) {
+      // --yes alone skips MCP config; --yes --mcp explicitly opts in
+      addMcp = !!mcp;
+      if (!addMcp) {
+        console.log(
+          chalk.gray(
+            "   Skipping MCP config (use --mcp to auto-add in non-interactive mode)",
+          ),
+        );
+      }
+    } else {
+      const { confirm } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message:
+            "Add Sequant MCP server to detected clients? (enables AI tools to use Sequant)",
+          default: true,
+        },
+      ]);
+      addMcp = confirm;
+    }
+
+    if (addMcp) {
+      for (const client of detectedClients) {
+        const added = addSequantToMcpConfig(
+          client.configPath,
+          client.clientType,
+        );
+        if (added) {
+          ui.printStatus("success", `Added Sequant MCP to ${client.name}`);
+        } else {
+          console.log(
+            chalk.gray(`   ${client.name}: already configured (skipped)`),
+          );
+        }
+      }
+    }
+  }
+}
+
+/** Check dependencies, run the setup wizard if needed, and report what is left. */
+async function checkPrerequisitesAndSetup(
+  options: InitOptions,
+  skipPrompts: boolean,
+): Promise<{
+  warnings: string[];
+  suggestions: string[];
+  wizardRemainingIssues: string[];
+}> {
+  const depCheckResult = checkAllDependencies();
+  let wizardRemainingIssues: string[] = [];
+
+  if (
+    shouldRunSetupWizard({ skipSetup: options.skipSetup, yes: options.yes })
+  ) {
+    // Display dependency status
+    displayDependencyStatus(depCheckResult);
+
+    // Run wizard if there are missing required dependencies
+    if (depCheckResult.hasMissing) {
+      const wizardResult = await runSetupWizard(depCheckResult, {
+        skipPrompts,
+      });
+      wizardRemainingIssues = wizardResult.remainingIssues;
+    }
+  } else if (options.skipSetup) {
+    // User explicitly skipped - show brief status
+    console.log(
+      chalk.gray("Skipping dependency setup wizard (--skip-setup)\n"),
+    );
+  }
+
+  // Fall back to legacy warning system for any remaining issues
+  const { warnings, suggestions } = checkPrerequisites();
+
+  // Only show warnings if wizard didn't already handle them or if there are remaining issues
+  if (
+    wizardRemainingIssues.length > 0 ||
+    (options.skipSetup && warnings.length > 0)
+  ) {
+    if (wizardRemainingIssues.length > 0) {
+      console.log(chalk.yellow("!  Remaining setup issues:\n"));
+      for (const issue of wizardRemainingIssues) {
+        console.log(chalk.yellow(`   • ${issue}`));
+      }
+      console.log();
+    } else if (warnings.length > 0) {
+      console.log(chalk.yellow("!  Prerequisites:\n"));
+      for (const warning of warnings) {
+        console.log(chalk.yellow(`   • ${warning}`));
+      }
+      for (const suggestion of suggestions.filter(
+        (s) => !s.startsWith("Optional"),
+      )) {
+        console.log(chalk.gray(`     ${suggestion}`));
+      }
+      console.log();
+    }
+  }
+
+  return { warnings, suggestions, wizardRemainingIssues };
+}
+
+/** Show what init will create. */
+function printPlannedFiles(agentsMd: boolean): void {
+  console.log(chalk.gray("\nWill create:"));
+  console.log(chalk.gray("  .claude/"));
+  console.log(chalk.gray("  ├── skills/         (workflow skills)"));
+  console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
+  console.log(chalk.gray("  ├── memory/         (constitution & context)"));
+  console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
+  console.log(chalk.gray("  .sequant/"));
+  console.log(chalk.gray("  ├── settings.json   (run preferences)"));
+  console.log(chalk.gray("  └── logs/           (workflow run logs)"));
+  console.log(chalk.gray("  scripts/dev/"));
+  console.log(chalk.gray("  └── *.sh            (worktree helpers)"));
+  if (agentsMd) {
+    console.log(
+      chalk.gray("  AGENTS.md           (universal agent instructions)"),
+    );
+  }
+  console.log(
+    chalk.gray("  .mcp.json           (Claude Code MCP server config)"),
+  );
+}
+
+/**
+ * Report the settings decision, then detect codebase conventions. The
+ * `settings.reference.md` write stays in `initCommand`: the ownership-policy
+ * registry in `templates.test.ts` keys write sites by enclosing function.
+ */
+async function reportSettingsAndDetectConventions(
+  settingsSpinner: ReturnType<typeof ui.spinner>,
+  settingsResult: Awaited<ReturnType<typeof createDefaultSettings>>,
+): Promise<void> {
+  settingsSpinner.succeed(
+    settingsResult.action === "created"
+      ? "Created default settings + reference doc"
+      : "Preserved existing settings + wrote reference doc",
+  );
+  // Report the decision rather than succeeding silently over the user's file
+  // (#1071 AC-4). The spinner text is not enough — it is swallowed under
+  // --json and in non-TTY runs, and the whole point of the bug was that the
+  // overwrite happened with no mention anywhere.
+  if (settingsResult.action !== "created") {
+    const changed = settingsResult.updatedKeys.length
+      ? ` (updated only ${settingsResult.updatedKeys.join(", ")})`
+      : "";
+    console.log(
+      chalk.blue(
+        `📋 Preserved existing ${settingsResult.path}${changed} — use --force to replace it with defaults`,
+      ),
+    );
+  }
+  if (settingsResult.warning) {
+    console.log(chalk.yellow(`⚠  ${settingsResult.warning}`));
+  }
+
+  // Detect codebase conventions
+  const conventionsSpinner = ui.spinner("Detecting codebase conventions...");
+  conventionsSpinner.start();
+  try {
+    const conventions = await detectAndSaveConventions(process.cwd());
+    const count = Object.keys(conventions.detected).length;
+    conventionsSpinner.succeed(`Detected ${count} codebase conventions`);
+  } catch {
+    conventionsSpinner.warn("Could not detect conventions (non-blocking)");
+  }
+}
+
+/** Print the success box, next steps, and any optional/prerequisite reminders. */
+async function printSuccess(
+  suggestions: string[],
+  wizardRemainingIssues: string[],
+  warnings: string[],
+): Promise<void> {
+  // Build optional suggestions section
+  const optionalSuggestions = suggestions.filter((s) =>
+    s.startsWith("Optional"),
+  );
+  const optionalSection =
+    optionalSuggestions.length > 0
+      ? `\n${chalk.bold("Optional improvements:")}\n${optionalSuggestions.map((s) => `  • ${s.replace("Optional: ", "")}`).join("\n")}\n`
+      : "";
+
+  // Build prerequisites reminder if there were remaining issues from wizard or warnings
+  const hasRemainingIssues =
+    wizardRemainingIssues.length > 0 || warnings.length > 0;
+  const prereqReminder = hasRemainingIssues
+    ? `\n${chalk.yellow("!  Remember to install missing dependencies before using issue workflows.")}\n${chalk.gray("   Run 'sequant doctor' to verify your setup.\n")}`
+    : "";
+
+  // Success message with boxed output
+  const nextStepsContent = buildNextSteps(await resolveCommitPaths());
+
+  console.log(
+    "\n" + ui.successBox("Sequant initialized successfully!", nextStepsContent),
+  );
+
+  if (prereqReminder) {
+    console.log(prereqReminder);
+  }
+
+  if (optionalSection) {
+    console.log(optionalSection);
+  }
+
+  console.log(
+    chalk.gray(
+      "\nDocumentation: https://github.com/sequant-io/sequant#readme\n",
+    ),
+  );
+}
+
+export async function initCommand(options: InitOptions): Promise<void> {
+  // Fail loudly on a missing templates root before any prompt or write, so a
+  // broken install can never half-provision a project. Placed ahead of the
+  // --upgrade-skills branch, which reads the same directory (#822).
+  try {
+    await assertTemplatesDirExists();
+  } catch (error) {
+    console.log(chalk.red(`❌ ${(error as Error).message}`));
+    process.exitCode = 1;
+    return;
+  }
+
+  // Handle --upgrade-skills: update skill files from installed package templates
+  if (options.upgradeSkills) {
+    await upgradeSkills();
+    return;
+  }
+
+  // Handle --manifest-only: write just the manifest `sequant run` needs and
+  // stop — no directories, templates, or settings touched (#1209 AC-2).
+  if (options.manifestOnly) {
+    const existing = await getManifest();
+    if (existing) {
+      console.log(
+        chalk.yellow(
+          "Manifest already exists — left untouched: .sequant-manifest.json",
+        ),
+      );
+      return;
+    }
+    const stack = options.stack ?? (await detectStack()) ?? "generic";
+    const packageManager = await detectPackageManager();
+    // Record an empty install scope: nothing is installed yet, so a later
+    // `sync --only skills` scopes drift to what it wrote (#1409).
+    await createManifest(stack, packageManager ?? undefined, { groups: [] });
+    console.log(
+      chalk.green(`✔ Created .sequant-manifest.json (stack: ${stack})`),
+    );
+    return;
+  }
+
+  // Show banner
+  console.log(ui.banner());
+  console.log(colors.success("\nInitializing Sequant...\n"));
+
+  // Determine if we should use interactive mode
+  const useInteractive = shouldUseInteractiveMode(options.interactive);
+  const skipPrompts = options.yes || !useInteractive;
+
+  // Show non-interactive mode message if applicable
+  if (!useInteractive && !options.yes) {
+    const reason = getNonInteractiveReason();
+    console.log(
+      chalk.yellow(
+        `⚡ Non-interactive mode detected${reason ? ` (${reason})` : ""}`,
+      ),
+    );
+    console.log(
+      chalk.gray("   Using defaults. Use --interactive to force prompts.\n"),
+    );
+  }
+
+  const { warnings, suggestions, wizardRemainingIssues } =
+    await checkPrerequisitesAndSetup(options, skipPrompts);
+
+  // Check if already initialized
+  const configExists = await fileExists(".claude/settings.json");
+  if (configExists && !options.force) {
+    console.log(
+      chalk.yellow(
+        "!  Sequant appears to be already initialized (.claude/settings.json exists)",
+      ),
+    );
+    console.log(chalk.gray("   Use --force to reinitialize\n"));
+
+    if (!skipPrompts) {
+      const { proceed } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "proceed",
+          message: "Continue anyway?",
+          default: false,
+        },
+      ]);
+      if (!proceed) {
+        console.log(chalk.gray("Aborted."));
+        return;
+      }
+    }
+  }
+
+  const { stack, additionalStacks } = await resolveStacks(
+    options.stack,
+    skipPrompts,
+  );
 
   // Display selected stacks
   if (additionalStacks.length > 0) {
@@ -907,26 +1325,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     devUrl = inputDevUrl;
   }
 
-  // Show what will be created
-  console.log(chalk.gray("\nWill create:"));
-  console.log(chalk.gray("  .claude/"));
-  console.log(chalk.gray("  ├── skills/         (workflow skills)"));
-  console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
-  console.log(chalk.gray("  ├── memory/         (constitution & context)"));
-  console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
-  console.log(chalk.gray("  .sequant/"));
-  console.log(chalk.gray("  ├── settings.json   (run preferences)"));
-  console.log(chalk.gray("  └── logs/           (workflow run logs)"));
-  console.log(chalk.gray("  scripts/dev/"));
-  console.log(chalk.gray("  └── *.sh            (worktree helpers)"));
-  if (options.agentsMd !== false) {
-    console.log(
-      chalk.gray("  AGENTS.md           (universal agent instructions)"),
-    );
-  }
-  console.log(
-    chalk.gray("  .mcp.json           (Claude Code MCP server config)"),
-  );
+  printPlannedFiles(options.agentsMd !== false);
 
   if (!skipPrompts) {
     const { confirm } = await inquirer.prompt([
@@ -998,39 +1397,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     ".sequant/settings.reference.md",
     generateSettingsReference(),
   );
-  settingsSpinner.succeed(
-    settingsResult.action === "created"
-      ? "Created default settings + reference doc"
-      : "Preserved existing settings + wrote reference doc",
-  );
-  // Report the decision rather than succeeding silently over the user's file
-  // (#1071 AC-4). The spinner text is not enough — it is swallowed under
-  // --json and in non-TTY runs, and the whole point of the bug was that the
-  // overwrite happened with no mention anywhere.
-  if (settingsResult.action !== "created") {
-    const changed = settingsResult.updatedKeys.length
-      ? ` (updated only ${settingsResult.updatedKeys.join(", ")})`
-      : "";
-    console.log(
-      chalk.blue(
-        `📋 Preserved existing ${settingsResult.path}${changed} — use --force to replace it with defaults`,
-      ),
-    );
-  }
-  if (settingsResult.warning) {
-    console.log(chalk.yellow(`⚠  ${settingsResult.warning}`));
-  }
-
-  // Detect codebase conventions
-  const conventionsSpinner = ui.spinner("Detecting codebase conventions...");
-  conventionsSpinner.start();
-  try {
-    const conventions = await detectAndSaveConventions(process.cwd());
-    const count = Object.keys(conventions.detected).length;
-    conventionsSpinner.succeed(`Detected ${count} codebase conventions`);
-  } catch {
-    conventionsSpinner.warn("Could not detect conventions (non-blocking)");
-  }
+  await reportSettingsAndDetectConventions(settingsSpinner, settingsResult);
 
   // Copy templates (with symlinks for scripts unless --no-symlinks)
   const templatesSpinner = ui.spinner("Copying templates...");
@@ -1055,118 +1422,20 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   }
 
+  // #1528: the issue form, only into an absent `.github/ISSUE_TEMPLATE/`.
+  console.log(chalk.gray(`   ${(await writeIssueFormIfAbsent()).line}`));
+
   // #862: opencode reaches sequant's skills through per-phase command
   // wrappers, so provision them when the user initialises for that driver.
-  if (options.agent === "opencode") {
-    const opencodeSpinner = ui.spinner("Writing opencode command wrappers...");
-    opencodeSpinner.start();
-    try {
-      const phases = await writeOpencodeCommands();
-      const agents = await writeOpencodeAgents();
-      await writeOpencodePlugin();
-      await writeOpencodeMcpConfig();
-      opencodeSpinner.succeed(
-        `Wrote ${phases.length} opencode command wrappers, ${agents.length} subagent definitions, the hook shim plugin, and the MCP entry`,
-      );
-    } catch (err) {
-      opencodeSpinner.fail(
-        `Could not write opencode provisioning: ${(err as Error).message}`,
-      );
-    }
-
-    // The guards only reach a phase worktree if `.opencode/` is committed —
-    // git worktrees carry tracked files only.
-    console.log(
-      chalk.yellow(
-        "\n⚠️  Commit .opencode/ so worktree phases inherit the hook guards:\n" +
-          '    git add .opencode && git commit -m "chore: add opencode provisioning"',
-      ),
-    );
-  }
+  if (options.agent === "opencode") await provisionOpencode();
 
   // #1059: codex reaches sequant's skills through a real `.agents/skills`
   // symlink (codex has no per-phase command-wrapper mechanism, unlike
   // opencode) and its hooks through a `.codex/config.toml` wrapper around
   // the same guard scripts Claude Code uses.
-  if (options.agent === "codex") {
-    const codexSpinner = ui.spinner("Writing codex provisioning...");
-    codexSpinner.start();
-    try {
-      const { symlinkStatus, configPath } = await writeCodexProvisioning(
-        ".",
-        options.force,
-      );
-      if (symlinkStatus === "unsupported") {
-        codexSpinner.warn(
-          `Could not create the .agents/skills symlink (symlinks need elevated privileges or Developer Mode on Windows) - codex will not discover sequant's skills until it exists. Wrote ${configPath}`,
-        );
-      } else if (symlinkStatus === "skipped-foreign") {
-        codexSpinner.warn(
-          `.agents/skills exists and is not the expected symlink - skipped (use --force to overwrite; a real directory is never replaced). Wrote ${configPath}`,
-        );
-      } else if (symlinkStatus === "already-correct") {
-        // Report the no-op as a no-op: claiming "Symlinked ..." on an
-        // idempotent re-run tells the user work happened that did not.
-        codexSpinner.succeed(
-          `.agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} already in place; wrote ${configPath}`,
-        );
-      } else {
-        codexSpinner.succeed(
-          `Symlinked .agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} and wrote ${configPath}`,
-        );
-      }
-    } catch (err) {
-      codexSpinner.fail(
-        `Could not write codex provisioning: ${(err as Error).message}`,
-      );
-    }
+  if (options.agent === "codex") await provisionCodex(options.force);
 
-    // #1059 AC-5: codex only loads project-layer hooks (.codex/config.toml)
-    // when the project is marked trusted in the USER config
-    // (~/.codex/config.toml) — silently skipped otherwise, no error.
-    console.log(
-      chalk.yellow(
-        "\n⚠️  Codex only loads these hooks once the project is trusted in " +
-          "~/.codex/config.toml:\n" +
-          `    [projects."${process.cwd()}"]\n` +
-          `    ${CODEX_TRUST_LEVEL_TOML}\n`,
-      ),
-    );
-    console.log(
-      chalk.yellow(
-        "⚠️  Commit .codex/ and .agents/ so worktree phases inherit the hook guards:\n" +
-          '    git add .codex .agents && git commit -m "chore: add codex provisioning"',
-      ),
-    );
-  }
-
-  // Report symlink status
-  if (scriptsSymlinked) {
-    ui.printStatus("success", "Created symlinks for scripts/dev/");
-  } else if (!options.noSymlinks && symlinkResults) {
-    // Some symlinks may have fallen back to copies
-    const fallbacks = symlinkResults.filter((r) => r.fallbackToCopy);
-    if (fallbacks.length > 0) {
-      console.log(
-        chalk.yellow("!  Some scripts were copied instead of symlinked:"),
-      );
-      for (const fb of fallbacks) {
-        console.log(chalk.gray(`   ${fb.path}: ${fb.reason}`));
-      }
-    }
-    // Directory collisions are announced above with their own message.
-    const skipped = symlinkResults.filter(
-      (r) => r.skipped && !r.directoryCollision,
-    );
-    if (skipped.length > 0) {
-      console.log(
-        chalk.yellow("!  Some scripts were skipped (existing files found):"),
-      );
-      for (const s of skipped) {
-        console.log(chalk.gray(`   ${s.path}: ${s.reason}`));
-      }
-    }
-  }
+  reportSymlinks(scriptsSymlinked, symlinkResults, options.noSymlinks);
 
   // Create manifest
   const manifestSpinner = ui.spinner("Creating manifest...");
@@ -1174,160 +1443,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
   await createManifest(stack!, packageManager ?? undefined);
   manifestSpinner.succeed("Created manifest");
 
-  // Generate AGENTS.md (unless --no-agents-md)
-  // A hand-written (unmarked or hash-mismatched) AGENTS.md is user-owned:
-  // re-running init must not replace it, the same rule `sync` applies (#990).
-  // Only `--force` overrides. Found by the downstream canary (#1098).
-  const agentsDecision =
-    options.agentsMd !== false
-      ? decideAgentsMdSync({
-          enabled: true,
-          existingContent: await readAgentsMd(),
-          force: options.force === true,
-        })
-      : "skipped (--no-agents-md)";
-  if (agentsDecision === "preserved") {
-    console.log(
-      chalk.blue(
-        `  preserved: ${AGENTS_MD_PATH} — user-owned (run \`init --force\` to replace)`,
-      ),
-    );
-  } else if (options.agentsMd !== false) {
-    const agentsSpinner = ui.spinner("Generating AGENTS.md...");
-    agentsSpinner.start();
-    try {
-      const stackConfig = getStackConfig(stack!);
-      const { getProjectName } = await import("../lib/project-name.js");
-      const projectName = await getProjectName();
-      const agentsMdContent = await generateAgentsMd({
-        projectName,
-        stack: stack!,
-        buildCommand: stackConfig.variables.BUILD_COMMAND,
-        testCommand: stackConfig.variables.TEST_COMMAND,
-        lintCommand: stackConfig.variables.LINT_COMMAND,
-      });
-      await writeAgentsMd(agentsMdContent);
-      agentsSpinner.succeed("Generated AGENTS.md");
-    } catch {
-      agentsSpinner.warn("Could not generate AGENTS.md (non-blocking)");
-    }
-  } else {
-    console.log(chalk.gray("Skipping AGENTS.md generation (--no-agents-md)"));
-  }
+  await writeAgentsMdForInit(options, stack!);
 
-  // Create .mcp.json for Claude Code (always, regardless of --mcp flag)
-  const { createProjectMcpJson, detectMcpClients, addSequantToMcpConfig } =
-    await import("../lib/mcp-config.js");
-  const mcpJsonResult = createProjectMcpJson();
-  if (mcpJsonResult.created) {
-    ui.printStatus("success", "Created .mcp.json (Claude Code MCP config)");
-  } else if (mcpJsonResult.merged) {
-    ui.printStatus("success", "Added Sequant to existing .mcp.json");
-  } else if (mcpJsonResult.corrupt) {
-    // Report the skip rather than silently replacing the user's file (#1123)
-    // — the same "report the decision" precedent as the AGENTS.md skip above.
-    console.log(
-      chalk.yellow(
-        "⚠  .mcp.json is not valid JSON — left untouched. Fix it manually, then re-run init to add Sequant.",
-      ),
-    );
-  } else {
-    console.log(
-      chalk.gray("   .mcp.json: sequant already configured (skipped)"),
-    );
-  }
+  await configureMcp(skipPrompts, options.mcp);
 
-  // Offer MCP server configuration for detected clients (global configs)
-  const mcpClients = detectMcpClients();
-  const detectedClients = mcpClients.filter((c) => c.exists);
-
-  if (detectedClients.length > 0) {
-    console.log(
-      chalk.blue(
-        `\nDetected ${detectedClients.length} MCP-compatible client(s):`,
-      ),
-    );
-    for (const client of detectedClients) {
-      console.log(chalk.gray(`   • ${client.name}`));
-    }
-
-    let addMcp: boolean;
-    if (skipPrompts) {
-      // --yes alone skips MCP config; --yes --mcp explicitly opts in
-      addMcp = !!options.mcp;
-      if (!addMcp) {
-        console.log(
-          chalk.gray(
-            "   Skipping MCP config (use --mcp to auto-add in non-interactive mode)",
-          ),
-        );
-      }
-    } else {
-      const { confirm } = await inquirer.prompt([
-        {
-          type: "confirm",
-          name: "confirm",
-          message:
-            "Add Sequant MCP server to detected clients? (enables AI tools to use Sequant)",
-          default: true,
-        },
-      ]);
-      addMcp = confirm;
-    }
-
-    if (addMcp) {
-      for (const client of detectedClients) {
-        const added = addSequantToMcpConfig(
-          client.configPath,
-          client.clientType,
-        );
-        if (added) {
-          ui.printStatus("success", `Added Sequant MCP to ${client.name}`);
-        } else {
-          console.log(
-            chalk.gray(`   ${client.name}: already configured (skipped)`),
-          );
-        }
-      }
-    }
-  }
-
-  // Build optional suggestions section
-  const optionalSuggestions = suggestions.filter((s) =>
-    s.startsWith("Optional"),
-  );
-  const optionalSection =
-    optionalSuggestions.length > 0
-      ? `\n${chalk.bold("Optional improvements:")}\n${optionalSuggestions.map((s) => `  • ${s.replace("Optional: ", "")}`).join("\n")}\n`
-      : "";
-
-  // Build prerequisites reminder if there were remaining issues from wizard or warnings
-  const hasRemainingIssues =
-    wizardRemainingIssues.length > 0 || warnings.length > 0;
-  const prereqReminder = hasRemainingIssues
-    ? `\n${chalk.yellow("!  Remember to install missing dependencies before using issue workflows.")}\n${chalk.gray("   Run 'sequant doctor' to verify your setup.\n")}`
-    : "";
-
-  // Success message with boxed output
-  const nextStepsContent = buildNextSteps(await resolveCommitPaths());
-
-  console.log(
-    "\n" + ui.successBox("Sequant initialized successfully!", nextStepsContent),
-  );
-
-  if (prereqReminder) {
-    console.log(prereqReminder);
-  }
-
-  if (optionalSection) {
-    console.log(optionalSection);
-  }
-
-  console.log(
-    chalk.gray(
-      "\nDocumentation: https://github.com/sequant-io/sequant#readme\n",
-    ),
-  );
+  await printSuccess(suggestions, wizardRemainingIssues, warnings);
 }
 
 /**

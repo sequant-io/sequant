@@ -27,9 +27,24 @@ export function formatElapsedTime(seconds: number): string {
 }
 
 /**
- * Format a wall-clock timestamp as `HH:MM:SS`. Used by the non-TTY renderer.
+ * Format a wall-clock timestamp as `HH:MM:SS`. Accepts a `Date` or an ISO
+ * string; an unparsable string is returned unchanged.
  */
-export function formatTimestamp(date: Date): string {
+export function formatTimestamp(input: Date | string): string {
+  const date = typeof input === "string" ? new Date(input) : input;
+  if (Number.isNaN(date.getTime())) return String(input);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+/**
+ * Format duration in human-readable format
+ */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs.toFixed(0)}s`;
 }

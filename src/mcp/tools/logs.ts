@@ -8,33 +8,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
-import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
+import { resolveLogDir, parseLogFile } from "../../lib/run-logs.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
-
-function resolveLogPath(): string {
-  const projectPath = LOG_PATHS.project;
-  if (fs.existsSync(projectPath)) {
-    return projectPath;
-  }
-
-  const userPath = LOG_PATHS.user.replace("~", os.homedir());
-  if (fs.existsSync(userPath)) {
-    return userPath;
-  }
-
-  return projectPath;
-}
-
-function parseLogFile(filePath: string): RunLog | null {
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const data = JSON.parse(content);
-    return RunLogSchema.parse(data);
-  } catch {
-    return null;
-  }
-}
 
 export function registerLogsTool(server: McpServer): void {
   server.registerTool(
@@ -68,7 +43,7 @@ export function registerLogsTool(server: McpServer): void {
     },
     async ({ runId, limit }) => {
       try {
-        const logDir = resolveLogPath();
+        const logDir = resolveLogDir();
 
         if (!fs.existsSync(logDir)) {
           return {

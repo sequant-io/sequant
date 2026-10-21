@@ -26,10 +26,6 @@ export default tseslint.config(
           message: "Use ES module imports instead of require() in ESM modules",
         },
       ],
-      // Temporarily relaxed rules for gradual adoption
-      "@typescript-eslint/no-unused-vars": "warn",
-      "@typescript-eslint/no-empty-object-type": "warn",
-      "prefer-const": "warn",
     },
   },
   // #647 AC-3: forbid raw stdout writes in `phase-executor.ts`. Every
@@ -100,6 +96,19 @@ export default tseslint.config(
       parserOptions: {
         project: null,
       },
+    },
+  },
+  // #1509: command entry points are linear sequences of steps; past 200
+  // counted lines the steps belong in their own functions (same file, or a
+  // sibling module under `src/commands/<name>/` when the file itself grows
+  // too large). Tests are excluded by the global ignores below.
+  {
+    files: ["src/commands/**/*.ts"],
+    rules: {
+      "max-lines-per-function": [
+        "error",
+        { max: 200, skipBlankLines: true, skipComments: true },
+      ],
     },
   },
   {

@@ -37,6 +37,7 @@ import {
   DEFAULT_ROTATION_SETTINGS,
 } from "./log-rotation.js";
 import type { EvidenceBundle } from "./divergence-halt.js";
+import { resetSuppressed, suppressedCounts } from "./suppressed.js";
 
 export interface LogWriterOptions {
   /** Path to log directory (default: .sequant/logs in current directory) */
@@ -67,7 +68,7 @@ export class LogWriter {
   private runLog: Omit<RunLog, "endTime"> | null = null;
   /** Active issues being tracked concurrently, keyed by issue number */
   private activeIssues: Map<number, Partial<IssueLog>> = new Map();
-  /** @deprecated Single-issue slot for backwards compatibility — use activeIssues */
+  /** @deprecated (remove in v2.22) Single-issue slot for backwards compatibility — use activeIssues */
   private currentIssue: Partial<IssueLog> | null = null;
   /**
    * Issue slots forced to `failure` by {@link markIssueFailed} (#879). Keyed on
@@ -106,6 +107,9 @@ export class LogWriter {
       startTime: this.startTime,
       driver: this.driver,
     });
+    // A new run starts a new count of dropped errors (#1504). Debug lines go
+    // to stderr, and only when verbose; the count is kept either way.
+    resetSuppressed(this.verbose ? (line) => console.error(line) : undefined);
 
     // Ensure log directory exists
     await this.ensureLogDirectory(this.logPath);
@@ -383,6 +387,7 @@ export class LogWriter {
       endCommit: options?.endCommit,
       abortedBy: abort?.signal,
     });
+    finalLog.suppressed = suppressedCounts();
     const filename = generateLogFilename(
       finalLog.runId,
       new Date(finalLog.startTime),

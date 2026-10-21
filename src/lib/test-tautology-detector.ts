@@ -17,6 +17,7 @@
 
 import { existsSync } from "fs";
 import * as nodePath from "path";
+import { escapeRegex } from "./regex.js";
 
 /**
  * Represents an imported function from a source module
@@ -515,13 +516,6 @@ function extractBlockBody(content: string): string {
 
   // If we didn't find a matching brace, return everything after the first brace
   return content.substring(firstBrace);
-}
-
-/**
- * Escape special regex characters in a string for safe use in `new RegExp()`.
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

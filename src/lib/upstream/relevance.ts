@@ -6,6 +6,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { getTemplatesDir } from "../templates.js";
+import { escapeRegex } from "../regex.js";
 import type {
   Baseline,
   DetectionPatterns,
@@ -425,11 +426,4 @@ export function selectIssueWorthy(
         f.category !== "opportunity" &&
         isRelevant(f, baseline, exists)),
   );
-}
-
-/**
- * Escape special regex characters in a string
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

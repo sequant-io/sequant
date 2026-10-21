@@ -1,0 +1,80 @@
+{
+  "generatedAt": "2026-10-20T02:42:02.892Z",
+  "commit": "5bd5f77242205698c9a7027c691b07204904de34",
+  "functions": {
+    "over400": 2,
+    "over200": 7,
+    "longest": {
+      "file": "src/lib/workflow/batch-executor.ts",
+      "name": "runIssueWithLogging",
+      "lines": 1072
+    }
+  },
+  "emptyCatch": {
+    "total": 92,
+    "byFile": {
+      "bin/cli.ts": 1,
+      "bin/preflight.ts": 1,
+      "src/commands/prompt.ts": 4,
+      "src/commands/ready.ts": 1,
+      "src/commands/run.ts": 1,
+      "src/commands/serve.ts": 3,
+      "src/commands/state.ts": 1,
+      "src/commands/status.ts": 2,
+      "src/commands/sync.ts": 2,
+      "src/commands/watch.ts": 4,
+      "src/lib/conventions-detector.ts": 6,
+      "src/lib/fs.ts": 1,
+      "src/lib/locks/lock-manager.ts": 4,
+      "src/lib/manifest.ts": 1,
+      "src/lib/mcp-config.ts": 2,
+      "src/lib/process-group.ts": 1,
+      "src/lib/project-name.ts": 5,
+      "src/lib/relay/activation.ts": 3,
+      "src/lib/relay/frame.ts": 1,
+      "src/lib/relay/reader.ts": 1,
+      "src/lib/relay/writer.ts": 1,
+      "src/lib/semgrep.ts": 3,
+      "src/lib/skill-version.ts": 1,
+      "src/lib/stacks.ts": 4,
+      "src/lib/templates.ts": 2,
+      "src/lib/upstream/issues.ts": 2,
+      "src/lib/upstream/relevance.ts": 1,
+      "src/lib/version-check.ts": 3,
+      "src/lib/version.ts": 1,
+      "src/lib/workflow/drivers/opencode.ts": 2,
+      "src/lib/workflow/event-emitter.ts": 1,
+      "src/lib/workflow/phase-detection.ts": 1,
+      "src/lib/workflow/phase-executor.ts": 4,
+      "src/lib/workflow/platforms/github.ts": 4,
+      "src/lib/workflow/pr-status.ts": 2,
+      "src/lib/workflow/qa-cache.ts": 1,
+      "src/lib/workflow/state-hook.ts": 6,
+      "src/lib/workflow/state-manager.ts": 3,
+      "src/lib/workflow/token-utils.ts": 2,
+      "src/lib/workflow/worktree-manager.ts": 1,
+      "src/lib/worktree-isolation.ts": 1,
+      "src/mcp/tools/run.ts": 1
+    }
+  },
+  "childProcessMockFiles": 31,
+  "ghCallFilesOutsideProvider": 3,
+  "proseGate": {
+    "files": 30,
+    "lines": 7374
+  },
+  "testRatio28d": {
+    "sum": 2.17,
+    "median": 2.02,
+    "commits": 179
+  },
+  "deprecatedWithoutRemoval": 0,
+  "harness": {
+    "claudeMdLines": 25,
+    "skillLines": 15542,
+    "skillFiles": 19,
+    "memoryFiles": null
+  },
+  "adrWithoutActor": 11,
+  "unusedExports": 339
+}

@@ -180,6 +180,10 @@ jobs:
       - name: Check skill sync
         run: npm run lint:skill-sync
 
+      # Every @deprecated tag names its removal release (#1510).
+      - name: Lint deprecations
+        run: npm run lint:deprecations
+
   typecheck:
     runs-on: ubuntu-latest
 
@@ -371,3 +375,46 @@ jobs:
             --base "origin/$BASE_REF" \
             --advisory \
             --github
+
+  # Fundamentals health report (#1502). Advisory: `continue-on-error` keeps a
+  # raised metric from blocking a merge; the step still shows red on the PR.
+  health-advisory:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'pull_request'
+
+    steps:
+      # fetch-depth: 0 — the 28-day test ratio reads `git log`.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check health metrics against the baseline (advisory)
+        run: npm run lint:health
+
+  knip-advisory:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - run: npm ci
+      - name: Report unused exports (advisory)
+        run: npx knip

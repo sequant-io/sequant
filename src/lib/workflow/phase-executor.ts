@@ -57,6 +57,7 @@ import {
   resetsAtToMs,
 } from "../errors.js";
 import { formatElapsedTime } from "../cli-ui/format.js";
+
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
 
@@ -810,18 +811,6 @@ function parseListSection(output: string, headerPattern: RegExp): string[] {
   }
 
   return items;
-}
-
-/**
- * Format duration in human-readable format
- */
-export function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  }
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs.toFixed(0)}s`;
 }
 
 /** Git config key holding the exact ref a worktree was cut from (#1234). */

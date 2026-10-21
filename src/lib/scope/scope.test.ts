@@ -2,7 +2,11 @@
  * Tests for Scope Assessment Module
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { parseNonGoals } from "../workflow/ready-gate.js";
 import type { AcceptanceCriterion } from "../workflow/state-schema.js";
 import {
   clusterACByKeyword,
@@ -10,7 +14,7 @@ import {
   estimateDirectorySpread,
   calculateFeatureCount,
   detectFeatures,
-  parseNonGoals,
+  assessNonGoals,
   shouldSkipAssessment,
 } from "./analyzer.js";
 import {
@@ -26,6 +30,19 @@ import {
   formatCondensedAssessment,
 } from "./formatter.js";
 import { performScopeAssessment, DEFAULT_SCOPE_CONFIG } from "./index.js";
+
+// Verbatim GitHub issue bodies (#1474), shared with ready-gate.test.ts.
+const readNonGoalsFixture = (issue: number): string =>
+  readFileSync(
+    join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "__fixtures__",
+      "non-goals",
+      `issue-${issue}.md`,
+    ),
+    "utf8",
+  );
 
 // Test helper to create AC items
 function createAC(id: string, description: string): AcceptanceCriterion {
@@ -157,7 +174,7 @@ describe("Scope Analyzer", () => {
     });
   });
 
-  describe("parseNonGoals", () => {
+  describe("assessNonGoals", () => {
     it("parses non-goals section with checkbox items", () => {
       const issueBody = `
 ## Summary
@@ -171,7 +188,7 @@ What this issue explicitly will NOT do:
 - [ ] Performance optimization
 `;
 
-      const nonGoals = parseNonGoals(issueBody);
+      const nonGoals = assessNonGoals(issueBody);
 
       expect(nonGoals.found).toBe(true);
       expect(nonGoals.items.length).toBe(3);
@@ -185,7 +202,7 @@ What this issue explicitly will NOT do:
 Some content
 `;
 
-      const nonGoals = parseNonGoals(issueBody);
+      const nonGoals = assessNonGoals(issueBody);
 
       expect(nonGoals.found).toBe(false);
       expect(nonGoals.items.length).toBe(0);
@@ -199,7 +216,7 @@ Some content
 ## Implementation
 `;
 
-      const nonGoals = parseNonGoals(issueBody);
+      const nonGoals = assessNonGoals(issueBody);
 
       expect(nonGoals.found).toBe(true);
       expect(nonGoals.items.length).toBe(0);
@@ -214,7 +231,7 @@ Some content
 - Feature Y
 `;
 
-      const nonGoals = parseNonGoals(issueBody);
+      const nonGoals = assessNonGoals(issueBody);
 
       expect(nonGoals.found).toBe(true);
       expect(nonGoals.items.length).toBe(2);
@@ -235,7 +252,7 @@ Some content
 - [ ] Database migrations
 `;
 
-      const nonGoals = parseNonGoals(issueBody);
+      const nonGoals = assessNonGoals(issueBody);
 
       expect(nonGoals.found).toBe(true);
       expect(nonGoals.items).toEqual([
@@ -258,10 +275,40 @@ Some content
 - [ ] Real non-goal item
 `;
 
-      const nonGoals = parseNonGoals(issueBody);
+      const nonGoals = assessNonGoals(issueBody);
 
       expect(nonGoals.found).toBe(true);
       expect(nonGoals.items).toEqual(["Real non-goal item"]);
+    });
+
+    // #1474 AC-3: verbatim issue bodies; the gate's heading rules are the
+    // rules of record (D-7), so both entry points return the same items.
+    it.each([
+      [971, 3],
+      [763, 3],
+      [1246, 3],
+      [1228, 3],
+    ])("#%i: same items as the ready gate", (issue, count) => {
+      const body = readNonGoalsFixture(issue);
+      const nonGoals = assessNonGoals(body);
+
+      expect(nonGoals.found).toBe(true);
+      expect(nonGoals.warning).toBeUndefined();
+      expect(nonGoals.items).toHaveLength(count);
+      expect(nonGoals.items).toEqual(parseNonGoals(body));
+    });
+
+    it("#1246: keeps the item starting with '#1297'", () => {
+      const nonGoals = assessNonGoals(readNonGoalsFixture(1246));
+
+      expect(nonGoals.items[2]).toMatch(/^#1297 \(exec summary/);
+    });
+
+    it("#1228: unions the lists under both Non-Goals headings", () => {
+      const nonGoals = assessNonGoals(readNonGoalsFixture(1228));
+
+      expect(nonGoals.items[0]).toContain("reset --hard is correct");
+      expect(nonGoals.items[2]).toContain("destructive reset is correct");
     });
   });
 

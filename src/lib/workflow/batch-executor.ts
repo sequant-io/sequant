@@ -12,6 +12,7 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { createPhaseLogFromTiming, LogWriter } from "./log-writer.js";
 import { latestPhaseResult, latestWhere } from "./latest-phase.js";
+import { attributionFromPhases } from "./qa-verdict-attribution.js";
 import {
   Phase,
   ExecutionConfig,
@@ -105,6 +106,7 @@ import {
 } from "./ready-gate.js";
 import { isCompletedIssueStatus } from "./completed-status.js";
 import { bracketedConsoleLog } from "./notice.js";
+import { noteSuppressed } from "./suppressed.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -166,8 +168,9 @@ export function withActivityHook(
     onActivity: (text: string) => {
       try {
         onProgress?.(issueNumber, phase, "activity", { text });
-      } catch {
+      } catch (err) {
         // Activity events must never disrupt the run.
+        noteSuppressed("progress", err, "onActivity");
       }
     },
     onAutoWait: (notice) => {
@@ -178,8 +181,9 @@ export function withActivityHook(
           // consumers to clear the waiting state.
           wakeAtMs: notice.done ? undefined : notice.wakeAtMs,
         });
-      } catch {
+      } catch (err) {
         // Liveness notices must never disrupt the run.
+        noteSuppressed("progress", err, "waiting notice");
       }
       try {
         if (notice.done) {
@@ -205,8 +209,9 @@ export function withActivityHook(
             });
           }
         }
-      } catch {
+      } catch (err) {
         // Liveness notices must never disrupt the run.
+        noteSuppressed("progress", err, "waiting line");
       }
     },
   };
@@ -594,7 +599,7 @@ export function recordIssueCompletion(
 }
 
 /**
- * @deprecated No live caller — `sequant run` executes issues via
+ * @deprecated (remove in v2.22) No live caller — `sequant run` executes issues via
  * `RunOrchestrator.executeOneIssue`; this survives only as a
  * `commands/run-compat` re-export. Do not build a new execution loop on it:
  * any path that completes an issue MUST go through
@@ -872,8 +877,9 @@ async function recordWindowHaltState(
     } else {
       await stateManager.clearWindowHalt(issueNumber);
     }
-  } catch {
+  } catch (err) {
     // State tracking errors shouldn't stop execution
+    noteSuppressed("state", err, "window halt");
   }
 }
 
@@ -888,6 +894,7 @@ export function buildQaVerdictComment(
   summary: QaSummary | undefined,
   commitHash: string | undefined,
   iteration: number,
+  attribution?: string,
 ): string {
   const lines: string[] = [`## QA Verdict: ${verdict}`];
   if (summary) {
@@ -951,6 +958,9 @@ export function buildQaVerdictComment(
       iteration,
     })} -->`,
   );
+  // #1521: the visible last line names the reviewer; the machine marker stays
+  // above it (consumers match it by regex, not by position).
+  if (attribution) lines.push("", attribution);
   return lines.join("\n");
 }
 
@@ -976,9 +986,16 @@ export async function postQaVerdictComment(
     n,
     body,
   ) => new GitHubProvider().postComment(String(n), body),
+  attribution?: string,
 ): Promise<void> {
   try {
-    const body = buildQaVerdictComment(verdict, summary, commitHash, iteration);
+    const body = buildQaVerdictComment(
+      verdict,
+      summary,
+      commitHash,
+      iteration,
+      attribution,
+    );
     await postComment(issueNumber, body);
   } catch (err) {
     log(`    !  Failed to post QA verdict comment: ${err}`);
@@ -1242,8 +1259,9 @@ export async function runIssueWithLogging(
       ? (wakeAtMs) => {
           void stateManager
             .updateAutoWait(issueNumber, phase, wakeAtMs)
-            .catch(() => {
-              // Never let state bookkeeping disturb a live wait.
+            .catch((err) => {
+              // Never let state bookkeeping disturb a live wait, but count it.
+              noteSuppressed("state", err, "updateAutoWait");
             });
         }
       : undefined;
@@ -1299,9 +1317,10 @@ export async function runIssueWithLogging(
         const state = await stateManager.getIssueState(issueNumber);
         execSummary = state?.execSummary;
         priorQaCompleted = state?.phases?.qa?.status === "completed";
-      } catch {
+      } catch (err) {
         // State read errors fall back to the placeholder text and count as
         // "QA has not run" — the note errs toward flagging an unreviewed PR.
+        noteSuppressed("state", err, "getIssueState");
       }
     }
     // #1246 AC-1: a PR from a run QA has not reviewed says so. Distinct from
@@ -1363,8 +1382,9 @@ export async function runIssueWithLogging(
           number: prResult.prNumber,
           url: prResult.prUrl,
         });
-      } catch {
+      } catch (err) {
         // State tracking errors shouldn't stop execution
+        noteSuppressed("state", err, "updatePRInfo");
       }
     }
     return prResult;
@@ -1455,8 +1475,9 @@ export async function runIssueWithLogging(
     emitProgressLine(issueNumber, "spec", "start");
     try {
       onProgress?.(issueNumber, "spec", "start");
-    } catch {
+    } catch (err) {
       /* progress errors must not halt */
+      noteSuppressed("progress", err, "spec start");
     }
 
     // Track spec phase start in state
@@ -1467,8 +1488,9 @@ export async function runIssueWithLogging(
           "spec",
           "in_progress",
         );
-      } catch {
+      } catch (err) {
         // State tracking errors shouldn't stop execution
+        noteSuppressed("state", err, "spec in_progress");
       }
     }
 
@@ -1503,8 +1525,9 @@ export async function runIssueWithLogging(
             issueNumber,
             specResult.resumeHandle,
           );
-        } catch {
+        } catch (err) {
           // State tracking errors shouldn't stop execution
+          noteSuppressed("state", err, "spec resume handle");
         }
       }
     }
@@ -1523,8 +1546,9 @@ export async function runIssueWithLogging(
       emitProgressLine(issueNumber, "spec", "complete", extra);
       try {
         onProgress?.(issueNumber, "spec", "complete", extra);
-      } catch {
+      } catch (err) {
         /* progress errors must not halt */
+        noteSuppressed("progress", err, "spec complete");
       }
     } else {
       // Mirror the main phase loop (#739/#799): a turn-capped spec phase surfaces
@@ -1544,8 +1568,9 @@ export async function runIssueWithLogging(
       emitProgressLine(issueNumber, "spec", "failed", extra);
       try {
         onProgress?.(issueNumber, "spec", "failed", extra);
-      } catch {
+      } catch (err) {
         /* progress errors must not halt */
+        noteSuppressed("progress", err, "spec failed");
       }
     }
 
@@ -1607,8 +1632,9 @@ export async function runIssueWithLogging(
           outcome: specRecord.outcome,
           divergenceAcs: specRecord.divergenceAcs,
         });
-      } catch {
+      } catch (err) {
         // State tracking errors shouldn't stop execution
+        noteSuppressed("state", err, "spec phase status");
       }
     }
 
@@ -1639,8 +1665,9 @@ export async function runIssueWithLogging(
             worktreePath,
             stateManager: stateManager ?? null,
           });
-        } catch {
+        } catch (err) {
           /* swallow */
+          noteSuppressed("cleanup", err, "deactivateRelay spec");
         }
       }
       return {
@@ -1773,8 +1800,9 @@ export async function runIssueWithLogging(
     const fullPlan = specAlreadyRan ? ["spec", ...phases] : [...phases];
     try {
       onPhasePlan(issueNumber, fullPlan);
-    } catch {
+    } catch (err) {
       /* renderer wiring errors must not halt execution */
+      noteSuppressed("progress", err, "onPhasePlan");
     }
   }
 
@@ -1877,8 +1905,9 @@ export async function runIssueWithLogging(
       emitProgressLine(issueNumber, phase, "start", phaseExtra);
       try {
         onProgress?.(issueNumber, phase, "start", phaseExtra);
-      } catch {
+      } catch (err) {
         /* progress errors must not halt */
+        noteSuppressed("progress", err, "phase start");
       }
 
       // Track phase start in state
@@ -1889,8 +1918,9 @@ export async function runIssueWithLogging(
             phase as Phase,
             "in_progress",
           );
-        } catch {
+        } catch (err) {
           // State tracking errors shouldn't stop execution
+          noteSuppressed("state", err, "phase in_progress");
         }
       }
 
@@ -2007,8 +2037,9 @@ export async function runIssueWithLogging(
               issueNumber,
               result.resumeHandle,
             );
-          } catch {
+          } catch (err) {
             // State tracking errors shouldn't stop execution
+            noteSuppressed("state", err, "phase resume handle");
           }
         }
       }
@@ -2055,8 +2086,9 @@ export async function runIssueWithLogging(
         emitProgressLine(issueNumber, phase, "complete", extra);
         try {
           onProgress?.(issueNumber, phase, "complete", extra);
-        } catch {
+        } catch (err) {
           /* progress errors must not halt */
+          noteSuppressed("progress", err, "phase complete");
         }
       } else {
         // A turn-capped phase is incomplete-but-not-hard-failed (#739): surface a
@@ -2079,8 +2111,9 @@ export async function runIssueWithLogging(
         emitProgressLine(issueNumber, phase, "failed", extra);
         try {
           onProgress?.(issueNumber, phase, "failed", extra);
-        } catch {
+        } catch (err) {
           /* progress errors must not halt */
+          noteSuppressed("progress", err, "phase failed");
         }
       }
 
@@ -2109,6 +2142,7 @@ export async function runIssueWithLogging(
           iteration,
           warn,
           injectedPostComment,
+          attributionFromPhases(phaseResults, dispatchConfig),
         );
       }
 
@@ -2212,8 +2246,9 @@ export async function runIssueWithLogging(
               divergenceAcs: record.divergenceAcs,
             },
           );
-        } catch {
+        } catch (err) {
           // State tracking errors shouldn't stop execution
+          noteSuppressed("state", err, "phase status");
         }
       }
 
@@ -2226,8 +2261,9 @@ export async function runIssueWithLogging(
             issueNumber,
             composeExecSummary(result.output),
           );
-        } catch {
+        } catch (err) {
           // State tracking errors shouldn't stop execution
+          noteSuppressed("state", err, "updateExecSummary");
         }
       }
 
@@ -2310,8 +2346,9 @@ export async function runIssueWithLogging(
           emitProgressLine(issueNumber, "loop", "start", loopStartExtra);
           try {
             onProgress?.(issueNumber, "loop", "start", loopStartExtra);
-          } catch {
+          } catch (err) {
             /* progress errors must not halt */
+            noteSuppressed("progress", err, "loop start");
           }
 
           // Build enriched config for loop phase with QA context (#488).
@@ -2411,16 +2448,18 @@ export async function runIssueWithLogging(
             emitProgressLine(issueNumber, "loop", "complete", extra);
             try {
               onProgress?.(issueNumber, "loop", "complete", extra);
-            } catch {
+            } catch (err) {
               /* progress errors must not halt */
+              noteSuppressed("progress", err, "loop complete");
             }
           } else {
             const extra = { error: loopResult.error ?? "unknown", iteration };
             emitProgressLine(issueNumber, "loop", "failed", extra);
             try {
               onProgress?.(issueNumber, "loop", "failed", extra);
-            } catch {
+            } catch (err) {
               /* progress errors must not halt */
+              noteSuppressed("progress", err, "loop failed");
             }
           }
 
@@ -2584,8 +2623,9 @@ export async function runIssueWithLogging(
   if (stateManager) {
     try {
       await stateManager.updateIssueStatus(issueNumber, finalStatus);
-    } catch {
+    } catch (err) {
       // State tracking errors shouldn't stop execution
+      noteSuppressed("state", err, "updateIssueStatus");
     }
   }
 

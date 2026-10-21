@@ -9,6 +9,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
+import { noteSuppressed } from "./suppressed.js";
 import {
   IssueLogSchema,
   type RunConfig,
@@ -662,6 +663,36 @@ describe("LogWriter", () => {
         .calls[0];
       const writtenLog = JSON.parse(writeCall[1] as string);
       expect(writtenLog.issues).toHaveLength(1);
+    });
+
+    it("writes the run's dropped-error count, reset at initialize (#1504)", async () => {
+      noteSuppressed("state", new Error("before this run"));
+      const writer = new LogWriter({ logPath: "/test/logs" });
+      await writer.initialize(mockConfig);
+      noteSuppressed("state", new Error("write failed"));
+      noteSuppressed("progress", new Error("renderer threw"));
+
+      await writer.finalize();
+
+      const writeCall = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock
+        .calls[0];
+      const writtenLog = JSON.parse(writeCall[1] as string);
+      expect(writtenLog.suppressed).toEqual({
+        total: 2,
+        byScope: { state: 1, progress: 1 },
+      });
+    });
+
+    it("writes a zero count when nothing was dropped (#1504)", async () => {
+      const writer = new LogWriter({ logPath: "/test/logs" });
+      await writer.initialize(mockConfig);
+
+      await writer.finalize();
+
+      const writeCall = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock
+        .calls[0];
+      const writtenLog = JSON.parse(writeCall[1] as string);
+      expect(writtenLog.suppressed).toEqual({ total: 0, byScope: {} });
     });
 
     it("should write to user logs when option is enabled", async () => {

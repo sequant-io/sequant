@@ -159,6 +159,19 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
 }
 
 /**
+ * Info line (not a check, never counted) naming the issue form when
+ * `.github/ISSUE_TEMPLATE/sequant-task.yml` is missing (#1528).
+ */
+export function issueFormInfoLine(cwd: string = process.cwd()): string | null {
+  if (
+    existsSync(pathJoin(cwd, ".github", "ISSUE_TEMPLATE", "sequant-task.yml"))
+  ) {
+    return null;
+  }
+  return "i  Issue form: .github/ISSUE_TEMPLATE/sequant-task.yml is absent - see docs/guides/writing-issues.md (Optional: a GitHub issue form)";
+}
+
+/**
  * Warn when a `node_modules/sequant` sits in cwd's ancestor chain (npm's own
  * `npx` resolution order) or under `$HOME`, at a version that differs from
  * either comparator below. That local copy silently shadows an `npx -y
@@ -576,17 +589,8 @@ export function formatSkillsDriftMessage(
   return `${status.contentDrift} file(s) differ from bundled content (version ${status.packageVersion}) - run: ${formatSkillsDriftRemedy(status.installScope, cli)}`;
 }
 
-export async function doctorCommand(
-  options: DoctorOptions = {},
-): Promise<void> {
-  console.log(ui.headerBox("SEQUANT HEALTH CHECK"));
-  console.log();
-
-  const checks: Check[] = [];
-  // Track gh availability and auth for conditional checks later
-  let ghAvailable = false;
-  let ghAuthenticated = false;
-
+/** Checks 0-6: version, manifest, skills, hooks, scripts/dev and settings. */
+async function collectInstallChecks(checks: Check[]): Promise<void> {
   // Check 0: Version freshness
   const versionResult = await checkVersionThorough();
   if (versionResult.latestVersion) {
@@ -815,6 +819,17 @@ export async function doctorCommand(
       message: "No settings.json (hooks won't be triggered)",
     });
   }
+}
+
+/** Checks 7-10: git, GitHub CLI and Claude Code CLI. */
+async function collectEnvironmentChecks(checks: Check[]): Promise<{
+  gitExists: boolean;
+  ghAvailable: boolean;
+  ghAuthenticated: boolean;
+}> {
+  // Track gh availability and auth for conditional checks later
+  let ghAvailable = false;
+  let ghAuthenticated = false;
 
   // Check 7: Git repo. Every run needs one (worktrees, branches, PRs), so a
   // missing repo fails doctor instead of warning (#1257). `.git` only exists
@@ -916,8 +931,13 @@ export async function doctorCommand(
     });
   }
 
-  // Check: Aider CLI (when configured as agent)
-  const settings = await getSettings();
+  return { gitExists, ghAvailable, ghAuthenticated };
+}
+
+type DoctorSettings = Awaited<ReturnType<typeof getSettings>>;
+
+// Check: Aider CLI (when configured as agent)
+function collectAgentChecks(checks: Check[], settings: DoctorSettings): void {
   // #1150: every driver the run can dispatch to — `run.agent` plus any
   // `run.phases.<phase>.agent` — gets its checks, not only the run-level one.
   const agentConfig = {
@@ -1072,7 +1092,16 @@ export async function doctorCommand(
       });
     }
   }
+}
 
+/** Remaining checks: jq, platform, MCP servers and closed-issue verification. */
+async function collectExtraChecks(
+  checks: Check[],
+  settings: DoctorSettings,
+  options: DoctorOptions,
+  env: { gitExists: boolean; ghAvailable: boolean; ghAuthenticated: boolean },
+): Promise<void> {
+  const { gitExists, ghAvailable, ghAuthenticated } = env;
   // Check 12: jq installed (optional but recommended)
   if (commandExists("jq")) {
     checks.push({
@@ -1200,7 +1229,14 @@ export async function doctorCommand(
       }
     }
   }
+}
 
+/** Print every check and return the pass/warn/fail tallies. */
+function printChecks(checks: Check[]): {
+  passCount: number;
+  warnCount: number;
+  failCount: number;
+} {
   // Display results with status icons
   let passCount = 0;
   let warnCount = 0;
@@ -1229,6 +1265,29 @@ export async function doctorCommand(
     else failCount++;
   }
 
+  return { passCount, warnCount, failCount };
+}
+
+export async function doctorCommand(
+  options: DoctorOptions = {},
+): Promise<void> {
+  console.log(ui.headerBox("SEQUANT HEALTH CHECK"));
+  console.log();
+
+  const checks: Check[] = [];
+
+  await collectInstallChecks(checks);
+  const env = await collectEnvironmentChecks(checks);
+
+  const settings = await getSettings();
+  collectAgentChecks(checks, settings);
+  await collectExtraChecks(checks, settings, options, env);
+
+  const tally = printChecks(checks);
+  let warnCount = tally.warnCount;
+  const passCount = tally.passCount;
+  const failCount = tally.failCount;
+
   // Upstream subagent routing notice (AC-2/AC-4). It prints a `!` line, so it
   // counts as a warning in the summary (#1387).
   if (
@@ -1240,6 +1299,10 @@ export async function doctorCommand(
   ) {
     warnCount++;
   }
+
+  // #1528: informational only; counts toward no total.
+  const issueFormLine = issueFormInfoLine();
+  if (issueFormLine) console.log(chalk.blue(`  ${issueFormLine}`));
 
   // Summary with boxed output
   const summary = buildDoctorSummary({

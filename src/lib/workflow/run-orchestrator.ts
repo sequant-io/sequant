@@ -36,38 +36,19 @@ import {
   getWorktreeDiffStats,
   rebaseOntoLocalBranch,
   registerWorktreeRemovalCleanup,
+  worktreeStatus,
 } from "./worktree-manager.js";
 import { LogWriter } from "./log-writer.js";
 import type { RunConfig } from "./run-log-schema.js";
 import { StateManager } from "./state-manager.js";
 import { ShutdownManager } from "../shutdown.js";
-import { LockManager, formatLockedMessage } from "../locks/index.js";
-import type { LockFile, SignalOtherResult } from "../locks/index.js";
+import {
+  LockManager,
+  formatLockedMessage,
+  formatSignalLine,
+} from "../locks/index.js";
+import type { LockFile } from "../locks/index.js";
 import { bracketedConsoleLog } from "./notice.js";
-
-/** Human-readable line for the run-orchestrator's `--signal-other` log (#637). */
-function formatSignalLine(
-  issue: number,
-  pid: number,
-  result: SignalOtherResult,
-): string {
-  switch (result.reason) {
-    case "sent":
-      return `  Signaled PID ${pid} (SIGTERM) for #${issue}`;
-    case "cross-host":
-      return `  Could not signal PID ${pid} for #${issue} (cross-host holder)`;
-    case "self-or-parent":
-      return `  Refused to signal PID ${pid} for #${issue} (matches this process or its parent)`;
-    case "pid-dead":
-      return `  Could not signal PID ${pid} for #${issue} (already exited)`;
-    case "stale-pid-untrusted":
-      return `  Refused to signal PID ${pid} for #${issue} (lock is past the age ceiling; that PID has likely been recycled)`;
-    case "kill-failed":
-      return `  Could not signal PID ${pid} for #${issue} (kill syscall failed)`;
-    case "orchestrator":
-      return `  Skipped signal for #${issue} (orchestrator mode)`;
-  }
-}
 
 /**
  * Resolve a git ref (branch name or base branch) to its tip commit SHA in the
@@ -87,29 +68,6 @@ function revParseRef(ref: string): string | undefined {
   return sha.length > 0 ? sha : undefined;
 }
 
-/**
- * True iff `worktreePath` has uncommitted changes (`git status --porcelain`,
- * which already honours .gitignore). Used by the chain resume planner (#760) to
- * reject a resume base whose checkpoint commit never landed.
- *
- * Returns false when the path is missing or not a worktree: an unreadable
- * worktree can't be judged dirty, and the branch-tip check already covers the
- * destroyed-link case.
- */
-function isWorktreeDirty(worktreePath: string): boolean {
-  const result = spawnSync(
-    "git",
-    ["-C", worktreePath, "status", "--porcelain"],
-    {
-      stdio: "pipe",
-      encoding: "utf-8",
-    },
-  );
-  if (result.status !== 0) {
-    return false;
-  }
-  return result.stdout.trim().length > 0;
-}
 import {
   getIssueInfo,
   issueTitleWarning,
@@ -916,7 +874,10 @@ export class RunOrchestrator {
         const resolver: CompletedLinkResolver = {
           resolveBranchTip: (branch) => revParseRef(branch),
           resolveBaseTip: () => revParseRef(baseBranch),
-          isWorktreeDirty,
+          // `unknown` is not dirty: a gone worktree is the branch-tip
+          // check's case (#760, chain-resume.ts).
+          isWorktreeDirty: (worktreePath) =>
+            worktreeStatus(worktreePath) === "dirty",
         };
         const plan = await planChainResumeFromState(
           issueNumbers,
@@ -1068,7 +1029,9 @@ export class RunOrchestrator {
                 const result = lockManager.signalOther(previous);
                 console.log(
                   chalk.gray(
-                    formatSignalLine(issueNumber, previous.pid, result),
+                    formatSignalLine(issueNumber, previous.pid, result, {
+                      indent: "  ",
+                    }),
                   ),
                 );
               }
