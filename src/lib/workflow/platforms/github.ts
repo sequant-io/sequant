@@ -22,6 +22,7 @@ import type {
   Comment,
 } from "./platform-provider.js";
 import type { AnnotatedCheck } from "../../qa/infra-blocked-ci.js";
+import { noteSuppressed } from "../suppressed.js";
 
 /**
  * Wall-clock bound for `gh auth status` (#1099, following #1075's precedent).
@@ -299,8 +300,13 @@ export class GitHubProvider implements PlatformProvider {
         if (state === "CLOSED") return "CLOSED";
         if (state === "OPEN") return "OPEN";
       }
-    } catch {
+    } catch (err) {
       // gh not available or error
+      noteSuppressed(
+        "platform",
+        err,
+        "github:GitHubProvider.getPRMergeStatusSync",
+      );
     }
 
     return null;
@@ -355,8 +361,13 @@ export class GitHubProvider implements PlatformProvider {
             ...(typeof info.body === "string" ? { body: info.body } : {}),
           };
         }
-      } catch {
+      } catch (err) {
         // JSON parse failed
+        noteSuppressed(
+          "platform",
+          err,
+          "github:GitHubProvider.viewPRByBranchSync",
+        );
       }
     }
 
@@ -903,8 +914,13 @@ export class GitHubProvider implements PlatformProvider {
           return state;
         }
       }
-    } catch {
+    } catch (err) {
       // fall through to UNKNOWN
+      noteSuppressed(
+        "platform",
+        err,
+        "github:GitHubProvider.getMergeableStateSync",
+      );
     }
     return "UNKNOWN";
   }
@@ -933,8 +949,9 @@ export class GitHubProvider implements PlatformProvider {
         const sha = result.stdout.toString().trim();
         return sha || null;
       }
-    } catch {
+    } catch (err) {
       // fall through to null
+      noteSuppressed("platform", err, "github:GitHubProvider.getPRHeadShaSync");
     }
     return null;
   }

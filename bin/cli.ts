@@ -52,8 +52,9 @@ function getVersion(): string {
       if (pkg.name === "sequant") {
         return pkg.version;
       }
-    } catch {
+    } catch (err) {
       // Not found, continue searching
+      noteSuppressed("other", err, "cli:getVersion");
     }
     dir = dirname(dir);
   }
@@ -99,6 +100,7 @@ import { watchCommand } from "../src/commands/watch.js";
 import { abortCommand } from "../src/commands/abort.js";
 import { assessRenderCommand } from "../src/commands/assess-render.js";
 import { phaseRegistry } from "../src/lib/workflow/phase-registry.js";
+import { noteSuppressed } from "../src/lib/workflow/suppressed.js";
 
 /**
  * Validate `--phases` argument against the phase registry.

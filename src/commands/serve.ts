@@ -23,6 +23,7 @@ import {
   getSkillsInstallStatus,
   type SkillsInstallStatus,
 } from "./version-preflight.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface ServeOptions {
   transport?: "stdio" | "sse";
@@ -98,8 +99,9 @@ async function startStdio(
     shuttingDown = true;
     try {
       await server.close();
-    } catch {
+    } catch (err) {
       /* best-effort */
+      noteSuppressed("other", err, "serve:shutdown");
     }
     process.exit(0);
   };
@@ -196,13 +198,15 @@ async function startSSE(
     shuttingDown = true;
     try {
       await server.close();
-    } catch {
+    } catch (err) {
       /* best-effort */
+      noteSuppressed("other", err, "serve:shutdown#2");
     }
     try {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-    } catch {
+    } catch (err) {
       /* best-effort */
+      noteSuppressed("other", err, "serve:shutdown#3");
     }
     process.exit(0);
   };

@@ -7,19 +7,13 @@
 import chalk from "chalk";
 import * as path from "path";
 import { ui, colors } from "../lib/cli-ui.js";
-import {
-  type RunLog,
-} from "../lib/workflow/run-log-schema.js";
+import { type RunLog } from "../lib/workflow/run-log-schema.js";
 import {
   manualRotate,
   getLogStats,
   formatBytes,
 } from "../lib/workflow/log-rotation.js";
-import {
-  resolveLogDir,
-  listLogFiles,
-  parseLogFile,
-} from "../lib/run-logs.js";
+import { resolveLogDir, listLogFiles, parseLogFile } from "../lib/run-logs.js";
 import { formatDuration } from "../lib/cli-ui/format.js";
 import { getSettings } from "../lib/settings.js";
 
@@ -90,6 +84,16 @@ function displayLogSummary(
       chalk.red(
         `  Aborted: run terminated by ${log.abortedBy} — results below are incomplete`,
       ),
+    );
+  }
+
+  if (log.suppressed && log.suppressed.total > 0) {
+    const scopes = Object.entries(log.suppressed.byScope)
+      .filter(([, n]) => n > 0)
+      .map(([scope, n]) => `${scope} ${n}`)
+      .join(", ");
+    console.log(
+      chalk.gray(`  Suppressed errors: ${log.suppressed.total} (${scopes})`),
     );
   }
 

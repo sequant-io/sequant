@@ -28,6 +28,27 @@ export default tseslint.config(
       ],
     },
   },
+  // #1505: forbid empty catch clauses in the code `npm run build` emits.
+  // A later block that sets `no-restricted-syntax` REPLACES every earlier
+  // selector for the files it matches (flat config), so this block repeats
+  // the require() ban and the phase-executor.ts block below repeats both.
+  {
+    files: ["src/**/*.ts", "bin/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='require']",
+          message: "Use ES module imports instead of require() in ESM modules",
+        },
+        {
+          selector: "CatchClause > BlockStatement[body.length=0]",
+          message:
+            "Empty catch swallows the error silently (#1505). Call noteSuppressed(scope, err, context) from src/lib/workflow/suppressed.ts, or handle it.",
+        },
+      ],
+    },
+  },
   // #647 AC-3: forbid raw stdout writes in `phase-executor.ts`. Every
   // message emitted from this file fires while the renderer's live zone
   // may be active; raw `console.log` / `process.stdout.write` advance
@@ -53,6 +74,11 @@ export default tseslint.config(
         {
           selector: "CallExpression[callee.name='require']",
           message: "Use ES module imports instead of require() in ESM modules",
+        },
+        {
+          selector: "CatchClause > BlockStatement[body.length=0]",
+          message:
+            "Empty catch swallows the error silently (#1505). Call noteSuppressed(scope, err, context) from src/lib/workflow/suppressed.ts, or handle it.",
         },
         {
           selector:

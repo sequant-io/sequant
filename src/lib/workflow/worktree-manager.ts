@@ -36,6 +36,7 @@ import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
 import type { CacheMetrics, GapFinding } from "./run-log-schema.js";
 import type { AbortContext, ShutdownManager } from "../shutdown.js";
+import { noteSuppressed } from "./suppressed.js";
 
 /**
  * Worktree information for an issue
@@ -732,8 +733,9 @@ export function readCacheMetrics(
         skipped: data.skipped,
       };
     }
-  } catch {
+  } catch (err) {
     // Ignore parse errors
+    noteSuppressed("other", err, "worktree-manager:readCacheMetrics");
   }
 
   return undefined;

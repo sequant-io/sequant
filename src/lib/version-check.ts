@@ -13,6 +13,7 @@ import {
   detectNodePackageManagerSync,
   resolvePackageManagerConfig,
 } from "./stacks.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,8 +67,9 @@ export function getCurrentVersion(): string {
         if (pkg.name === "sequant") {
           return pkg.version || "0.0.0";
         }
-      } catch {
+      } catch (err) {
         // Not found, continue searching
+        noteSuppressed("other", err, "version-check:getCurrentVersion");
       }
       dir = path.dirname(dir);
     }
@@ -240,8 +242,9 @@ export function getInstallRoot(startDir: string = __dirname): string | null {
       if (pkg.name === "sequant") {
         return dir;
       }
-    } catch {
+    } catch (err) {
       // Not found, continue searching
+      noteSuppressed("other", err, "version-check:getInstallRoot");
     }
     dir = path.dirname(dir);
   }
@@ -323,8 +326,9 @@ export function writeCache(latestVersion: string): void {
       checkedAt: new Date().toISOString(),
     };
     fs.writeFileSync(getCachePath(), JSON.stringify(cache, null, 2));
-  } catch {
+  } catch (err) {
     // Silent failure - caching is optional
+    noteSuppressed("other", err, "version-check:writeCache");
   }
 }
 

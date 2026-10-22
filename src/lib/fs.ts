@@ -21,6 +21,7 @@ import {
   writeFileSync as fsWriteFileSync,
 } from "fs";
 import { dirname } from "path";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 export async function fileExists(path: string): Promise<boolean> {
   try {
@@ -92,8 +93,9 @@ export function writeFileSync(path: string, content: string): void {
   let isLink = false;
   try {
     isLink = lstatSync(path).isSymbolicLink();
-  } catch {
+  } catch (err) {
     // missing path: nothing to replace
+    noteSuppressed("other", err, "fs:writeFileSync");
   }
   if (isLink) {
     unlinkSync(path);

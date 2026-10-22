@@ -8,6 +8,7 @@
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /**
  * Semgrep finding severity levels
@@ -176,16 +177,18 @@ export async function checkSemgrepAvailability(): Promise<{
   try {
     await executeCommand("semgrep", ["--version"]);
     return { available: true, command: "semgrep", useNpx: false };
-  } catch {
+  } catch (err) {
     // Native semgrep not available, try npx
+    noteSuppressed("other", err, "semgrep:checkSemgrepAvailability");
   }
 
   // Try npx semgrep
   try {
     await executeCommand("npx", ["semgrep", "--version"]);
     return { available: true, command: "npx", useNpx: true };
-  } catch {
+  } catch (err) {
     // npx semgrep also not available
+    noteSuppressed("other", err, "semgrep:checkSemgrepAvailability#2");
   }
 
   return { available: false, command: "", useNpx: false };
@@ -396,8 +399,9 @@ export async function runSemgrepScan(options: {
           infoCount: counts.info,
         };
       }
-    } catch {
+    } catch (err) {
       // Not valid JSON output, real error
+      noteSuppressed("other", err, "semgrep:runSemgrepScan");
     }
 
     return {

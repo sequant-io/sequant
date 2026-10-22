@@ -51,6 +51,7 @@ import {
   formatSkillsCommitWarning,
   getSkillsCommitState,
 } from "../lib/skills-commit-state.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 
@@ -235,9 +236,10 @@ async function readDriftCache(): Promise<DriftCache | null> {
 async function writeDriftCache(cache: DriftCache): Promise<void> {
   try {
     await writeFile(DRIFT_CACHE_PATH, JSON.stringify(cache));
-  } catch {
+  } catch (err) {
     // The cache is a pure optimization — never fail a command over a write miss
     // (e.g. the `.claude/.sequant/` dir not existing yet).
+    noteSuppressed("other", err, "sync:writeDriftCache");
   }
 }
 
@@ -322,8 +324,9 @@ export async function areSkillsOutdated(
   try {
     const manifest = await getManifest();
     if (manifest) installScope = getInstallScope(manifest);
-  } catch {
+  } catch (err) {
     // The scope only picks the remedy text; never fail the pre-flight on it.
+    noteSuppressed("other", err, "sync:areSkillsOutdated");
   }
 
   return {
