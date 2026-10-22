@@ -75,3 +75,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0017](0017-worktree-required-contract.md) | An issue context says whether a worktree is required; a failed worktree add fails the issue | Accepted |
 | [0018](0018-suppressed-error-counter.md) | Dropped errors are counted by a module-level counter that the run log persists | Proposed |
 | [0019](0019-gh-runner-seam-and-fixture-replay.md) | Every `gh` call goes through one runner seam; tests replay captured output through it | Proposed |
+| [0020](0020-issue-run-stage-functions.md) | `runIssueWithLogging` runs as same-file stage functions that share an explicit env/state pair | Proposed |

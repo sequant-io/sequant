@@ -2,12 +2,12 @@
   "generatedAt": "2026-10-21T06:34:59.197Z",
   "commit": "222ccef15c20e2d48f9c892746df41755448839c",
   "functions": {
-    "over400": 2,
-    "over200": 7,
+    "over400": 1,
+    "over200": 6,
     "longest": {
-      "file": "src/lib/workflow/batch-executor.ts",
-      "name": "runIssueWithLogging",
-      "lines": 1072
+      "file": "src/lib/workflow/run-orchestrator.ts",
+      "name": "run",
+      "lines": 649
     }
   },
   "emptyCatch": {
