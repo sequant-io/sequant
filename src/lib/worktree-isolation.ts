@@ -391,7 +391,11 @@ export function cleanupOrphanedSubWorktrees(issueWorktreePath: string): void {
     }
   } catch (err) {
     // Ignore errors during directory cleanup
-    noteSuppressed("other", err, "worktree-isolation:391");
+    noteSuppressed(
+      "other",
+      err,
+      "worktree-isolation:cleanupOrphanedSubWorktrees",
+    );
   }
 }
 

@@ -100,7 +100,7 @@ export async function activateRelay(
       });
     } catch (err) {
       // Issue may not be in state yet (race with initializeIssue) — non-fatal.
-      noteSuppressed("other", err, "activation:100");
+      noteSuppressed("other", err, "activation:activateRelay");
     }
   }
 
@@ -158,7 +158,7 @@ export async function deactivateRelay(
     removePidFile(issue, cwd);
   } catch (err) {
     /* swallow */
-    noteSuppressed("other", err, "activation:157");
+    noteSuppressed("other", err, "activation:deactivateRelay");
   }
 
   if (options.stateManager) {
@@ -166,7 +166,7 @@ export async function deactivateRelay(
       await options.stateManager.setRelayState(issue, null);
     } catch (err) {
       /* swallow */
-      noteSuppressed("other", err, "activation:164");
+      noteSuppressed("other", err, "activation:deactivateRelay#2");
     }
   }
 

@@ -27,7 +27,7 @@ function findPackageJson(): string {
       }
     } catch (err) {
       // Not found, continue searching
-      noteSuppressed("other", err, "manifest:27");
+      noteSuppressed("other", err, "manifest:findPackageJson");
     }
     dir = dirname(dir);
   }

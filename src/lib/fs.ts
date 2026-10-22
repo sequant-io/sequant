@@ -95,7 +95,7 @@ export function writeFileSync(path: string, content: string): void {
     isLink = lstatSync(path).isSymbolicLink();
   } catch (err) {
     // missing path: nothing to replace
-    noteSuppressed("other", err, "fs:95");
+    noteSuppressed("other", err, "fs:writeFileSync");
   }
   if (isLink) {
     unlinkSync(path);

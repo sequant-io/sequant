@@ -38,7 +38,7 @@ export function resolveFrameTemplatePath(): string {
       return candidate;
     } catch (err) {
       // continue
-      noteSuppressed("other", err, "frame:38");
+      noteSuppressed("other", err, "frame:resolveFrameTemplatePath");
     }
     dir = dirname(dir);
   }

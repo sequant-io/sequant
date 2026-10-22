@@ -269,7 +269,7 @@ function unlinkBestEffort(path: string): void {
     unlinkSync(path);
   } catch (err) {
     // Best-effort: swept later by sweepStealOrphans.
-    noteSuppressed("other", err, "lock-manager:269");
+    noteSuppressed("other", err, "lock-manager:unlinkBestEffort");
   }
 }
 
@@ -298,12 +298,12 @@ function sweepStealOrphans(lockPath: string, now: number): void {
         }
       } catch (err) {
         // Raced away or unreadable — skip it.
-        noteSuppressed("other", err, "lock-manager:297");
+        noteSuppressed("other", err, "lock-manager:sweepStealOrphans");
       }
     }
   } catch (err) {
     // Locks dir unreadable — nothing to sweep.
-    noteSuppressed("other", err, "lock-manager:301");
+    noteSuppressed("other", err, "lock-manager:sweepStealOrphans#2");
   }
 }
 
@@ -418,7 +418,7 @@ export function stealStaleLock(
         rename(tmp, lockPath);
       } catch (err) {
         // Out of options — degrades to pre-#908 behavior on this filesystem.
-        noteSuppressed("other", err, "lock-manager:415");
+        noteSuppressed("other", err, "lock-manager:stealStaleLock");
       }
     }
     // EEXIST: `lockPath` was re-claimed in the gap → leave `tmp` as an orphan

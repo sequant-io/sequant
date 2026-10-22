@@ -54,7 +54,7 @@ function getVersion(): string {
       }
     } catch (err) {
       // Not found, continue searching
-      noteSuppressed("other", err, "cli:55");
+      noteSuppressed("other", err, "cli:getVersion");
     }
     dir = dirname(dir);
   }

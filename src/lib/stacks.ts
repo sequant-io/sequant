@@ -858,7 +858,7 @@ export async function detectStack(): Promise<string | null> {
       if (deps.nuxt) return "nuxt";
     } catch (err) {
       // Ignore parse errors
-      noteSuppressed("other", err, "stacks:858");
+      noteSuppressed("other", err, "stacks:detectStack");
     }
   }
 
@@ -942,7 +942,7 @@ export async function detectStackInDirectory(
       if (deps.nuxt) return "nuxt";
     } catch (err) {
       // Ignore parse errors
-      noteSuppressed("other", err, "stacks:941");
+      noteSuppressed("other", err, "stacks:detectStackInDirectory");
     }
   }
 
@@ -1014,7 +1014,7 @@ export async function detectAllStacks(): Promise<DetectedStack[]> {
     }
   } catch (err) {
     // Directory read failed, return what we have
-    noteSuppressed("other", err, "stacks:1012");
+    noteSuppressed("other", err, "stacks:detectAllStacks");
   }
 
   return results;
@@ -1047,7 +1047,7 @@ export function detectTestRunner(
     if (deps.jest) return "jest";
   } catch (err) {
     // no package.json, or unreadable: not a JS project
-    noteSuppressed("other", err, "stacks:1044");
+    noteSuppressed("other", err, "stacks:detectTestRunner");
   }
   return null;
 }

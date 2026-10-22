@@ -106,7 +106,7 @@ function rankTemplatesCandidate(candidate: string): TemplatesCandidateRank {
   } catch (err) {
     // No readable/parseable package.json beside it — still a usable directory,
     // just not a positively identified package root.
-    noteSuppressed("other", err, "templates:105");
+    noteSuppressed("other", err, "templates:rankTemplatesCandidate");
   }
   return "exists";
 }
@@ -212,7 +212,7 @@ export async function listTemplateFiles(): Promise<string[]> {
       }
     } catch (err) {
       // Directory doesn't exist
-      noteSuppressed("other", err, "templates:211");
+      noteSuppressed("other", err, "templates:walk");
     }
   }
 

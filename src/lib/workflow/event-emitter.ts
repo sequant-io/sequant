@@ -237,7 +237,11 @@ export class WorkflowEventEmitter {
             this.onListenerError(event as string, r.reason);
           } catch (err) {
             /* swallow — error handler must not propagate */
-            noteSuppressed("other", err, "event-emitter:237");
+            noteSuppressed(
+              "other",
+              err,
+              "event-emitter:WorkflowEventEmitter.emit",
+            );
           }
         }
       }

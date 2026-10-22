@@ -302,7 +302,11 @@ export class GitHubProvider implements PlatformProvider {
       }
     } catch (err) {
       // gh not available or error
-      noteSuppressed("platform", err, "github:302");
+      noteSuppressed(
+        "platform",
+        err,
+        "github:GitHubProvider.getPRMergeStatusSync",
+      );
     }
 
     return null;
@@ -359,7 +363,11 @@ export class GitHubProvider implements PlatformProvider {
         }
       } catch (err) {
         // JSON parse failed
-        noteSuppressed("platform", err, "github:358");
+        noteSuppressed(
+          "platform",
+          err,
+          "github:GitHubProvider.viewPRByBranchSync",
+        );
       }
     }
 
@@ -908,7 +916,11 @@ export class GitHubProvider implements PlatformProvider {
       }
     } catch (err) {
       // fall through to UNKNOWN
-      noteSuppressed("platform", err, "github:906");
+      noteSuppressed(
+        "platform",
+        err,
+        "github:GitHubProvider.getMergeableStateSync",
+      );
     }
     return "UNKNOWN";
   }
@@ -939,7 +951,7 @@ export class GitHubProvider implements PlatformProvider {
       }
     } catch (err) {
       // fall through to null
-      noteSuppressed("platform", err, "github:936");
+      noteSuppressed("platform", err, "github:GitHubProvider.getPRHeadShaSync");
     }
     return null;
   }

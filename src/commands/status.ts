@@ -424,7 +424,7 @@ export async function statusCommand(
       }
     } catch (err) {
       // Ignore errors
-      noteSuppressed("other", err, "status:424");
+      noteSuppressed("other", err, "status:statusCommand");
     }
   }
 
@@ -458,7 +458,7 @@ export async function statusCommand(
       }
     } catch (err) {
       // Ignore state read errors
-      noteSuppressed("other", err, "status:457");
+      noteSuppressed("other", err, "status:statusCommand#2");
     }
   }
 

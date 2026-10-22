@@ -73,7 +73,7 @@ function readNewLines(
           if (parsed.success) replies.push(parsed.data);
         } catch (err) {
           /* skip malformed */
-          noteSuppressed("other", err, "watch:73");
+          noteSuppressed("other", err, "watch:readNewLines");
         }
       }
       resolve(replies);
@@ -182,7 +182,7 @@ export async function watchCommand(argsAndOptions: {
       emit(replies);
     } catch (err) {
       /* transient — try again next tick */
-      noteSuppressed("other", err, "watch:181");
+      noteSuppressed("other", err, "watch:watchCommand");
     }
 
     // Dead-relay detection (#645, Gap 3). Once we've seen a live pidfile, its
@@ -195,7 +195,7 @@ export async function watchCommand(argsAndOptions: {
         emit(finalReplies);
       } catch (err) {
         /* swallow */
-        noteSuppressed("other", err, "watch:193");
+        noteSuppressed("other", err, "watch:watchCommand#2");
       }
       stop("relay-ended");
       break;
@@ -210,7 +210,7 @@ export async function watchCommand(argsAndOptions: {
       watcher.close();
     } catch (err) {
       /* swallow */
-      noteSuppressed("other", err, "watch:207");
+      noteSuppressed("other", err, "watch:watchCommand#3");
     }
   }
   void useWatcher; // currently unused beyond best-effort init

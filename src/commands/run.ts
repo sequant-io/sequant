@@ -52,7 +52,7 @@ export async function runCommand(
       }
     } catch (err) {
       /* non-critical */
-      noteSuppressed("other", err, "run:52");
+      noteSuppressed("other", err, "run:runCommand");
     }
   }
 

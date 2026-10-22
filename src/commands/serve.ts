@@ -101,7 +101,7 @@ async function startStdio(
       await server.close();
     } catch (err) {
       /* best-effort */
-      noteSuppressed("other", err, "serve:101");
+      noteSuppressed("other", err, "serve:shutdown");
     }
     process.exit(0);
   };
@@ -200,13 +200,13 @@ async function startSSE(
       await server.close();
     } catch (err) {
       /* best-effort */
-      noteSuppressed("other", err, "serve:199");
+      noteSuppressed("other", err, "serve:shutdown#2");
     }
     try {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     } catch (err) {
       /* best-effort */
-      noteSuppressed("other", err, "serve:204");
+      noteSuppressed("other", err, "serve:shutdown#3");
     }
     process.exit(0);
   };

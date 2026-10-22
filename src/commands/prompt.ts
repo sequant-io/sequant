@@ -163,7 +163,7 @@ export async function promptCommand(argsAndOptions: {
         await stateManager.setRelayState(issueNumber, null);
       } catch (err) {
         /* swallow */
-        noteSuppressed("other", err, "prompt:163");
+        noteSuppressed("other", err, "prompt:promptCommand");
       }
     }
     if (options.json) {
@@ -210,7 +210,7 @@ export async function promptCommand(argsAndOptions: {
     await stateManager.incrementRelayMessageCount(issueNumber, 1);
   } catch (err) {
     /* swallow */
-    noteSuppressed("other", err, "prompt:209");
+    noteSuppressed("other", err, "prompt:promptCommand#2");
   }
 
   // Re-fetch state with a fresh manager to bypass any cached snapshot from
@@ -330,13 +330,13 @@ async function waitForReply(
               }
             } catch (err) {
               /* skip malformed */
-              noteSuppressed("other", err, "prompt:328");
+              noteSuppressed("other", err, "prompt:waitForReply");
             }
           }
         }
       } catch (err) {
         /* transient — try again */
-        noteSuppressed("other", err, "prompt:333");
+        noteSuppressed("other", err, "prompt:waitForReply#2");
       }
     }
     await new Promise((r) => setTimeout(r, options.pollIntervalMs));

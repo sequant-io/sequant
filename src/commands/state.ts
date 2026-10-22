@@ -242,7 +242,7 @@ export async function stateRebuildCommand(
         }
       } catch (err) {
         // Continue with other worktrees
-        noteSuppressed("state", err, "state:242");
+        noteSuppressed("state", err, "state:stateRebuildCommand");
       }
     }
   }

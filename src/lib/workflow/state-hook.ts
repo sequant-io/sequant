@@ -164,7 +164,7 @@ function createActiveHook(
         await manager.updatePhaseStatus(issueNumber, phase, "in_progress");
       } catch (err) {
         // State errors shouldn't stop skill execution
-        noteSuppressed("state", err, "state-hook:164");
+        noteSuppressed("state", err, "state-hook:startPhase");
       }
     },
 
@@ -179,7 +179,7 @@ function createActiveHook(
         await manager.updatePhaseStatus(issueNumber, phase, status, { error });
       } catch (err) {
         // State errors shouldn't stop skill execution
-        noteSuppressed("state", err, "state-hook:178");
+        noteSuppressed("state", err, "state-hook:completePhase");
       }
     },
 
@@ -189,7 +189,7 @@ function createActiveHook(
         await manager.updatePhaseStatus(issueNumber, phase, "skipped");
       } catch (err) {
         // State errors shouldn't stop skill execution
-        noteSuppressed("state", err, "state-hook:187");
+        noteSuppressed("state", err, "state-hook:skipPhase");
       }
     },
 
@@ -199,7 +199,7 @@ function createActiveHook(
         await manager.updateIssueStatus(issueNumber, status);
       } catch (err) {
         // State errors shouldn't stop skill execution
-        noteSuppressed("state", err, "state-hook:196");
+        noteSuppressed("state", err, "state-hook:updateIssueStatus");
       }
     },
 
@@ -209,7 +209,7 @@ function createActiveHook(
         await manager.updateSessionId(issueNumber, sessionId);
       } catch (err) {
         // State errors shouldn't stop skill execution
-        noteSuppressed("state", err, "state-hook:205");
+        noteSuppressed("state", err, "state-hook:updateSessionId");
       }
     },
 
@@ -222,7 +222,7 @@ function createActiveHook(
         });
       } catch (err) {
         // State errors shouldn't stop skill execution
-        noteSuppressed("state", err, "state-hook:217");
+        noteSuppressed("state", err, "state-hook:updatePRInfo");
       }
     },
   };

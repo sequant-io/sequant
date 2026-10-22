@@ -161,7 +161,7 @@ function writeJsonLinesAtomic(path: string, items: unknown[]): void {
         unlinkSync(tmp);
       } catch (err) {
         /* swallow */
-        noteSuppressed("other", err, "writer:161");
+        noteSuppressed("other", err, "writer:writeJsonLinesAtomic");
       }
     }
     throw err;

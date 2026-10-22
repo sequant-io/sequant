@@ -78,7 +78,7 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
         process.kill(pid, signal);
       } catch (err) {
         // Already gone.
-        noteSuppressed("other", err, "process-group:78");
+        noteSuppressed("other", err, "process-group:signalGroup");
       }
     }
   }

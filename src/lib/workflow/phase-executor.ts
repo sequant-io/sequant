@@ -475,7 +475,7 @@ export async function performAutoWait(
       });
     } catch (err) {
       // Liveness notices must never disrupt the run.
-      noteSuppressed("other", err, "phase-executor:475");
+      noteSuppressed("other", err, "phase-executor:emit");
     }
   };
 
@@ -1668,7 +1668,7 @@ async function executePhase(
       }
     } catch (err) {
       // No changed files or git error — proceed without file context
-      noteSuppressed("other", err, "phase-executor:1667");
+      noteSuppressed("other", err, "phase-executor:executePhase");
     }
   }
 
@@ -1772,7 +1772,7 @@ async function executePhase(
       if (framePath) env.SEQUANT_RELAY_FRAME = framePath;
     } catch (err) {
       /* relay module unavailable — fall back to bash's search heuristic. */
-      noteSuppressed("other", err, "phase-executor:1770");
+      noteSuppressed("other", err, "phase-executor:executePhase#2");
     }
   }
 
@@ -1794,7 +1794,7 @@ async function executePhase(
           onActivity(text);
         } catch (err) {
           // Activity reporting must never disrupt the run.
-          noteSuppressed("other", err, "phase-executor:1791");
+          noteSuppressed("other", err, "phase-executor:executePhase#3");
         }
       }, ACTIVITY_THROTTLE_MS)
     : undefined;

@@ -47,7 +47,7 @@ async function fromPackageJson(): Promise<string | null> {
     }
   } catch (err) {
     // Parse error or missing name field
-    noteSuppressed("other", err, "project-name:47");
+    noteSuppressed("other", err, "project-name:fromPackageJson");
   }
 
   return null;
@@ -73,7 +73,7 @@ async function fromCargoToml(): Promise<string | null> {
     }
   } catch (err) {
     // Parse error
-    noteSuppressed("other", err, "project-name:72");
+    noteSuppressed("other", err, "project-name:fromCargoToml");
   }
 
   return null;
@@ -107,7 +107,7 @@ async function fromPyprojectToml(): Promise<string | null> {
     }
   } catch (err) {
     // Parse error
-    noteSuppressed("other", err, "project-name:105");
+    noteSuppressed("other", err, "project-name:fromPyprojectToml");
   }
 
   return null;
@@ -136,7 +136,7 @@ async function fromGoMod(): Promise<string | null> {
     }
   } catch (err) {
     // Parse error
-    noteSuppressed("other", err, "project-name:133");
+    noteSuppressed("other", err, "project-name:fromGoMod");
   }
 
   return null;
@@ -171,7 +171,7 @@ function fromGitRemote(): string | null {
     }
   } catch (err) {
     // Git not available or not a git repo
-    noteSuppressed("other", err, "project-name:167");
+    noteSuppressed("other", err, "project-name:fromGitRemote");
   }
 
   return null;

@@ -95,7 +95,7 @@ export function isBranchMergedIntoMain(
     }
   } catch (err) {
     // git command failed - return false
-    noteSuppressed("platform", err, "pr-status:95");
+    noteSuppressed("platform", err, "pr-status:isBranchMergedIntoMain");
   }
 
   return false;
@@ -177,7 +177,7 @@ export function isIssueMergedIntoMain(
     }
   } catch (err) {
     // git command failed - return false
-    noteSuppressed("platform", err, "pr-status:176");
+    noteSuppressed("platform", err, "pr-status:isIssueMergedIntoMain");
   }
 
   return false;

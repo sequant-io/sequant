@@ -794,7 +794,7 @@ export function registerRunTool(server: McpServer): void {
             });
         } catch (err) {
           // Swallow synchronous errors (AC-6)
-          noteSuppressed("other", err, "run:794");
+          noteSuppressed("other", err, "run:emitProgress");
         }
       };
 

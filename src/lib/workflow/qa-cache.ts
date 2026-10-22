@@ -255,7 +255,7 @@ export class QACache {
           contents.push(fs.readFileSync(file, "utf-8"));
         } catch (err) {
           // Ignore read errors
-          noteSuppressed("state", err, "qa-cache:255");
+          noteSuppressed("state", err, "qa-cache:QACache.computeConfigHash");
         }
       }
     }

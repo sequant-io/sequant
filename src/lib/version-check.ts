@@ -69,7 +69,7 @@ export function getCurrentVersion(): string {
         }
       } catch (err) {
         // Not found, continue searching
-        noteSuppressed("other", err, "version-check:69");
+        noteSuppressed("other", err, "version-check:getCurrentVersion");
       }
       dir = path.dirname(dir);
     }
@@ -244,7 +244,7 @@ export function getInstallRoot(startDir: string = __dirname): string | null {
       }
     } catch (err) {
       // Not found, continue searching
-      noteSuppressed("other", err, "version-check:243");
+      noteSuppressed("other", err, "version-check:getInstallRoot");
     }
     dir = path.dirname(dir);
   }
@@ -328,7 +328,7 @@ export function writeCache(latestVersion: string): void {
     fs.writeFileSync(getCachePath(), JSON.stringify(cache, null, 2));
   } catch (err) {
     // Silent failure - caching is optional
-    noteSuppressed("other", err, "version-check:326");
+    noteSuppressed("other", err, "version-check:writeCache");
   }
 }
 

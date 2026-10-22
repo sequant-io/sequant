@@ -124,7 +124,11 @@ export class StateManager {
               fs.unlinkSync(lockPath);
             } catch (err) {
               // Another process may have removed it
-              noteSuppressed("state", err, "state-manager:124");
+              noteSuppressed(
+                "state",
+                err,
+                "state-manager:StateManager.acquireLock",
+              );
             }
             continue;
           }
@@ -151,7 +155,7 @@ export class StateManager {
       fs.unlinkSync(lockPath);
     } catch (err) {
       // Ignore — lock may have been cleaned up by stale detection
-      noteSuppressed("state", err, "state-manager:150");
+      noteSuppressed("state", err, "state-manager:StateManager.releaseLock");
     }
   }
 
@@ -235,7 +239,7 @@ export class StateManager {
       }
     } catch (err) {
       // Settings read failure should not block state writes
-      noteSuppressed("state", err, "state-manager:233");
+      noteSuppressed("state", err, "state-manager:StateManager.saveState");
     }
 
     // Ensure directory exists

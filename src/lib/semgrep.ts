@@ -179,7 +179,7 @@ export async function checkSemgrepAvailability(): Promise<{
     return { available: true, command: "semgrep", useNpx: false };
   } catch (err) {
     // Native semgrep not available, try npx
-    noteSuppressed("other", err, "semgrep:179");
+    noteSuppressed("other", err, "semgrep:checkSemgrepAvailability");
   }
 
   // Try npx semgrep
@@ -188,7 +188,7 @@ export async function checkSemgrepAvailability(): Promise<{
     return { available: true, command: "npx", useNpx: true };
   } catch (err) {
     // npx semgrep also not available
-    noteSuppressed("other", err, "semgrep:187");
+    noteSuppressed("other", err, "semgrep:checkSemgrepAvailability#2");
   }
 
   return { available: false, command: "", useNpx: false };
@@ -401,7 +401,7 @@ export async function runSemgrepScan(options: {
       }
     } catch (err) {
       // Not valid JSON output, real error
-      noteSuppressed("other", err, "semgrep:399");
+      noteSuppressed("other", err, "semgrep:runSemgrepScan");
     }
 
     return {

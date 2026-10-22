@@ -869,7 +869,7 @@ function createRunConfigHome(settings?: OpencodeSettings): {
   } catch (err) {
     // A config we could not write is a degraded run, not a failed one — the
     // redirect itself (an empty dir) still delivers the hermeticity.
-    noteSuppressed("other", err, "opencode:868");
+    noteSuppressed("other", err, "opencode:createRunConfigHome");
   }
   return {
     path,
@@ -879,7 +879,7 @@ function createRunConfigHome(settings?: OpencodeSettings): {
         rmSync(path, { recursive: true, force: true });
       } catch (err) {
         // Leaving a temp dir behind is not worth failing a completed phase.
-        noteSuppressed("other", err, "opencode:878");
+        noteSuppressed("other", err, "opencode:cleanup");
       }
     },
   };

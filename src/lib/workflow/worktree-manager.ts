@@ -735,7 +735,7 @@ export function readCacheMetrics(
     }
   } catch (err) {
     // Ignore parse errors
-    noteSuppressed("other", err, "worktree-manager:735");
+    noteSuppressed("other", err, "worktree-manager:readCacheMetrics");
   }
 
   return undefined;

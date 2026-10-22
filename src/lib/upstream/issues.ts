@@ -213,7 +213,7 @@ export async function createIssue(
       await unlink(tempFile);
     } catch (err) {
       // Ignore cleanup errors
-      noteSuppressed("other", err, "issues:213");
+      noteSuppressed("other", err, "issues:createIssue");
     }
   }
 }
@@ -255,7 +255,7 @@ export async function addIssueComment(
       await unlink(tempFile);
     } catch (err) {
       // Ignore cleanup errors
-      noteSuppressed("other", err, "issues:254");
+      noteSuppressed("other", err, "issues:addIssueComment");
     }
   }
 }

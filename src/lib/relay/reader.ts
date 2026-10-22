@@ -77,7 +77,7 @@ export function writeCursor(
         unlinkSync(tmp);
       } catch (err) {
         /* swallow */
-        noteSuppressed("other", err, "reader:77");
+        noteSuppressed("other", err, "reader:writeCursor");
       }
     }
     throw err;

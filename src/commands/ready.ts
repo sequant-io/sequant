@@ -433,7 +433,7 @@ export async function readyCommand(
     await stateManager.updateIssueStatus(issueNumber, result.issueStatus);
   } catch (err) {
     // State persistence is non-fatal — the report is the primary output.
-    noteSuppressed("other", err, "ready:433");
+    noteSuppressed("other", err, "ready:readyCommand");
   }
 
   // #929: one `source: "ready"` MetricRun per resolved gate pass. After the

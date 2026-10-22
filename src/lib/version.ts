@@ -20,7 +20,7 @@ export function getVersion(): string {
       }
     } catch (err) {
       // Not found, continue searching
-      noteSuppressed("other", err, "version:20");
+      noteSuppressed("other", err, "version:getVersion");
     }
     dir = dirname(dir);
   }

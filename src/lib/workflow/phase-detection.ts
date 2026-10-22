@@ -86,7 +86,7 @@ export function parsePhaseMarkers(commentBody: string): PhaseMarker[] {
       }
     } catch (err) {
       // Malformed JSON — skip silently
-      noteSuppressed("state", err, "phase-detection:86");
+      noteSuppressed("state", err, "phase-detection:parsePhaseMarkers");
     }
   }
 

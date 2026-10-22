@@ -252,7 +252,7 @@ export function listShippedSkillNames(
       .map((e) => e.name);
   } catch (err) {
     // reported below
-    noteSuppressed("other", err, "relevance:252");
+    noteSuppressed("other", err, "relevance:listShippedSkillNames");
   }
   if (names.length === 0) {
     console.warn(

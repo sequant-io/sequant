@@ -115,7 +115,7 @@ async function countPattern(
       if (matches) count += matches.length;
     } catch (err) {
       // Skip unreadable files
-      noteSuppressed("other", err, "conventions-detector:115");
+      noteSuppressed("other", err, "conventions-detector:countPattern");
     }
   }
   return count;
@@ -300,7 +300,11 @@ async function detectSourceStructure(root: string): Promise<Convention | null> {
       if (s.isDirectory()) found.push(c.label);
     } catch (err) {
       // doesn't exist
-      noteSuppressed("other", err, "conventions-detector:299");
+      noteSuppressed(
+        "other",
+        err,
+        "conventions-detector:detectSourceStructure",
+      );
     }
   }
 
@@ -373,7 +377,7 @@ async function detectIndentation(root: string): Promise<Convention | null> {
       }
     } catch (err) {
       // skip
-      noteSuppressed("other", err, "conventions-detector:371");
+      noteSuppressed("other", err, "conventions-detector:detectIndentation");
     }
   }
 
@@ -445,7 +449,7 @@ async function detectSemicolons(root: string): Promise<Convention | null> {
       }
     } catch (err) {
       // skip
-      noteSuppressed("other", err, "conventions-detector:442");
+      noteSuppressed("other", err, "conventions-detector:detectSemicolons");
     }
   }
 
@@ -495,7 +499,11 @@ async function detectComponentStructure(
       }
     } catch (err) {
       // doesn't exist
-      noteSuppressed("other", err, "conventions-detector:491");
+      noteSuppressed(
+        "other",
+        err,
+        "conventions-detector:detectComponentStructure",
+      );
     }
   }
 
@@ -527,7 +535,7 @@ export async function detectConventions(
       if (result) results.push(result);
     } catch (err) {
       // Skip failed detectors
-      noteSuppressed("other", err, "conventions-detector:522");
+      noteSuppressed("other", err, "conventions-detector:detectConventions");
     }
   }
 

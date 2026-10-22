@@ -131,7 +131,7 @@ export function getPhaseMcpServersConfig(
     }
   } catch (err) {
     // .mcp.json doesn't exist or is invalid — sequant entry still applies
-    noteSuppressed("other", err, "mcp-config:131");
+    noteSuppressed("other", err, "mcp-config:getPhaseMcpServersConfig");
   }
 
   const allowedDesktopServers: Record<string, McpServerConfig> = {};
@@ -225,7 +225,7 @@ export function addSequantToMcpConfig(
       config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     } catch (err) {
       // Corrupt or empty file — start fresh
-      noteSuppressed("other", err, "mcp-config:224");
+      noteSuppressed("other", err, "mcp-config:addSequantToMcpConfig");
     }
   }
 

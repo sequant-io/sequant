@@ -83,7 +83,7 @@ export async function getSkillVersions(
     }
   } catch (err) {
     // Ignore errors reading skills directory
-    noteSuppressed("other", err, "skill-version:83");
+    noteSuppressed("other", err, "skill-version:getSkillVersions");
   }
 
   return results.sort((a, b) => a.name.localeCompare(b.name));

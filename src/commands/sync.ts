@@ -239,7 +239,7 @@ async function writeDriftCache(cache: DriftCache): Promise<void> {
   } catch (err) {
     // The cache is a pure optimization — never fail a command over a write miss
     // (e.g. the `.claude/.sequant/` dir not existing yet).
-    noteSuppressed("other", err, "sync:238");
+    noteSuppressed("other", err, "sync:writeDriftCache");
   }
 }
 
@@ -326,7 +326,7 @@ export async function areSkillsOutdated(
     if (manifest) installScope = getInstallScope(manifest);
   } catch (err) {
     // The scope only picks the remedy text; never fail the pre-flight on it.
-    noteSuppressed("other", err, "sync:325");
+    noteSuppressed("other", err, "sync:areSkillsOutdated");
   }
 
   return {

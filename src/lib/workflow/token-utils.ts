@@ -264,11 +264,11 @@ export function cleanupTokenFiles(directory: string = TOKEN_USAGE_DIR): void {
         fs.unlinkSync(filePath);
       } catch (err) {
         // Ignore individual file deletion errors
-        noteSuppressed("other", err, "token-utils:264");
+        noteSuppressed("other", err, "token-utils:cleanupTokenFiles");
       }
     }
   } catch (err) {
     // Directory read error - ignore
-    noteSuppressed("other", err, "token-utils:268");
+    noteSuppressed("other", err, "token-utils:cleanupTokenFiles#2");
   }
 }
