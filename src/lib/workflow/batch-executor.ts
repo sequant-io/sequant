@@ -9,7 +9,6 @@
  */
 
 import chalk from "chalk";
-import { spawnSync } from "child_process";
 import { createPhaseLogFromTiming, LogWriter } from "./log-writer.js";
 import { latestPhaseResult, latestWhere } from "./latest-phase.js";
 import { attributionFromPhases } from "./qa-verdict-attribution.js";
@@ -97,7 +96,8 @@ import {
   type ActivationResult,
 } from "../relay/activation.js";
 import { getSettings } from "../settings.js";
-import { GitHubProvider } from "./platforms/github.js";
+import { GhCommandError, GitHubProvider } from "./platforms/github.js";
+import type { PlatformProvider } from "./platforms/platform-provider.js";
 import {
   runReadyGate,
   parseNonGoals,
@@ -320,49 +320,37 @@ export function emitRunIdLine(runId: string): void {
 /** gh's error for a number the repo has no issue or PR for (#1257). */
 const ISSUE_NOT_FOUND_RE = /Could not resolve to an issue or pull request/i;
 
-export async function getIssueInfo(issueNumber: number): Promise<{
+export async function getIssueInfo(
+  issueNumber: number,
+  provider: PlatformProvider = new GitHubProvider(),
+): Promise<{
   title: string;
   labels: string[];
   notFound?: true;
   /** #1487: why the title could not be read (any gh failure but not-found) */
   error?: string;
 }> {
-  let error: string;
   try {
-    const result = spawnSync(
-      "gh",
-      ["issue", "view", String(issueNumber), "--json", "title,labels"],
-      { stdio: "pipe" },
-    );
-
+    const issue = await provider.fetchIssue(String(issueNumber));
+    return {
+      title: issue.title || `Issue #${issueNumber}`,
+      labels: issue.labels,
+    };
+  } catch (err) {
     // #1257 AC-5: tell "this issue doesn't exist" apart from every other gh
     // failure (offline, no auth, no remote), which keep the silent default.
-    if (
-      result.status !== 0 &&
-      ISSUE_NOT_FOUND_RE.test(result.stderr?.toString() ?? "")
-    ) {
+    if (err instanceof GhCommandError && ISSUE_NOT_FOUND_RE.test(err.stderr)) {
       return { title: `Issue #${issueNumber}`, labels: [], notFound: true };
     }
-
-    if (result.status === 0) {
-      const data = JSON.parse(result.stdout.toString());
-      return {
-        title: data.title || `Issue #${issueNumber}`,
-        labels: Array.isArray(data.labels)
-          ? data.labels.map((l: { name: string }) => l.name)
-          : [],
-      };
-    }
-    error =
-      result.stderr?.toString().trim() ||
-      result.error?.message ||
-      `gh exited with status ${result.status}`;
-  } catch (err) {
     // Use defaults; the run warns with the reason (#1487)
-    error = err instanceof Error ? err.message : String(err);
+    const error =
+      err instanceof GhCommandError && err.stderr
+        ? err.stderr
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    return { title: `Issue #${issueNumber}`, labels: [], error };
   }
-
-  return { title: `Issue #${issueNumber}`, labels: [], error };
 }
 
 /**
@@ -387,17 +375,12 @@ export function issueTitleWarning(
  * Parse dependencies from issue body and labels
  * Returns array of issue numbers this issue depends on
  */
-export function parseDependencies(issueNumber: number): number[] {
+export function parseDependencies(
+  issueNumber: number,
+  provider: GitHubProvider = new GitHubProvider(),
+): number[] {
   try {
-    const result = spawnSync(
-      "gh",
-      ["issue", "view", String(issueNumber), "--json", "body,labels"],
-      { stdio: "pipe" },
-    );
-
-    if (result.status !== 0) return [];
-
-    const data = JSON.parse(result.stdout.toString());
+    const data = provider.fetchIssueSync(String(issueNumber));
     const dependencies: number[] = [];
 
     // Parse from body: line-leading "Depends on: #123" / "**Depends on**: #123".
@@ -412,13 +395,10 @@ export function parseDependencies(issueNumber: number): number[] {
     }
 
     // Parse from labels: "depends-on/123" or "depends-on-123"
-    if (data.labels && Array.isArray(data.labels)) {
-      for (const label of data.labels) {
-        const labelName = label.name || label;
-        const labelMatch = labelName.match(/depends-on[-/](\d+)/i);
-        if (labelMatch) {
-          dependencies.push(parseInt(labelMatch[1], 10));
-        }
+    for (const labelName of data.labels) {
+      const labelMatch = labelName.match(/depends-on[-/](\d+)/i);
+      if (labelMatch) {
+        dependencies.push(parseInt(labelMatch[1], 10));
       }
     }
 
@@ -432,11 +412,14 @@ export function parseDependencies(issueNumber: number): number[] {
  * Sort issues by dependencies (topological sort)
  * Issues with no dependencies come first, then issues that depend on them
  */
-export function sortByDependencies(issueNumbers: number[]): number[] {
+export function sortByDependencies(
+  issueNumbers: number[],
+  provider?: GitHubProvider,
+): number[] {
   // Build dependency graph
   const dependsOn = new Map<number, number[]>();
   for (const issue of issueNumbers) {
-    const deps = parseDependencies(issue);
+    const deps = parseDependencies(issue, provider);
     // Only include dependencies that are in our issue list
     dependsOn.set(
       issue,

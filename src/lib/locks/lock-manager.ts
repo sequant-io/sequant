@@ -48,6 +48,7 @@ import {
   type SignalOtherResult,
   type StaleReason,
 } from "./types.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 export interface LockManagerOptions {
   /** Directory holding `<issue>.lock` files (default: `.sequant/locks`). */
@@ -266,8 +267,9 @@ function readLockIdentity(lockPath: string): StaleLockIdentity | null {
 function unlinkBestEffort(path: string): void {
   try {
     unlinkSync(path);
-  } catch {
+  } catch (err) {
     // Best-effort: swept later by sweepStealOrphans.
+    noteSuppressed("other", err, "lock-manager:unlinkBestEffort");
   }
 }
 
@@ -294,12 +296,14 @@ function sweepStealOrphans(lockPath: string, now: number): void {
         if (now - statSync(orphan).mtimeMs > STEAL_ORPHAN_TTL_MS) {
           unlinkSync(orphan);
         }
-      } catch {
+      } catch (err) {
         // Raced away or unreadable — skip it.
+        noteSuppressed("other", err, "lock-manager:sweepStealOrphans");
       }
     }
-  } catch {
+  } catch (err) {
     // Locks dir unreadable — nothing to sweep.
+    noteSuppressed("other", err, "lock-manager:sweepStealOrphans#2");
   }
 }
 
@@ -412,8 +416,9 @@ export function stealStaleLock(
       // not restoring at all destroys the fresh lock every time.
       try {
         rename(tmp, lockPath);
-      } catch {
+      } catch (err) {
         // Out of options — degrades to pre-#908 behavior on this filesystem.
+        noteSuppressed("other", err, "lock-manager:stealStaleLock");
       }
     }
     // EEXIST: `lockPath` was re-claimed in the gap → leave `tmp` as an orphan

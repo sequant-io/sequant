@@ -16,6 +16,7 @@ import type { StateManager } from "../workflow/state-manager.js";
 import { archiveRelayDir, tallyMessageCount } from "./archive.js";
 import { relayDirFor } from "./paths.js";
 import { writePidFile, removePidFile } from "./pid.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 export interface ActivationOptions {
   /** Worktree path; falls back to `cwd` for spec-phase / main-repo relay. */
@@ -97,8 +98,9 @@ export async function activateRelay(
         startedAt,
         messageCount: 0,
       });
-    } catch {
+    } catch (err) {
       // Issue may not be in state yet (race with initializeIssue) — non-fatal.
+      noteSuppressed("other", err, "activation:activateRelay");
     }
   }
 
@@ -154,15 +156,17 @@ export async function deactivateRelay(
 
   try {
     removePidFile(issue, cwd);
-  } catch {
+  } catch (err) {
     /* swallow */
+    noteSuppressed("other", err, "activation:deactivateRelay");
   }
 
   if (options.stateManager) {
     try {
       await options.stateManager.setRelayState(issue, null);
-    } catch {
+    } catch (err) {
       /* swallow */
+      noteSuppressed("other", err, "activation:deactivateRelay#2");
     }
   }
 

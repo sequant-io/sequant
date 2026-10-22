@@ -70,6 +70,8 @@ const SKIP_DIRS = new Set([
 ]);
 const TEST_FILE = /\.(test|spec)\.tsx?$/;
 const GH_PROVIDER = "src/lib/workflow/platforms/github.ts";
+/** Spawns the real gh on purpose: it records what the provider's runner sees (#1506). */
+const GH_CAPTURE_SCRIPT = "scripts/capture-gh-fixtures.ts";
 
 /** Keys reported but never compared by --check (D-6). */
 const UNGATED = [/^testRatio28d\./, /^harness\.memoryFiles$/, /^emptyCatch\.byFile\./];
@@ -278,6 +280,7 @@ export function collectMetrics(root: string, env: NodeJS.ProcessEnv = process.en
       !f.includes("__tests__/") &&
       /^(src|bin|scripts)\//.test(f) &&
       f !== GH_PROVIDER &&
+      f !== GH_CAPTURE_SCRIPT &&
       /spawnSync\(\s*"gh"/.test(read(root, f)),
   ).length;
 

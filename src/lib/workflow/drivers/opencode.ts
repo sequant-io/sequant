@@ -76,6 +76,7 @@ import type {
   ResumeHandle,
 } from "./agent-driver.js";
 import type { OpencodeSettings } from "../../settings.js";
+import { noteSuppressed } from "../suppressed.js";
 
 /**
  * Minimum opencode version this driver was verified against (#992 spike ran
@@ -865,9 +866,10 @@ function createRunConfigHome(settings?: OpencodeSettings): {
     const configDir = join(path, "opencode");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(join(configDir, "opencode.json"), content ?? "{}", "utf-8");
-  } catch {
+  } catch (err) {
     // A config we could not write is a degraded run, not a failed one — the
     // redirect itself (an empty dir) still delivers the hermeticity.
+    noteSuppressed("other", err, "opencode:createRunConfigHome");
   }
   return {
     path,
@@ -875,8 +877,9 @@ function createRunConfigHome(settings?: OpencodeSettings): {
     cleanup: () => {
       try {
         rmSync(path, { recursive: true, force: true });
-      } catch {
+      } catch (err) {
         // Leaving a temp dir behind is not worth failing a completed phase.
+        noteSuppressed("other", err, "opencode:cleanup");
       }
     },
   };

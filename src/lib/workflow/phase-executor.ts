@@ -60,6 +60,7 @@ import { formatElapsedTime } from "../cli-ui/format.js";
 
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
+import { noteSuppressed } from "./suppressed.js";
 
 /**
  * Determine whether a phase's session must run inside the issue worktree.
@@ -472,8 +473,9 @@ export async function performAutoWait(
           : `${header} · ${formatElapsedTime(remainingMs / 1000)} left`,
         done,
       });
-    } catch {
+    } catch (err) {
       // Liveness notices must never disrupt the run.
+      noteSuppressed("other", err, "phase-executor:emit");
     }
   };
 
@@ -1664,8 +1666,9 @@ async function executePhase(
       if (output) {
         files = output.split("\n").filter(Boolean);
       }
-    } catch {
+    } catch (err) {
       // No changed files or git error — proceed without file context
+      noteSuppressed("other", err, "phase-executor:executePhase");
     }
   }
 
@@ -1767,8 +1770,9 @@ async function executePhase(
         await import("../relay/activation.js");
       const framePath = resolveBundledFramePath();
       if (framePath) env.SEQUANT_RELAY_FRAME = framePath;
-    } catch {
+    } catch (err) {
       /* relay module unavailable — fall back to bash's search heuristic. */
+      noteSuppressed("other", err, "phase-executor:executePhase#2");
     }
   }
 
@@ -1788,8 +1792,9 @@ async function executePhase(
     ? createThrottledReporter((text: string) => {
         try {
           onActivity(text);
-        } catch {
+        } catch (err) {
           // Activity reporting must never disrupt the run.
+          noteSuppressed("other", err, "phase-executor:executePhase#3");
         }
       }, ACTIVITY_THROTTLE_MS)
     : undefined;

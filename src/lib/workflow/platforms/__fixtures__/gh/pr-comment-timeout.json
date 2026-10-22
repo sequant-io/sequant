@@ -1,0 +1,21 @@
+{
+  "command": "gh pr comment 1563 --body <*>",
+  "args": [
+    "pr",
+    "comment",
+    "1563",
+    "--body",
+    "<*>"
+  ],
+  "exitCode": 143,
+  "signal": "SIGTERM",
+  "error": {
+    "message": "spawnSync gh ETIMEDOUT",
+    "code": "ETIMEDOUT"
+  },
+  "stdout": "",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Hand-written: the failure mode, not gh output. exitCode is the shell status ($?); the runner reports status null, as spawnSync does, because signal/error is set."
+}

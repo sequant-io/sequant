@@ -5,6 +5,7 @@
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 export function getVersion(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -17,8 +18,9 @@ export function getVersion(): string {
       if (pkg.name === "sequant") {
         return pkg.version;
       }
-    } catch {
+    } catch (err) {
       // Not found, continue searching
+      noteSuppressed("other", err, "version:getVersion");
     }
     dir = dirname(dir);
   }

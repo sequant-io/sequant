@@ -4,11 +4,42 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-// Mock child_process for checkClosedIssues
+import {
+  deriveGhFixture,
+  loadGhFixture,
+  type GhReplay,
+} from "../lib/workflow/platforms/gh-fixtures.js";
+
+// Mock child_process for git; checkClosedIssues' gh call replays captured
+// output through the provider's runner seam instead (#1506).
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
   spawnSync: vi.fn(),
 }));
+
+const gh = vi.hoisted((): GhReplay => ({ fixtures: [], calls: [] }));
+vi.mock("../lib/workflow/platforms/github.js", async (importOriginal) =>
+  (await import("../lib/workflow/platforms/gh-fixtures.js")).replayGitHubModule(
+    importOriginal,
+    gh,
+  ),
+);
+
+// The binary the captured fixtures ran; doctor probes it with commandExists.
+const GH_BIN = loadGhFixture("gh-version").command.split(" ")[0];
+const CLOSED_LIST = loadGhFixture("issue-list-closed");
+const CLOSED_LIST_ARGS = CLOSED_LIST.args.map((a) => (a === "3" ? "100" : a));
+
+/** gh's `issue list --state closed` answer, with these issues in its shape. */
+function closedIssues(issues: unknown[]) {
+  return deriveGhFixture(CLOSED_LIST, {
+    args: CLOSED_LIST_ARGS,
+    json: (data) => {
+      const [shape] = data as object[];
+      return issues.map((issue) => ({ ...shape, ...(issue as object) }));
+    },
+  });
+}
 
 // #1354: the git state is stubbed; the formatter is the real one.
 vi.mock("../lib/skills-commit-state.js", async (importOriginal) => ({
@@ -219,7 +250,6 @@ const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
 const mockGetPhaseMcpServersConfig = vi.mocked(getPhaseMcpServersConfig);
 const mockReadProjectMcpPin = vi.mocked(readProjectMcpPin);
 const mockExecSync = vi.mocked(childProcess.execSync);
-const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
 const mockIsAgentsMdSequantOwned = vi.mocked(isAgentsMdSequantOwned);
 const mockIsSymlink = vi.mocked(isSymlink);
@@ -298,15 +328,8 @@ describe("doctor command", () => {
     mockReaddir.mockResolvedValue([] as never);
     mockIsSymlink.mockResolvedValue(false);
     mockGetSymlinkTarget.mockResolvedValue(null);
-    // Default: no closed issues (empty array from gh issue list via spawnSync)
-    mockSpawnSync.mockReturnValue({
-      status: 0,
-      stdout: "[]",
-      stderr: "",
-      pid: 0,
-      output: [],
-      signal: null,
-    } as never);
+    // Default: no closed issues (gh issue list answers [])
+    gh.fixtures = [closedIssues([])];
     // Default git answers for a set-up repo (#1257): a GitHub remote, and any
     // file asked about via `git ls-files` is tracked. Everything else: "".
     mockExecSync.mockImplementation(((cmd: string) => {
@@ -462,7 +485,7 @@ describe("doctor command", () => {
     });
 
     it("fails when gh CLI is not installed", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
       mockIsGhAuthenticated.mockReturnValue(false);
 
       await doctorCommand();
@@ -497,7 +520,7 @@ describe("doctor command", () => {
     });
 
     it("skips auth check when gh CLI is not installed", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
 
       await doctorCommand();
 
@@ -993,7 +1016,7 @@ describe("doctor command", () => {
     });
 
     it("exits with failure when gh is missing even if jq is present", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
 
       await doctorCommand();
 
@@ -1112,27 +1135,21 @@ describe("doctor command", () => {
   });
 
   describe("closed issue verification", () => {
-    /** Helper: mock spawnSync to return gh issue list JSON */
+    /** gh issue list answers with these closed issues. */
     function mockIssueList(issues: unknown[]) {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify(issues),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
+      gh.fixtures = [closedIssues(issues)];
     }
 
+    /** gh issue list fails the way a logged-out gh does. */
     function mockIssueListFailure() {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
+      const loggedOut = loadGhFixture("auth-status-logged-out");
+      gh.fixtures = [
+        deriveGhFixture(closedIssues([]), {
+          exitCode: loggedOut.exitCode,
+          stdout: "",
+          stderr: loggedOut.stderr,
+        }),
+      ];
     }
 
     it("passes when no recently closed issues exist", async () => {
@@ -1262,7 +1279,7 @@ describe("doctor command", () => {
     });
 
     it("skips check when gh is not available", async () => {
-      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== GH_BIN);
 
       await doctorCommand();
 

@@ -28,6 +28,7 @@ import {
   type RelayResponse,
 } from "./types.js";
 import { inboxPathFor, outboxPathFor, type RelayPathOptions } from "./paths.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 /** Generate a `msg_<hex>` id with enough entropy to stay unique within a run. */
 export function generateMessageId(): string {
@@ -158,8 +159,9 @@ function writeJsonLinesAtomic(path: string, items: unknown[]): void {
     if (existsSync(tmp)) {
       try {
         unlinkSync(tmp);
-      } catch {
+      } catch (err) {
         /* swallow */
+        noteSuppressed("other", err, "writer:writeJsonLinesAtomic");
       }
     }
     throw err;

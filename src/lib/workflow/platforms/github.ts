@@ -7,9 +7,12 @@
  * Sync methods are provided for callers that are currently synchronous
  * (phase-detection, pr-status, system, doctor, worktree-manager).
  * Async interface methods delegate to the sync implementations.
+ *
+ * Every call goes through one {@link GhRunner} (#1506): the default spawns
+ * the real binary, and `FakeGitHubProvider` replays captured output.
  */
 
-import { execSync, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
 import type {
   PlatformProvider,
   Issue,
@@ -19,6 +22,7 @@ import type {
   Comment,
 } from "./platform-provider.js";
 import type { AnnotatedCheck } from "../../qa/infra-blocked-ci.js";
+import { noteSuppressed } from "../suppressed.js";
 
 /**
  * Wall-clock bound for `gh auth status` (#1099, following #1075's precedent).
@@ -103,29 +107,78 @@ export interface RollupEntry {
   state?: string;
 }
 
+/** Per-call options a {@link GhRunner} honours. */
+export interface GhRunOptions {
+  timeout?: number;
+  cwd?: string;
+  /** Written to gh's stdin. */
+  input?: string;
+}
+
+/** What one `gh` invocation produced, as a {@link GhRunner} reports it. */
+export interface GhRunResult {
+  /** Exit code; `null` when gh was killed or never spawned. */
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  signal: NodeJS.Signals | null;
+  /** Set when the spawn itself failed (ENOENT, ETIMEDOUT). */
+  error?: Error;
+}
+
 /**
- * Run `gh` and throw unless it exited 0 (#1312). `spawnSync` never throws on a
- * non-zero exit, a timeout or a failed spawn, so each of those has to be
- * checked here; the thrown message carries gh's stderr. Returns gh's stdout.
+ * The one seam every `gh` call goes through (#1506). The default runs the real
+ * binary; tests pass a runner that replays captured output
+ * (`FakeGitHubProvider`), so no test fakes gh through `child_process`.
  */
-function runGhOrThrow(args: string[]): string {
+export type GhRunner = (args: string[], opts: GhRunOptions) => GhRunResult;
+
+/** The only place in `src/` that spawns `gh`. */
+function spawnGh(args: string[], opts: GhRunOptions): GhRunResult {
   const result = spawnSync("gh", args, {
-    stdio: "pipe",
     encoding: "utf-8",
-    timeout: 15000,
+    stdio: "pipe",
+    timeout: opts.timeout,
+    cwd: opts.cwd,
+    input: opts.input,
   });
-  if (result.error || result.signal || result.status !== 0) {
-    const stderr = String(result.stderr ?? "").trim();
+  return {
+    status: result.status,
+    stdout: String(result.stdout ?? ""),
+    stderr: String(result.stderr ?? ""),
+    signal: result.signal,
+    ...(result.error ? { error: result.error } : {}),
+  };
+}
+
+/**
+ * A `gh` call that did not exit 0: a non-zero exit, a timeout or a failed
+ * spawn (#1312, #1506). The message carries gh's stderr; `stderr` and
+ * `exitCode` let a caller classify the failure (e.g. #1257's not-found)
+ * without parsing the message.
+ */
+export class GhCommandError extends Error {
+  readonly args: string[];
+  readonly exitCode: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly stderr: string;
+
+  constructor(args: string[], result: GhRunResult) {
+    const stderr = result.stderr.trim();
     const cause = result.error
       ? result.error.message
       : result.signal
         ? `killed by ${result.signal}`
         : `exit ${result.status}`;
-    throw new Error(
+    super(
       `gh ${args.slice(0, 2).join(" ")} failed (${cause})${stderr ? `: ${stderr}` : ""}`,
     );
+    this.name = "GhCommandError";
+    this.args = args;
+    this.exitCode = result.status;
+    this.signal = result.signal;
+    this.stderr = stderr;
   }
-  return String(result.stdout ?? "");
 }
 
 /** An open PR on origin and the paths it changes (#1454). */
@@ -141,6 +194,24 @@ export type MergeableState = "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
 export class GitHubProvider implements PlatformProvider {
   name = "github";
 
+  protected readonly run: GhRunner;
+
+  constructor(opts: { run?: GhRunner } = {}) {
+    this.run = opts.run ?? spawnGh;
+  }
+
+  /**
+   * Run `gh` and throw {@link GhCommandError} unless it exited 0 (#1312).
+   * Returns gh's stdout.
+   */
+  private runOrThrow(args: string[], timeout = 15000): string {
+    const result = this.run(args, { timeout });
+    if (result.error || result.signal || result.status !== 0) {
+      throw new GhCommandError(args, result);
+    }
+    return result.stdout;
+  }
+
   // ─── Sync helpers (for synchronous callers) ────────────────────────
 
   /**
@@ -149,8 +220,7 @@ export class GitHubProvider implements PlatformProvider {
    */
   fetchIssueCommentBodiesSync(issueId: string): string[] {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "issue",
           "view",
@@ -160,7 +230,7 @@ export class GitHubProvider implements PlatformProvider {
           "--jq",
           "[.comments[].body]",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (result.status !== 0 || !result.stdout) return [];
       return JSON.parse(result.stdout) as string[];
@@ -179,8 +249,7 @@ export class GitHubProvider implements PlatformProvider {
     issueId: string,
   ): { body: string; createdAt: string }[] {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "issue",
           "view",
@@ -190,7 +259,7 @@ export class GitHubProvider implements PlatformProvider {
           "--jq",
           "[.comments[] | {body, createdAt}]",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (result.status !== 0 || !result.stdout) return [];
       return JSON.parse(result.stdout) as { body: string; createdAt: string }[];
@@ -205,11 +274,10 @@ export class GitHubProvider implements PlatformProvider {
    */
   checkAuthSync(): boolean {
     try {
-      execSync("gh auth status", {
-        stdio: "ignore",
-        timeout: AUTH_PROBE_TIMEOUT_MS,
-      });
-      return true;
+      return (
+        this.run(["auth", "status"], { timeout: AUTH_PROBE_TIMEOUT_MS })
+          .status === 0
+      );
     } catch {
       return false;
     }
@@ -221,10 +289,9 @@ export class GitHubProvider implements PlatformProvider {
    */
   getPRMergeStatusSync(prNumber: number): PRMergeStatus {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         ["pr", "view", String(prNumber), "--json", "state", "-q", ".state"],
-        { stdio: "pipe", timeout: 10000 },
+        { timeout: 10000 },
       );
 
       if (result.status === 0 && result.stdout) {
@@ -233,8 +300,13 @@ export class GitHubProvider implements PlatformProvider {
         if (state === "CLOSED") return "CLOSED";
         if (state === "OPEN") return "OPEN";
       }
-    } catch {
+    } catch (err) {
       // gh not available or error
+      noteSuppressed(
+        "platform",
+        err,
+        "github:GitHubProvider.getPRMergeStatusSync",
+      );
     }
 
     return null;
@@ -246,8 +318,7 @@ export class GitHubProvider implements PlatformProvider {
    */
   listClosedIssuesSync(limit: number = 100): ClosedIssueRaw[] {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "issue",
           "list",
@@ -258,7 +329,7 @@ export class GitHubProvider implements PlatformProvider {
           "--limit",
           String(limit),
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (result.status !== 0 || !result.stdout) return [];
       return JSON.parse(result.stdout) as ClosedIssueRaw[];
@@ -275,10 +346,9 @@ export class GitHubProvider implements PlatformProvider {
     branch: string,
     cwd?: string,
   ): { number: number; url: string; body?: string } | null {
-    const result = spawnSync(
-      "gh",
+    const result = this.run(
       ["pr", "view", branch, "--json", "number,url,body"],
-      { stdio: "pipe", cwd, timeout: 15000 },
+      { timeout: 15000, cwd },
     );
 
     if (result.status === 0 && result.stdout) {
@@ -291,8 +361,13 @@ export class GitHubProvider implements PlatformProvider {
             ...(typeof info.body === "string" ? { body: info.body } : {}),
           };
         }
-      } catch {
+      } catch (err) {
         // JSON parse failed
+        noteSuppressed(
+          "platform",
+          err,
+          "github:GitHubProvider.viewPRByBranchSync",
+        );
       }
     }
 
@@ -304,8 +379,7 @@ export class GitHubProvider implements PlatformProvider {
    * Used by the pre-tool hook (templates/hooks/pre-tool.sh) for pre-merge worktree cleanup.
    */
   getPRHeadBranchSync(prNumber: number): string | null {
-    const result = spawnSync(
-      "gh",
+    const result = this.run(
       [
         "pr",
         "view",
@@ -315,7 +389,7 @@ export class GitHubProvider implements PlatformProvider {
         "--jq",
         ".headRefName",
       ],
-      { stdio: "pipe", timeout: 10000 },
+      { timeout: 10000 },
     );
 
     if (result.status === 0 && result.stdout) {
@@ -350,11 +424,7 @@ export class GitHubProvider implements PlatformProvider {
     if (base) {
       args.push("--base", base);
     }
-    const result = spawnSync("gh", args, {
-      stdio: "pipe",
-      cwd,
-      timeout: 30000,
-    });
+    const result = this.run(args, { timeout: 30000, cwd });
 
     return {
       stdout: result.stdout?.toString() ?? "",
@@ -381,8 +451,7 @@ export class GitHubProvider implements PlatformProvider {
     if (fields.body !== undefined) payload.body = fields.body;
     if (fields.base !== undefined) payload.base = fields.base;
     if (Object.keys(payload).length === 0) return { success: true };
-    const result = spawnSync(
-      "gh",
+    const result = this.run(
       [
         "api",
         "-X",
@@ -391,12 +460,7 @@ export class GitHubProvider implements PlatformProvider {
         "--input",
         "-",
       ],
-      {
-        stdio: "pipe",
-        cwd,
-        timeout: 30000,
-        input: JSON.stringify(payload),
-      },
+      { timeout: 30000, cwd, input: JSON.stringify(payload) },
     );
     if (result.status === 0) return { success: true };
     return {
@@ -434,11 +498,9 @@ export class GitHubProvider implements PlatformProvider {
 }`;
 
       // Get repo owner/name
-      const repoResult = spawnSync(
-        "gh",
-        ["repo", "view", "--json", "owner,name"],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
-      );
+      const repoResult = this.run(["repo", "view", "--json", "owner,name"], {
+        timeout: 10000,
+      });
 
       if (repoResult.status !== 0 || !repoResult.stdout) {
         return {
@@ -456,10 +518,9 @@ export class GitHubProvider implements PlatformProvider {
         .replace("{owner}", repo.owner.login)
         .replace("{repo}", repo.name);
 
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         ["api", "graphql", "-f", `query=${filledQuery}`],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
 
       if (result.status !== 0 || !result.stdout) {
@@ -516,10 +577,9 @@ export class GitHubProvider implements PlatformProvider {
    */
   fetchIssueTitleSync(issueId: string): string | null {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         ["issue", "view", issueId, "--json", "title", "--jq", ".title"],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+        { timeout: 10000 },
       );
       if (result.status !== 0 || !result.stdout?.trim()) return null;
       return result.stdout.trim();
@@ -535,10 +595,9 @@ export class GitHubProvider implements PlatformProvider {
    */
   fetchIssueBodySync(issueId: string): string | null {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         ["issue", "view", issueId, "--json", "body", "--jq", ".body"],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+        { timeout: 10000 },
       );
       if (result.status !== 0) return null;
       const body = result.stdout ?? "";
@@ -554,10 +613,7 @@ export class GitHubProvider implements PlatformProvider {
    */
   checkGhInstalledSync(): boolean {
     try {
-      const result = spawnSync("gh", ["--version"], {
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 5000,
-      });
+      const result = this.run(["--version"], { timeout: 5000 });
       return result.status === 0;
     } catch {
       return false;
@@ -577,11 +633,7 @@ export class GitHubProvider implements PlatformProvider {
       const args = ["release", "view"];
       if (version) args.push(version);
       args.push("--repo", repo, "--json", "tagName,name,body,publishedAt");
-      const result = spawnSync("gh", args, {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 15000,
-      });
+      const result = this.run(args, { timeout: 15000 });
       if (result.status !== 0 || !result.stdout) return null;
       return JSON.parse(result.stdout) as Record<string, unknown>;
     } catch {
@@ -598,8 +650,7 @@ export class GitHubProvider implements PlatformProvider {
     limit: number = 50,
   ): Array<{ tagName: string; publishedAt: string }> {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "release",
           "list",
@@ -610,7 +661,7 @@ export class GitHubProvider implements PlatformProvider {
           "--json",
           "tagName,publishedAt",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (result.status !== 0 || !result.stdout) return [];
       return JSON.parse(result.stdout) as Array<{
@@ -660,11 +711,7 @@ export class GitHubProvider implements PlatformProvider {
         "--limit",
         String(limit),
       );
-      const result = spawnSync("gh", args, {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 15000,
-      });
+      const result = this.run(args, { timeout: 15000 });
       if (result.status !== 0 || !result.stdout) return null;
       return JSON.parse(result.stdout) as Array<{
         number: number;
@@ -681,10 +728,9 @@ export class GitHubProvider implements PlatformProvider {
    */
   listLabelsSync(repo: string): string[] | null {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         ["label", "list", "--repo", repo, "--json", "name", "--limit", "200"],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (result.status !== 0 || !result.stdout) return null;
       return (JSON.parse(result.stdout) as Array<{ name: string }>).map(
@@ -719,11 +765,7 @@ export class GitHubProvider implements PlatformProvider {
       for (const label of labels) {
         args.push("--label", label);
       }
-      const result = spawnSync("gh", args, {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 30000,
-      });
+      const result = this.run(args, { timeout: 30000 });
       if (result.status !== 0 || !result.stdout) {
         if (result.stderr) {
           console.error(`gh issue create failed: ${result.stderr.trim()}`);
@@ -749,8 +791,7 @@ export class GitHubProvider implements PlatformProvider {
     bodyFile: string,
   ): boolean {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "issue",
           "comment",
@@ -760,7 +801,7 @@ export class GitHubProvider implements PlatformProvider {
           "--body-file",
           bodyFile,
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       return result.status === 0;
     } catch {
@@ -781,8 +822,7 @@ export class GitHubProvider implements PlatformProvider {
    */
   getStatusCheckRollupSync(prNumber: number): RollupEntry[] {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "pr",
           "view",
@@ -792,7 +832,7 @@ export class GitHubProvider implements PlatformProvider {
           "-q",
           ".statusCheckRollup",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (result.status !== 0 || !result.stdout) return [];
       const parsed = JSON.parse(result.stdout);
@@ -811,7 +851,7 @@ export class GitHubProvider implements PlatformProvider {
    * at most 100 files per PR, so a larger PR is under-reported.
    */
   listOpenPRFilesSync(limit: number = 100): OpenPRFiles[] {
-    const stdout = runGhOrThrow([
+    const stdout = this.runOrThrow([
       "pr",
       "list",
       "--state",
@@ -852,8 +892,7 @@ export class GitHubProvider implements PlatformProvider {
    */
   getMergeableStateSync(prNumber: number): MergeableState {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "pr",
           "view",
@@ -863,7 +902,7 @@ export class GitHubProvider implements PlatformProvider {
           "-q",
           ".mergeable",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+        { timeout: 10000 },
       );
       if (result.status === 0 && result.stdout) {
         const state = result.stdout.toString().trim().toUpperCase();
@@ -875,8 +914,13 @@ export class GitHubProvider implements PlatformProvider {
           return state;
         }
       }
-    } catch {
+    } catch (err) {
       // fall through to UNKNOWN
+      noteSuppressed(
+        "platform",
+        err,
+        "github:GitHubProvider.getMergeableStateSync",
+      );
     }
     return "UNKNOWN";
   }
@@ -889,8 +933,7 @@ export class GitHubProvider implements PlatformProvider {
    */
   getPRHeadShaSync(prNumber: number): string | null {
     try {
-      const result = spawnSync(
-        "gh",
+      const result = this.run(
         [
           "pr",
           "view",
@@ -900,14 +943,15 @@ export class GitHubProvider implements PlatformProvider {
           "-q",
           ".headRefOid",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+        { timeout: 10000 },
       );
       if (result.status === 0 && result.stdout) {
         const sha = result.stdout.toString().trim();
         return sha || null;
       }
-    } catch {
+    } catch (err) {
       // fall through to null
+      noteSuppressed("platform", err, "github:GitHubProvider.getPRHeadShaSync");
     }
     return null;
   }
@@ -925,15 +969,14 @@ export class GitHubProvider implements PlatformProvider {
    */
   getCheckRunAnnotationsSync(headSha: string): AnnotatedCheck[] {
     try {
-      const listResult = spawnSync(
-        "gh",
+      const listResult = this.run(
         [
           "api",
           `repos/{owner}/{repo}/commits/${headSha}/check-runs?per_page=100`,
           "-q",
           ".check_runs",
         ],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+        { timeout: 15000 },
       );
       if (listResult.status !== 0 || !listResult.stdout) return [];
       const runs = JSON.parse(listResult.stdout);
@@ -953,14 +996,9 @@ export class GitHubProvider implements PlatformProvider {
         const count = run?.output?.annotations_count;
         if (typeof count === "number" && count === 0) continue;
 
-        const annResult = spawnSync(
-          "gh",
+        const annResult = this.run(
           ["api", `repos/{owner}/{repo}/check-runs/${id}/annotations`],
-          {
-            encoding: "utf-8",
-            stdio: ["pipe", "pipe", "pipe"],
-            timeout: 15000,
-          },
+          { timeout: 15000 },
         );
         if (annResult.status !== 0 || !annResult.stdout) {
           annotated.push({ checkName, annotations: [] });
@@ -984,16 +1022,23 @@ export class GitHubProvider implements PlatformProvider {
 
   // ─── Async interface methods (PlatformProvider) ────────────────────
 
-  async fetchIssue(id: string): Promise<Issue> {
-    const result = spawnSync(
-      "gh",
-      ["issue", "view", id, "--json", "number,title,body,labels,state"],
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
-    );
-    if (result.status !== 0 || !result.stdout) {
-      throw new Error(`Failed to fetch issue ${id}`);
+  /**
+   * Fetch an issue for a synchronous caller (`parseDependencies`, #1506).
+   * Throws {@link GhCommandError} when gh fails, so the caller can read its
+   * stderr.
+   */
+  fetchIssueSync(id: string): Issue {
+    const stdout = this.runOrThrow([
+      "issue",
+      "view",
+      id,
+      "--json",
+      "number,title,body,labels,state",
+    ]);
+    if (!stdout.trim()) {
+      throw new Error(`Failed to fetch issue ${id}: gh printed nothing`);
     }
-    const data = JSON.parse(result.stdout);
+    const data = JSON.parse(stdout);
     return {
       id: String(data.number),
       number: data.number,
@@ -1004,16 +1049,20 @@ export class GitHubProvider implements PlatformProvider {
     };
   }
 
+  async fetchIssue(id: string): Promise<Issue> {
+    return this.fetchIssueSync(id);
+  }
+
   async postComment(issueId: string, body: string): Promise<void> {
-    runGhOrThrow(["issue", "comment", issueId, "--body", body]);
+    this.runOrThrow(["issue", "comment", issueId, "--body", body]);
   }
 
   async addLabel(issueId: string, label: string): Promise<void> {
-    runGhOrThrow(["issue", "edit", issueId, "--add-label", label]);
+    this.runOrThrow(["issue", "edit", issueId, "--add-label", label]);
   }
 
   async removeLabel(issueId: string, label: string): Promise<void> {
-    runGhOrThrow(["issue", "edit", issueId, "--remove-label", label]);
+    this.runOrThrow(["issue", "edit", issueId, "--remove-label", label]);
   }
 
   async createPR(opts: CreatePROptions): Promise<PRInfo> {
@@ -1055,7 +1104,7 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async postPRComment(prId: string, body: string): Promise<void> {
-    runGhOrThrow(["pr", "comment", prId, "--body", body]);
+    this.runOrThrow(["pr", "comment", prId, "--body", body]);
   }
 
   async checkAuth(): Promise<boolean> {
@@ -1065,7 +1114,7 @@ export class GitHubProvider implements PlatformProvider {
   async getIssueComments(issueId: string): Promise<Comment[]> {
     // #1315: rejects on failure like every other async method, instead of
     // resolving [] — an empty list is indistinguishable from "no comments".
-    const stdout = runGhOrThrow([
+    const stdout = this.runOrThrow([
       "issue",
       "view",
       issueId,
