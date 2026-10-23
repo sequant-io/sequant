@@ -1055,30 +1055,25 @@ export interface WorktreeProvisioning {
   lockRetry?: ConfigLockRetryOptions;
 }
 
+/** The per-call inputs every ensureWorktree stage reads (#1508). */
+interface WorktreeRequest {
+  issueNumber: number;
+  verbose: boolean;
+  baseBranch?: string;
+  chainMode?: boolean;
+  provisioning?: WorktreeProvisioning;
+}
+
 /**
- * Create or reuse a worktree for an issue
- * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
- * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
- * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
- * @param provisioning - failure sink and lock-retry options (#1469)
+ * Pick the issue's branch name. Returns null (with the failure recorded)
+ * when the issue has several branches and none matches its title.
  */
-export async function ensureWorktree(
+function resolveIssueBranchName(
   issueNumber: number,
   title: string,
-  verbose: boolean,
-  packageManager?: string,
-  baseBranch?: string,
-  chainMode?: boolean,
-  worktreeRoot?: string,
+  gitRoot: string,
   provisioning?: WorktreeProvisioning,
-): Promise<WorktreeInfo | null> {
-  const gitRoot = getGitRoot();
-  if (!gitRoot) {
-    console.log(chalk.red("    ❌ Not in a git repository"));
-    provisioning?.failures?.set(issueNumber, "not in a git repository");
-    return null;
-  }
-
+): string | null {
   const slug = slugify(title);
   // #1487: reuse the issue's branch, found by number, before the title.
   const candidates = findIssueBranches(issueNumber, gitRoot);
@@ -1108,180 +1103,180 @@ export async function ensureWorktree(
     );
     return null;
   }
-  const worktreesDir = resolveWorktreeRoot(gitRoot, worktreeRoot);
-  const worktreePath = path.join(worktreesDir, branch);
+  return branch;
+}
 
-  // Check if worktree already exists
-  let existingPath = findExistingWorktree(branch);
-  // #1380/#1405: set when the worktree is built from its remote branch
+/**
+ * Check an existing worktree for staleness and remove it when it is safe to
+ * recreate. Returns the path still to reuse (null once removed) and the
+ * remote ref to rebuild from (#1380/#1405).
+ */
+function assessExistingWorktree(
+  req: WorktreeRequest,
+  existingPath: string,
+  branch: string,
+): { existingPath: string | null; recreateFrom: string | null } {
+  const { verbose, baseBranch, chainMode } = req;
   let recreateFrom: string | null = null;
-  if (existingPath) {
-    // AC-3: Check if worktree is stale and needs recreation
-    const detectedBase = baseBranch || detectDefaultBranch(verbose);
-    const freshness = checkWorktreeFreshness(
-      existingPath,
-      verbose,
-      detectedBase,
-    );
+  let removed = false;
+  // AC-3: Check if worktree is stale and needs recreation
+  const detectedBase = baseBranch || detectDefaultBranch(verbose);
+  const freshness = checkWorktreeFreshness(existingPath, verbose, detectedBase);
 
-    if (freshness.isStale) {
-      // AC-3: Handle stale worktrees - check for work in progress
-      if (freshness.hasUncommittedChanges) {
-        console.log(
-          chalk.yellow(
-            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has uncommitted changes`,
-          ),
-        );
-        console.log(
-          chalk.yellow(
-            `    ℹ️  Keeping existing worktree. Commit or stash changes, then re-run.`,
-          ),
-        );
+  if (freshness.isStale) {
+    // AC-3: Handle stale worktrees - check for work in progress
+    if (freshness.hasUncommittedChanges) {
+      console.log(
+        chalk.yellow(
+          `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has uncommitted changes`,
+        ),
+      );
+      console.log(
+        chalk.yellow(
+          `    ℹ️  Keeping existing worktree. Commit or stash changes, then re-run.`,
+        ),
+      );
+      // Continue with existing worktree
+    } else if (freshness.hasUnpushedCommits) {
+      console.log(
+        chalk.yellow(
+          `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has unpushed commits`,
+        ),
+      );
+      console.log(
+        chalk.yellow(`    ℹ️  Keeping existing worktree with WIP commits.`),
+      );
+      // Continue with existing worktree
+    } else {
+      // #1380: recreate from origin/<branch> when it exists, and only when
+      // the start ref already contains HEAD — otherwise the recreate drops
+      // the branch's commits (a pushed PR, or a local-only branch).
+      const startRef = resolveBranchStartRef(
+        existingPath,
+        branch,
+        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+          chainMode,
+          hasRemote:
+            !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+        }),
+      );
+      const contained = spawnSync(
+        "git",
+        ["-C", existingPath, "merge-base", "--is-ancestor", "HEAD", startRef],
+        { stdio: "pipe" },
+      );
+      const wtPath = existingPath;
+      const revParse = (ref: string): string =>
+        spawnSync("git", ["-C", wtPath, "rev-parse", ref], {
+          stdio: "pipe",
+        })
+          .stdout.toString()
+          .trim();
+      if (
+        startRef === `origin/${branch}` &&
+        revParse("HEAD") === revParse(startRef)
+      ) {
+        // #1405: recreating from origin/<branch> would rebuild this exact
+        // commit, still behind the base, and every later run would recreate
+        // it again. The pre-PR rebase (#1069) brings in the base.
+        if (verbose) {
+          console.log(
+            chalk.gray(
+              `    Worktree already at ${startRef}; recreating would not change it`,
+            ),
+          );
+        }
         // Continue with existing worktree
-      } else if (freshness.hasUnpushedCommits) {
+      } else if (contained.status !== 0) {
         console.log(
           chalk.yellow(
-            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has unpushed commits`,
+            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but ${startRef} does not contain its commits`,
           ),
         );
         console.log(
-          chalk.yellow(`    ℹ️  Keeping existing worktree with WIP commits.`),
+          chalk.yellow(
+            `    ℹ️  Keeping existing worktree so the branch's commits are not dropped.`,
+          ),
         );
         // Continue with existing worktree
       } else {
-        // #1380: recreate from origin/<branch> when it exists, and only when
-        // the start ref already contains HEAD — otherwise the recreate drops
-        // the branch's commits (a pushed PR, or a local-only branch).
-        const startRef = resolveBranchStartRef(
-          existingPath,
-          branch,
-          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
-            chainMode,
-            hasRemote:
-              !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
-          }),
+        // Safe to recreate - no uncommitted/unpushed work
+        console.log(
+          chalk.yellow(
+            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
+          ),
         );
-        const contained = spawnSync(
-          "git",
-          ["-C", existingPath, "merge-base", "--is-ancestor", "HEAD", startRef],
-          { stdio: "pipe" },
-        );
-        const wtPath = existingPath;
-        const revParse = (ref: string): string =>
-          spawnSync("git", ["-C", wtPath, "rev-parse", ref], {
-            stdio: "pipe",
-          })
-            .stdout.toString()
-            .trim();
-        if (
-          startRef === `origin/${branch}` &&
-          revParse("HEAD") === revParse(startRef)
-        ) {
-          // #1405: recreating from origin/<branch> would rebuild this exact
-          // commit, still behind the base, and every later run would recreate
-          // it again. The pre-PR rebase (#1069) brings in the base.
-          if (verbose) {
-            console.log(
-              chalk.gray(
-                `    Worktree already at ${startRef}; recreating would not change it`,
-              ),
-            );
-          }
-          // Continue with existing worktree
-        } else if (contained.status !== 0) {
-          console.log(
-            chalk.yellow(
-              `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but ${startRef} does not contain its commits`,
-            ),
-          );
-          console.log(
-            chalk.yellow(
-              `    ℹ️  Keeping existing worktree so the branch's commits are not dropped.`,
-            ),
-          );
-          // Continue with existing worktree
-        } else {
-          // Safe to recreate - no uncommitted/unpushed work
-          console.log(
-            chalk.yellow(
-              `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
-            ),
-          );
 
-          if (removeStaleWorktree(existingPath, branch, verbose)) {
-            existingPath = null; // Will fall through to create new worktree
-            if (startRef === `origin/${branch}`) recreateFrom = startRef;
-          }
+        if (removeStaleWorktree(existingPath, branch, verbose)) {
+          removed = true; // Will fall through to create new worktree
+          if (startRef === `origin/${branch}`) recreateFrom = startRef;
         }
       }
     }
   }
+  return { existingPath: removed ? null : existingPath, recreateFrom };
+}
 
-  if (existingPath) {
-    if (verbose) {
-      console.log(chalk.gray(`    Reusing existing worktree: ${existingPath}`));
-    }
+/** Reuse an existing worktree, rebasing it onto the chain base in chain mode. */
+function reuseExistingWorktree(
+  req: WorktreeRequest,
+  existingPath: string,
+  branch: string,
+): WorktreeInfo {
+  const { issueNumber, verbose, baseBranch, chainMode, provisioning } = req;
+  if (verbose) {
+    console.log(chalk.gray(`    Reusing existing worktree: ${existingPath}`));
+  }
 
-    // #1234: a worktree created before the base was recorded gets it now;
-    // one that already has it keeps the ref it was actually cut from.
-    if (!readRecordedBaseRef(existingPath, branch)) {
-      warnBaseRefNotRecorded(
+  // #1234: a worktree created before the base was recorded gets it now;
+  // one that already has it keeps the ref it was actually cut from.
+  if (!readRecordedBaseRef(existingPath, branch)) {
+    warnBaseRefNotRecorded(
+      branch,
+      recordWorktreeBaseRef(
+        existingPath,
         branch,
-        recordWorktreeBaseRef(
-          existingPath,
-          branch,
-          computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
-            chainMode,
-            hasRemote:
-              !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
-          }),
-          provisioning?.lockRetry,
+        computeWorktreeBaseRef(baseBranch, detectDefaultBranch(verbose), {
+          chainMode,
+          hasRemote:
+            !!baseBranch && hasRemoteTrackingRef(existingPath, baseBranch),
+        }),
+        provisioning?.lockRetry,
+      ),
+    );
+  }
+
+  // In chain mode, rebase existing worktree onto previous chain link
+  if (chainMode && baseBranch) {
+    if (verbose) {
+      console.log(
+        chalk.gray(
+          `    Rebasing existing worktree onto chain base (${baseBranch})...`,
         ),
       );
     }
 
-    // In chain mode, rebase existing worktree onto previous chain link
-    if (chainMode && baseBranch) {
-      if (verbose) {
+    const rebase = rebaseOntoLocalBranch(existingPath, baseBranch, verbose);
+
+    if (!rebase.success) {
+      if (rebase.conflict) {
         console.log(
-          chalk.gray(
-            `    Rebasing existing worktree onto chain base (${baseBranch})...`,
+          chalk.yellow(
+            `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
           ),
         );
-      }
-
-      const rebase = rebaseOntoLocalBranch(existingPath, baseBranch, verbose);
-
-      if (!rebase.success) {
-        if (rebase.conflict) {
-          console.log(
-            chalk.yellow(
-              `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
-            ),
-          );
-          console.log(
-            chalk.yellow(
-              `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
-            ),
-          );
-        } else {
-          console.log(
-            chalk.yellow(`    !  Rebase failed: ${rebase.error ?? ""}`),
-          );
-          console.log(
-            chalk.yellow(
-              `    ℹ️  Continuing with branch in its original state.`,
-            ),
-          );
-        }
-
-        return {
-          issue: issueNumber,
-          path: existingPath,
-          branch,
-          existed: true,
-          rebased: false,
-        };
+        console.log(
+          chalk.yellow(
+            `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
+          ),
+        );
+      } else {
+        console.log(
+          chalk.yellow(`    !  Rebase failed: ${rebase.error ?? ""}`),
+        );
+        console.log(
+          chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
+        );
       }
 
       return {
@@ -1289,7 +1284,7 @@ export async function ensureWorktree(
         path: existingPath,
         branch,
         existed: true,
-        rebased: true,
+        rebased: false,
       };
     }
 
@@ -1298,11 +1293,34 @@ export async function ensureWorktree(
       path: existingPath,
       branch,
       existed: true,
-      rebased: false,
+      rebased: true,
     };
   }
 
-  // Check if branch exists (but no worktree)
+  return {
+    issue: issueNumber,
+    path: existingPath,
+    branch,
+    existed: true,
+    rebased: false,
+  };
+}
+
+/**
+ * Fetch the base, resolve the base ref and add the worktree (retrying a lost
+ * `.git/config` lock), then record the base ref. Returns null (with the
+ * failure recorded) when `git worktree add` fails.
+ */
+function createWorktree(
+  req: WorktreeRequest,
+  gitRoot: string,
+  branch: string,
+  worktreesDir: string,
+  worktreePath: string,
+  initialRecreateFrom: string | null,
+): { baseRef: string; needsRebase: boolean } | null {
+  const { issueNumber, verbose, baseBranch, chainMode, provisioning } = req;
+  let recreateFrom = initialRecreateFrom;
   const branchCheck = spawnSync(
     "git",
     ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
@@ -1435,64 +1453,73 @@ export async function ensureWorktree(
     ),
   );
 
-  // Rebase existing branch onto chain base if needed
+  return { baseRef, needsRebase };
+}
+
+/** Rebase a freshly added existing branch onto the previous chain link. */
+function rebaseOntoChainBase(
+  worktreePath: string,
+  branch: string,
+  baseRef: string,
+  verbose: boolean,
+): boolean {
   let rebased = false;
-  if (needsRebase) {
-    if (verbose) {
-      console.log(
-        chalk.gray(
-          `    Rebasing existing branch onto previous chain link (${baseRef})...`,
-        ),
-      );
-    }
-
-    const rebaseResult = spawnSync(
-      "git",
-      ["-C", worktreePath, "rebase", baseRef],
-      {
-        stdio: "pipe",
-      },
+  if (verbose) {
+    console.log(
+      chalk.gray(
+        `    Rebasing existing branch onto previous chain link (${baseRef})...`,
+      ),
     );
-
-    if (rebaseResult.status !== 0) {
-      const rebaseError = rebaseResult.stderr.toString();
-
-      // Check if it's a conflict
-      if (
-        rebaseError.includes("CONFLICT") ||
-        rebaseError.includes("could not apply")
-      ) {
-        console.log(
-          chalk.yellow(
-            `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
-          ),
-        );
-        console.log(
-          chalk.yellow(
-            `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
-          ),
-        );
-
-        // Abort the rebase to restore branch state
-        spawnSync("git", ["-C", worktreePath, "rebase", "--abort"], {
-          stdio: "pipe",
-        });
-      } else {
-        console.log(
-          chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`),
-        );
-        console.log(
-          chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
-        );
-      }
-    } else {
-      rebased = true;
-      if (verbose) {
-        console.log(chalk.green(`    ✔ Branch rebased onto ${baseRef}`));
-      }
-    }
   }
 
+  const rebaseResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "rebase", baseRef],
+    {
+      stdio: "pipe",
+    },
+  );
+
+  if (rebaseResult.status !== 0) {
+    const rebaseError = rebaseResult.stderr.toString();
+
+    // Check if it's a conflict
+    if (
+      rebaseError.includes("CONFLICT") ||
+      rebaseError.includes("could not apply")
+    ) {
+      console.log(
+        chalk.yellow(
+          `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+        ),
+      );
+      console.log(
+        chalk.yellow(
+          `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
+        ),
+      );
+
+      // Abort the rebase to restore branch state
+      spawnSync("git", ["-C", worktreePath, "rebase", "--abort"], {
+        stdio: "pipe",
+      });
+    } else {
+      console.log(chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`));
+      console.log(
+        chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
+      );
+    }
+  } else {
+    rebased = true;
+    if (verbose) {
+      console.log(chalk.green(`    ✔ Branch rebased onto ${baseRef}`));
+    }
+  }
+  return rebased;
+}
+
+/** Copy .env.local and .claude/settings.local.json into a new worktree. */
+function copyLocalConfigFiles(gitRoot: string, worktreePath: string): void {
   // Copy .env.local if it exists
   const envLocalSrc = path.join(gitRoot, ".env.local");
   const envLocalDst = path.join(worktreePath, ".env.local");
@@ -1517,6 +1544,82 @@ export async function ensureWorktree(
     });
     spawnSync("cp", [claudeSettingsSrc, claudeSettingsDst], { stdio: "pipe" });
   }
+}
+
+/**
+ * Create or reuse a worktree for an issue
+ * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
+ * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
+ * @param worktreeRoot - `run.worktreeRoot` setting; see resolveWorktreeRoot
+ * @param provisioning - failure sink and lock-retry options (#1469)
+ */
+export async function ensureWorktree(
+  issueNumber: number,
+  title: string,
+  verbose: boolean,
+  packageManager?: string,
+  baseBranch?: string,
+  chainMode?: boolean,
+  worktreeRoot?: string,
+  provisioning?: WorktreeProvisioning,
+): Promise<WorktreeInfo | null> {
+  const gitRoot = getGitRoot();
+  if (!gitRoot) {
+    console.log(chalk.red("    ❌ Not in a git repository"));
+    provisioning?.failures?.set(issueNumber, "not in a git repository");
+    return null;
+  }
+
+  const branch = resolveIssueBranchName(
+    issueNumber,
+    title,
+    gitRoot,
+    provisioning,
+  );
+  if (!branch) return null;
+  const worktreesDir = resolveWorktreeRoot(gitRoot, worktreeRoot);
+  const worktreePath = path.join(worktreesDir, branch);
+  const req: WorktreeRequest = {
+    issueNumber,
+    verbose,
+    baseBranch,
+    chainMode,
+    provisioning,
+  };
+
+  // Check if worktree already exists
+  let existingPath = findExistingWorktree(branch);
+  // #1380/#1405: set when the worktree is built from its remote branch
+  let recreateFrom: string | null = null;
+  if (existingPath) {
+    ({ existingPath, recreateFrom } = assessExistingWorktree(
+      req,
+      existingPath,
+      branch,
+    ));
+  }
+
+  if (existingPath) {
+    return reuseExistingWorktree(req, existingPath, branch);
+  }
+
+  const created = createWorktree(
+    req,
+    gitRoot,
+    branch,
+    worktreesDir,
+    worktreePath,
+    recreateFrom,
+  );
+  if (!created) return null;
+  const { baseRef, needsRebase } = created;
+
+  // Rebase existing branch onto chain base if needed
+  const rebased = needsRebase
+    ? rebaseOntoChainBase(worktreePath, branch, baseRef, verbose)
+    : false;
+
+  copyLocalConfigFiles(gitRoot, worktreePath);
 
   // Install dependencies if needed
   const nodeModulesPath = path.join(worktreePath, "node_modules");
