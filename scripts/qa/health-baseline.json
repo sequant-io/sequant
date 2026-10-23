@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-21T06:34:59.197Z",
-  "commit": "222ccef15c20e2d48f9c892746df41755448839c",
+  "generatedAt": "2026-10-23T05:03:23.522Z",
+  "commit": "c86b23fe1a52fe8da17e605f7767f84c84386719",
   "functions": {
-    "over400": 1,
-    "over200": 6,
+    "over400": 0,
+    "over200": 0,
     "longest": {
-      "file": "src/lib/workflow/run-orchestrator.ts",
-      "name": "run",
-      "lines": 649
+      "file": "src/commands/doctor.ts",
+      "name": "collectInstallChecks",
+      "lines": 197
     }
   },
   "emptyCatch": {
@@ -21,9 +21,9 @@
     "lines": 7374
   },
   "testRatio28d": {
-    "sum": 2.1,
-    "median": 2.01,
-    "commits": 187
+    "sum": 1.59,
+    "median": 1.91,
+    "commits": 186
   },
   "deprecatedWithoutRemoval": 0,
   "harness": {
