@@ -1579,77 +1579,44 @@ function resolveDriverName(config: ExecutionConfig, phase: Phase): string {
 }
 
 /**
- * Execute a single phase for an issue using the configured AgentDriver.
+ * Print the dry-run plan for a phase (#862 AC-3): driver, invocation and,
+ * under --verbose, the full prompt.
  */
-async function executePhase(
+function printDryRunPlan(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
-  resumeHandle?: ResumeHandle,
-  worktreePath?: string,
-  shutdownManager?: ShutdownManager,
-  spinner?: PhasePauseHandle,
-): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
-  const startTime = Date.now();
-  // #1150: the driver for THIS phase — `run.phases.<phase>.agent` wins over
-  // the run-level agent. Every driver decision below uses it.
-  const agent = resolvePhaseAgent(config, phase);
-
-  const prompt = await getPhasePrompt(
-    phase,
-    issueNumber,
-    agent,
-    config.promptContext,
-    {
-      aiderSettings: config.aiderSettings,
-      opencodeSettings: config.opencodeSettings,
-      codexSettings: config.codexSettings,
-    },
+  prompt: string,
+  spinner: PhasePauseHandle | undefined,
+): void {
+  // #862 AC-3: name the resolved driver unconditionally. A dry run is the
+  // plan preview, and which backend would execute the phase is part of the
+  // plan — gating it on --verbose made `--agent opencode --dry-run` print a
+  // plan indistinguishable from a claude-code one.
+  bracketedConsoleLog(
+    spinner,
+    chalk.gray(`    Driver: ${resolveDriverName(config, phase)}`),
   );
-
-  if (config.dryRun) {
-    // #862 AC-3: name the resolved driver unconditionally. A dry run is the
-    // plan preview, and which backend would execute the phase is part of the
-    // plan — gating it on --verbose made `--agent opencode --dry-run` print a
-    // plan indistinguishable from a claude-code one.
-    bracketedConsoleLog(
-      spinner,
-      chalk.gray(`    Driver: ${resolveDriverName(config, phase)}`),
-    );
-    // The invocation is part of the plan for the same reason the driver name
-    // is (#862 AC-3), and it is not always the Claude Code slash form: codex
-    // is sent `$spec 1` (#1059 AC-8). Printing a hard-coded `/spec 1` here
-    // described a command that driver would never run.
-    bracketedConsoleLog(
-      spinner,
-      chalk.gray(
-        `    Would execute: ${resolvePhaseInvocation(phase, issueNumber, config)}`,
-      ),
-    );
-    // The full prompt (AGENTS.md context, embedded findings) stays verbose-only.
-    if (config.verbose) {
-      bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
-    }
-    return {
-      phase,
-      success: true,
-      durationSeconds: 0,
-      output: prompt,
-    };
-  }
-
+  // The invocation is part of the plan for the same reason the driver name
+  // is (#862 AC-3), and it is not always the Claude Code slash form: codex
+  // is sent `$spec 1` (#1059 AC-8). Printing a hard-coded `/spec 1` here
+  // described a command that driver would never run.
+  bracketedConsoleLog(
+    spinner,
+    chalk.gray(
+      `    Would execute: ${resolvePhaseInvocation(phase, issueNumber, config)}`,
+    ),
+  );
+  // The full prompt (AGENTS.md context, embedded findings) stays verbose-only.
   if (config.verbose) {
     bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
-    if (worktreePath && phaseRequiresWorktree(phase)) {
-      bracketedConsoleLog(spinner, chalk.gray(`    Worktree: ${worktreePath}`));
-    }
   }
+}
 
-  // Determine working directory and environment
-  const shouldUseWorktree = worktreePath && phaseRequiresWorktree(phase);
-  const cwd = shouldUseWorktree ? worktreePath : process.cwd();
-
-  // Resolve file context for file-oriented drivers (e.g., Aider --file)
+/**
+ * Resolve file context for file-oriented drivers (e.g., Aider --file).
+ */
+function resolvePhaseFiles(agent: string, cwd: string): string[] | undefined {
   let files: string[] | undefined;
   if (agent !== "claude-code") {
     try {
@@ -1671,38 +1638,28 @@ async function executePhase(
       noteSuppressed("other", err, "phase-executor:executePhase");
     }
   }
+  return files;
+}
 
-  // Check if shutdown is in progress
-  if (shutdownManager?.shuttingDown) {
-    return {
-      phase,
-      success: false,
-      durationSeconds: 0,
-      error: "Shutdown in progress",
-    };
-  }
-
-  // Create abort controller for timeout
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => {
-    abortController.abort();
-  }, config.phaseTimeout * 1000);
-
-  // Register abort controller with shutdown manager for graceful shutdown
-  // Uses add/remove to support concurrent phase execution (#404)
-  if (shutdownManager) {
-    shutdownManager.addAbortController(abortController);
-  }
-
-  // Build environment with worktree isolation variables
+/**
+ * Build the phase subprocess environment with worktree isolation and
+ * orchestration-context variables.
+ */
+async function buildPhaseEnv(
+  issueNumber: number,
+  phase: Phase,
+  config: ExecutionConfig,
+  cwd: string,
+  isolationWorktree: string | undefined,
+): Promise<Record<string, string>> {
   const env: Record<string, string> = {
     ...process.env,
     CLAUDE_HOOKS_SMART_TESTS: config.noSmartTests ? "false" : "true",
   };
 
   // Set worktree isolation environment variables
-  if (shouldUseWorktree) {
-    env.SEQUANT_WORKTREE = worktreePath;
+  if (isolationWorktree) {
+    env.SEQUANT_WORKTREE = isolationWorktree;
     env.SEQUANT_ISSUE = String(issueNumber);
   }
 
@@ -1775,6 +1732,92 @@ async function executePhase(
       noteSuppressed("other", err, "phase-executor:executePhase#2");
     }
   }
+  return env;
+}
+
+/**
+ * Execute a single phase for an issue using the configured AgentDriver.
+ */
+async function executePhase(
+  issueNumber: number,
+  phase: Phase,
+  config: ExecutionConfig,
+  resumeHandle?: ResumeHandle,
+  worktreePath?: string,
+  shutdownManager?: ShutdownManager,
+  spinner?: PhasePauseHandle,
+): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
+  const startTime = Date.now();
+  // #1150: the driver for THIS phase — `run.phases.<phase>.agent` wins over
+  // the run-level agent. Every driver decision below uses it.
+  const agent = resolvePhaseAgent(config, phase);
+
+  const prompt = await getPhasePrompt(
+    phase,
+    issueNumber,
+    agent,
+    config.promptContext,
+    {
+      aiderSettings: config.aiderSettings,
+      opencodeSettings: config.opencodeSettings,
+      codexSettings: config.codexSettings,
+    },
+  );
+
+  if (config.dryRun) {
+    printDryRunPlan(issueNumber, phase, config, prompt, spinner);
+    return {
+      phase,
+      success: true,
+      durationSeconds: 0,
+      output: prompt,
+    };
+  }
+
+  if (config.verbose) {
+    bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
+    if (worktreePath && phaseRequiresWorktree(phase)) {
+      bracketedConsoleLog(spinner, chalk.gray(`    Worktree: ${worktreePath}`));
+    }
+  }
+
+  // Determine working directory and environment
+  const shouldUseWorktree = worktreePath && phaseRequiresWorktree(phase);
+  const cwd = shouldUseWorktree ? worktreePath : process.cwd();
+
+  // Resolve file context for file-oriented drivers (e.g., Aider --file)
+  const files = resolvePhaseFiles(agent, cwd);
+
+  // Check if shutdown is in progress
+  if (shutdownManager?.shuttingDown) {
+    return {
+      phase,
+      success: false,
+      durationSeconds: 0,
+      error: "Shutdown in progress",
+    };
+  }
+
+  // Create abort controller for timeout
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+  }, config.phaseTimeout * 1000);
+
+  // Register abort controller with shutdown manager for graceful shutdown
+  // Uses add/remove to support concurrent phase execution (#404)
+  if (shutdownManager) {
+    shutdownManager.addAbortController(abortController);
+  }
+
+  // Build environment with worktree isolation variables
+  const env = await buildPhaseEnv(
+    issueNumber,
+    phase,
+    config,
+    cwd,
+    shouldUseWorktree ? worktreePath : undefined,
+  );
 
   // Track whether we're actively streaming verbose output
   // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
