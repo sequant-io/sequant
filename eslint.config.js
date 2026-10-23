@@ -137,6 +137,18 @@ export default tseslint.config(
       ],
     },
   },
+  // #1508: the same 200-counted-line ceiling for the orchestration layer.
+  // Long functions split into private stage functions in the same file
+  // (ADR-0020). Tests are excluded by the global ignores below.
+  {
+    files: ["src/lib/workflow/**/*.ts"],
+    rules: {
+      "max-lines-per-function": [
+        "error",
+        { max: 200, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
   {
     ignores: [
       "dist/",
