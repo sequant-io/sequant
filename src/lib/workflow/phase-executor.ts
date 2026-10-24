@@ -1579,77 +1579,44 @@ function resolveDriverName(config: ExecutionConfig, phase: Phase): string {
 }
 
 /**
- * Execute a single phase for an issue using the configured AgentDriver.
+ * Print the dry-run plan for a phase (#862 AC-3): driver, invocation and,
+ * under --verbose, the full prompt.
  */
-async function executePhase(
+function printDryRunPlan(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
-  resumeHandle?: ResumeHandle,
-  worktreePath?: string,
-  shutdownManager?: ShutdownManager,
-  spinner?: PhasePauseHandle,
-): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
-  const startTime = Date.now();
-  // #1150: the driver for THIS phase — `run.phases.<phase>.agent` wins over
-  // the run-level agent. Every driver decision below uses it.
-  const agent = resolvePhaseAgent(config, phase);
-
-  const prompt = await getPhasePrompt(
-    phase,
-    issueNumber,
-    agent,
-    config.promptContext,
-    {
-      aiderSettings: config.aiderSettings,
-      opencodeSettings: config.opencodeSettings,
-      codexSettings: config.codexSettings,
-    },
+  prompt: string,
+  spinner: PhasePauseHandle | undefined,
+): void {
+  // #862 AC-3: name the resolved driver unconditionally. A dry run is the
+  // plan preview, and which backend would execute the phase is part of the
+  // plan — gating it on --verbose made `--agent opencode --dry-run` print a
+  // plan indistinguishable from a claude-code one.
+  bracketedConsoleLog(
+    spinner,
+    chalk.gray(`    Driver: ${resolveDriverName(config, phase)}`),
   );
-
-  if (config.dryRun) {
-    // #862 AC-3: name the resolved driver unconditionally. A dry run is the
-    // plan preview, and which backend would execute the phase is part of the
-    // plan — gating it on --verbose made `--agent opencode --dry-run` print a
-    // plan indistinguishable from a claude-code one.
-    bracketedConsoleLog(
-      spinner,
-      chalk.gray(`    Driver: ${resolveDriverName(config, phase)}`),
-    );
-    // The invocation is part of the plan for the same reason the driver name
-    // is (#862 AC-3), and it is not always the Claude Code slash form: codex
-    // is sent `$spec 1` (#1059 AC-8). Printing a hard-coded `/spec 1` here
-    // described a command that driver would never run.
-    bracketedConsoleLog(
-      spinner,
-      chalk.gray(
-        `    Would execute: ${resolvePhaseInvocation(phase, issueNumber, config)}`,
-      ),
-    );
-    // The full prompt (AGENTS.md context, embedded findings) stays verbose-only.
-    if (config.verbose) {
-      bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
-    }
-    return {
-      phase,
-      success: true,
-      durationSeconds: 0,
-      output: prompt,
-    };
-  }
-
+  // The invocation is part of the plan for the same reason the driver name
+  // is (#862 AC-3), and it is not always the Claude Code slash form: codex
+  // is sent `$spec 1` (#1059 AC-8). Printing a hard-coded `/spec 1` here
+  // described a command that driver would never run.
+  bracketedConsoleLog(
+    spinner,
+    chalk.gray(
+      `    Would execute: ${resolvePhaseInvocation(phase, issueNumber, config)}`,
+    ),
+  );
+  // The full prompt (AGENTS.md context, embedded findings) stays verbose-only.
   if (config.verbose) {
     bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
-    if (worktreePath && phaseRequiresWorktree(phase)) {
-      bracketedConsoleLog(spinner, chalk.gray(`    Worktree: ${worktreePath}`));
-    }
   }
+}
 
-  // Determine working directory and environment
-  const shouldUseWorktree = worktreePath && phaseRequiresWorktree(phase);
-  const cwd = shouldUseWorktree ? worktreePath : process.cwd();
-
-  // Resolve file context for file-oriented drivers (e.g., Aider --file)
+/**
+ * Resolve file context for file-oriented drivers (e.g., Aider --file).
+ */
+function resolvePhaseFiles(agent: string, cwd: string): string[] | undefined {
   let files: string[] | undefined;
   if (agent !== "claude-code") {
     try {
@@ -1668,41 +1635,31 @@ async function executePhase(
       }
     } catch (err) {
       // No changed files or git error — proceed without file context
-      noteSuppressed("other", err, "phase-executor:executePhase");
+      noteSuppressed("other", err, "phase-executor:resolvePhaseFiles");
     }
   }
+  return files;
+}
 
-  // Check if shutdown is in progress
-  if (shutdownManager?.shuttingDown) {
-    return {
-      phase,
-      success: false,
-      durationSeconds: 0,
-      error: "Shutdown in progress",
-    };
-  }
-
-  // Create abort controller for timeout
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => {
-    abortController.abort();
-  }, config.phaseTimeout * 1000);
-
-  // Register abort controller with shutdown manager for graceful shutdown
-  // Uses add/remove to support concurrent phase execution (#404)
-  if (shutdownManager) {
-    shutdownManager.addAbortController(abortController);
-  }
-
-  // Build environment with worktree isolation variables
+/**
+ * Build the phase subprocess environment with worktree isolation and
+ * orchestration-context variables.
+ */
+async function buildPhaseEnv(
+  issueNumber: number,
+  phase: Phase,
+  config: ExecutionConfig,
+  cwd: string,
+  isolationWorktree: string | undefined,
+): Promise<Record<string, string>> {
   const env: Record<string, string> = {
     ...process.env,
     CLAUDE_HOOKS_SMART_TESTS: config.noSmartTests ? "false" : "true",
   };
 
   // Set worktree isolation environment variables
-  if (shouldUseWorktree) {
-    env.SEQUANT_WORKTREE = worktreePath;
+  if (isolationWorktree) {
+    env.SEQUANT_WORKTREE = isolationWorktree;
     env.SEQUANT_ISSUE = String(issueNumber);
   }
 
@@ -1772,9 +1729,95 @@ async function executePhase(
       if (framePath) env.SEQUANT_RELAY_FRAME = framePath;
     } catch (err) {
       /* relay module unavailable — fall back to bash's search heuristic. */
-      noteSuppressed("other", err, "phase-executor:executePhase#2");
+      noteSuppressed("other", err, "phase-executor:buildPhaseEnv");
     }
   }
+  return env;
+}
+
+/**
+ * Execute a single phase for an issue using the configured AgentDriver.
+ */
+async function executePhase(
+  issueNumber: number,
+  phase: Phase,
+  config: ExecutionConfig,
+  resumeHandle?: ResumeHandle,
+  worktreePath?: string,
+  shutdownManager?: ShutdownManager,
+  spinner?: PhasePauseHandle,
+): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
+  const startTime = Date.now();
+  // #1150: the driver for THIS phase — `run.phases.<phase>.agent` wins over
+  // the run-level agent. Every driver decision below uses it.
+  const agent = resolvePhaseAgent(config, phase);
+
+  const prompt = await getPhasePrompt(
+    phase,
+    issueNumber,
+    agent,
+    config.promptContext,
+    {
+      aiderSettings: config.aiderSettings,
+      opencodeSettings: config.opencodeSettings,
+      codexSettings: config.codexSettings,
+    },
+  );
+
+  if (config.dryRun) {
+    printDryRunPlan(issueNumber, phase, config, prompt, spinner);
+    return {
+      phase,
+      success: true,
+      durationSeconds: 0,
+      output: prompt,
+    };
+  }
+
+  if (config.verbose) {
+    bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
+    if (worktreePath && phaseRequiresWorktree(phase)) {
+      bracketedConsoleLog(spinner, chalk.gray(`    Worktree: ${worktreePath}`));
+    }
+  }
+
+  // Determine working directory and environment
+  const shouldUseWorktree = worktreePath && phaseRequiresWorktree(phase);
+  const cwd = shouldUseWorktree ? worktreePath : process.cwd();
+
+  // Resolve file context for file-oriented drivers (e.g., Aider --file)
+  const files = resolvePhaseFiles(agent, cwd);
+
+  // Check if shutdown is in progress
+  if (shutdownManager?.shuttingDown) {
+    return {
+      phase,
+      success: false,
+      durationSeconds: 0,
+      error: "Shutdown in progress",
+    };
+  }
+
+  // Create abort controller for timeout
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+  }, config.phaseTimeout * 1000);
+
+  // Register abort controller with shutdown manager for graceful shutdown
+  // Uses add/remove to support concurrent phase execution (#404)
+  if (shutdownManager) {
+    shutdownManager.addAbortController(abortController);
+  }
+
+  // Build environment with worktree isolation variables
+  const env = await buildPhaseEnv(
+    issueNumber,
+    phase,
+    config,
+    cwd,
+    shouldUseWorktree ? worktreePath : undefined,
+  );
 
   // Track whether we're actively streaming verbose output
   // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
@@ -1794,7 +1837,7 @@ async function executePhase(
           onActivity(text);
         } catch (err) {
           // Activity reporting must never disrupt the run.
-          noteSuppressed("other", err, "phase-executor:executePhase#3");
+          noteSuppressed("other", err, "phase-executor:executePhase");
         }
       }, ACTIVITY_THROTTLE_MS)
     : undefined;
@@ -2007,6 +2050,415 @@ export function normalizeModelUsage(
   }));
 }
 
+type PhaseRunResult = PhaseResult & {
+  sessionId?: string;
+  resumeHandle?: ResumeHandle;
+};
+
+/**
+ * Everything one `executePhaseWithRetry` call threads through its stages
+ * (ADR-0020 Option A: state passed explicitly, not closed over).
+ */
+interface RetryContext {
+  issueNumber: number;
+  phase: Phase;
+  config: ExecutionConfig;
+  resumeHandle?: ResumeHandle;
+  worktreePath?: string;
+  shutdownManager?: ShutdownManager;
+  spinner?: PhasePauseHandle;
+  executePhaseFn: typeof executePhase;
+  delayFn: (ms: number) => Promise<void>;
+  autoWaitLedger: AutoWaitLedger;
+}
+
+/** Outcome of an attempt loop: return the result now, or fall through to the fallbacks. */
+type RetryLoopOutcome =
+  | { kind: "return"; result: PhaseRunResult }
+  | { kind: "fallthrough"; result: PhaseRunResult };
+
+/** What the cold-start loop does after one failed attempt. */
+type ColdStartVerdict =
+  | { kind: "return" }
+  | { kind: "break" }
+  | { kind: "retry" }
+  | { kind: "rewait" };
+
+/** One dispatch through the injected `executePhaseFn`. */
+function runPhaseAttempt(
+  ctx: RetryContext,
+  config: ExecutionConfig = ctx.config,
+): Promise<PhaseRunResult> {
+  return ctx.executePhaseFn(
+    ctx.issueNumber,
+    ctx.phase,
+    config,
+    ctx.resumeHandle,
+    ctx.worktreePath,
+    ctx.shutdownManager,
+    ctx.spinner,
+  );
+}
+
+/**
+ * Single attempt — no cold-start retry loop. The only thing that re-enters
+ * this loop is a granted auto-wait (#804): `maxRetries: 0` means "a retry
+ * cannot help", but a reopened rate-limit window is precisely the case
+ * where it can. Bounded by AUTO_WAIT_MAX_WAITS.
+ */
+async function runSingleAttemptLoop(
+  ctx: RetryContext,
+): Promise<RetryLoopOutcome> {
+  for (;;) {
+    const lastResult = await runPhaseAttempt(ctx);
+
+    if (lastResult.success) {
+      return { kind: "return", result: lastResult };
+    }
+
+    // Turn-capped phase (#739): incomplete-but-not-hard-failed. A retry cannot
+    // un-cap a turn limit, so short-circuit before any fallback — same rationale
+    // as the billing skip (#732), but capped must skip *all* retries (incl.
+    // cold-start), so an explicit early return is required, not just a guard
+    // flag at the MCP gate.
+    if (lastResult.capped) {
+      return { kind: "return", result: lastResult };
+    }
+
+    // #995 (#971 AC-4): the agent declared the spec impossible as written.
+    // Modelled on the `capped` early return directly above and terminal for
+    // the same reason — a retry cannot un-contradict a spec. AC-4's "halts
+    // without escalating" has to hold against the RETRY path too, not only
+    // against the ladder: a cold-start re-spawn or the MCP fallback would
+    // re-dispatch the phase and hand the ladder a second observation to
+    // escalate on.
+    if (lastResult.specDivergence) {
+      return { kind: "return", result: lastResult };
+    }
+
+    // #804: without this, `--auto-wait` would silently not cover the `loop`
+    // phase — the one phase registered with `maxRetries: 0` — and a window
+    // limit hitting /loop would still hard-halt with the flag set.
+    const decision = shouldAutoWaitForReset(
+      lastResult.structuredError,
+      ctx.autoWaitLedger,
+    );
+    if (!decision) return { kind: "fallthrough", result: lastResult };
+
+    const { aborted } = await performAutoWait(
+      ctx.issueNumber,
+      ctx.phase,
+      ctx.config,
+      decision,
+      ctx.autoWaitLedger,
+      ctx.delayFn,
+      ctx.shutdownManager,
+      ctx.spinner,
+    );
+    if (aborted) return { kind: "return", result: lastResult };
+  }
+}
+
+/**
+ * Window-exhausted rate limit (#761 AC-2) handling for one cold-start
+ * attempt: auto-wait if granted (#804), otherwise halt.
+ */
+async function handleWindowExhausted(
+  ctx: RetryContext,
+  lastResult: PhaseRunResult,
+): Promise<ColdStartVerdict> {
+  const { config, spinner } = ctx;
+  // #804: opt-in auto-wait. Sits between phase attempts (never inside a
+  // spawn), so `phaseTimeout` is not implicated. Returns null — and this
+  // falls through to today's halt — whenever auto-wait is off, the
+  // budget/bound is spent, or the failure is billing rather than a rate
+  // limit.
+  const decision = shouldAutoWaitForReset(
+    lastResult.structuredError,
+    ctx.autoWaitLedger,
+  );
+  if (decision) {
+    const { aborted } = await performAutoWait(
+      ctx.issueNumber,
+      ctx.phase,
+      config,
+      decision,
+      ctx.autoWaitLedger,
+      ctx.delayFn,
+      ctx.shutdownManager,
+      spinner,
+    );
+    if (!aborted) {
+      // A wait is not a cold-start retry, so it must not consume one:
+      // the loop's `attempt++` cancels this out. Bounded by
+      // AUTO_WAIT_MAX_WAITS, which is what makes this safe from looping.
+      return { kind: "rewait" };
+    }
+    return { kind: "return" };
+  }
+
+  if (config.verbose) {
+    bracketedConsoleLog(
+      spinner,
+      chalk.yellow(
+        `\n    ✕ ${lastResult.error ?? "Rate limited"} — window exhausted, skipping retries`,
+      ),
+    );
+  }
+  return { kind: "return" };
+}
+
+/**
+ * Classify one cold-start attempt: return now, break to the fallbacks,
+ * retry, or (after an auto-wait) retry without consuming an attempt.
+ */
+async function classifyColdStartAttempt(
+  ctx: RetryContext,
+  lastResult: PhaseRunResult,
+  attempt: number,
+): Promise<ColdStartVerdict> {
+  const { config, phase, spinner } = ctx;
+  const duration = lastResult.durationSeconds ?? 0;
+
+  // Success → return immediately
+  if (lastResult.success) {
+    return { kind: "return" };
+  }
+
+  // Turn-capped phase (#739): short-circuit before cold-start retries, the
+  // MCP fallback, and the spec-extra retry — a retry cannot un-cap a turn
+  // limit. The early return here (rather than a guard at the MCP gate alone)
+  // is what skips the cold-start re-spawns, unlike the billing case which
+  // still cold-start-retries in the <60s window.
+  if (lastResult.capped) {
+    return { kind: "return" };
+  }
+
+  // #995 (#971 AC-4): spec divergence short-circuits every remaining
+  // cold-start retry, the MCP fallback, and the spec-extra retry — same
+  // early-return placement and same rationale as the capped guard above.
+  if (lastResult.specDivergence) {
+    return { kind: "return" };
+  }
+
+  // Window-exhausted rate limit (#761 AC-2): the reset is hours away, so
+  // every retry re-spawns into the same closed window — worst case
+  // ~4 × phaseTimeout (≈2h) of doomed attempts before the run halts.
+  // Modelled on the `capped` early return above: skip all remaining
+  // cold-start retries and (via the return) the MCP fallback. Checked
+  // before the duration branch because a rate-limit rejection typically
+  // fails fast and would otherwise be mistaken for a cold-start failure.
+  if (isWindowExhaustedRateLimit(lastResult.structuredError)) {
+    return handleWindowExhausted(ctx, lastResult);
+  }
+
+  // Transient rate limit (#761 AC-4): retry, but with real backoff — the
+  // bare `continue` this replaces re-spawned immediately into the same
+  // throttle. Reuses the injected `delayFn`; delay doubles per attempt.
+  // Metadata-absent rate limits land here by design (AC-9 fallback rule).
+  if (
+    lastResult.structuredError instanceof RateLimitError &&
+    attempt < COLD_START_MAX_RETRIES
+  ) {
+    const backoffMs = RATE_LIMIT_RETRY_BACKOFF_MS * 2 ** attempt;
+    if (config.verbose) {
+      bracketedConsoleLog(
+        spinner,
+        chalk.yellow(
+          `\n    ⟳ ${lastResult.error ?? "Rate limited"} — backing off ${backoffMs}ms before retry... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+        ),
+      );
+    }
+    await ctx.delayFn(backoffMs);
+    return { kind: "retry" };
+  }
+
+  // Genuine failure (took long enough to be real work) → skip cold-start retries.
+  // Use error classification (AC-9): if the error is retryable (e.g., API
+  // rate limit, transient 503), allow one more attempt even for genuine failures.
+  if (duration >= COLD_START_THRESHOLD_SECONDS) {
+    // Prefer the driver's structured cause (#732) — it reflects the real
+    // SDK rate-limit/billing signal — over stderr-regex classification,
+    // which only sees text and never the structured data.
+    const typedError =
+      lastResult.structuredError ??
+      classifyError(lastResult.stderrTail ?? [], lastResult.exitCode);
+    if (typedError.isRetryable && attempt < COLD_START_MAX_RETRIES) {
+      if (config.verbose) {
+        const label =
+          typedError instanceof ApiError
+            ? `API error (status ${typedError.metadata.statusCode ?? "unknown"})`
+            : typedError.name;
+        bracketedConsoleLog(
+          spinner,
+          chalk.yellow(
+            `\n    ⟳ Retryable error: ${label}, retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+          ),
+        );
+      }
+      return { kind: "retry" };
+    }
+    if (phase === "spec") {
+      return { kind: "break" };
+    }
+    return { kind: "return" };
+  }
+
+  // Cold-start failure detected — retry
+  if (attempt < COLD_START_MAX_RETRIES) {
+    if (config.verbose) {
+      bracketedConsoleLog(
+        spinner,
+        chalk.yellow(
+          `\n    ⟳ Cold-start failure detected (${duration.toFixed(1)}s), retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+        ),
+      );
+    }
+  }
+  return { kind: "retry" };
+}
+
+/**
+ * Phase 1: Cold-start retry attempts (with MCP enabled if configured).
+ */
+async function runColdStartLoop(ctx: RetryContext): Promise<RetryLoopOutcome> {
+  let lastResult: PhaseRunResult | undefined;
+  for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
+    lastResult = await runPhaseAttempt(ctx);
+    const verdict = await classifyColdStartAttempt(ctx, lastResult, attempt);
+    if (verdict.kind === "return") {
+      return { kind: "return", result: lastResult };
+    }
+    if (verdict.kind === "break") break;
+    if (verdict.kind === "rewait") attempt--;
+  }
+  return { kind: "fallthrough", result: lastResult! };
+}
+
+/**
+ * Phases 2 and 3 after the attempt loop fell through: the MCP fallback and
+ * the spec-specific extra retry.
+ */
+async function runRetryFallbacks(
+  ctx: RetryContext,
+  loopResult: PhaseRunResult,
+  skipColdStartRetry: boolean,
+): Promise<PhaseRunResult> {
+  const { config, phase, spinner } = ctx;
+  let lastResult = loopResult;
+
+  // Capture the original error for better diagnostics
+  const originalError = lastResult.error;
+
+  // Phase 2: MCP fallback - if MCP is enabled and we're still failing, try without MCP
+  // This handles npx-based MCP servers that fail on first run due to cold-cache issues.
+  // Skip for `loop` phase — MCP is never the cause of loop failures (#488).
+  //
+  // Also skip when the failure is a billing/credits error (#732): a no-MCP
+  // retry cannot refill credits, so the misleading "retrying without MCP"
+  // noise (#592) would only mask the real cause. The accurate structured
+  // message (e.g. "Out of credits") is surfaced instead.
+  const failureIsBilling = lastResult.structuredError instanceof BillingError;
+  // Belt-and-suspenders (#739): the capped early-returns above already exit
+  // before reaching here, but gate the MCP fallback on `!failureIsCapped` too so
+  // intent is documented and future code paths can't accidentally re-spawn a
+  // capped phase without MCP.
+  const failureIsCapped = lastResult.capped === true;
+  // A throttle must not trigger "retrying without MCP" (#761 AC-3): MCP was
+  // never the cause, and the re-spawn burns up to another full phaseTimeout
+  // against the same limit while mislabeling the failure as MCP-related.
+  const failureIsRateLimited =
+    lastResult.structuredError instanceof RateLimitError;
+  // #996 AC-5: only drivers that actually consume `config.mcp` can fail
+  // *because* of it. For opencode/aider the retry would re-run an identical
+  // command under a second full phaseTimeout and mislabel the cause.
+  const driverUsesSdkMcp = getDriver(resolvePhaseAgent(config, phase), {
+    aiderSettings: config.aiderSettings,
+    opencodeSettings: config.opencodeSettings,
+    codexSettings: config.codexSettings,
+  }).usesSdkMcp;
+  if (
+    config.mcp &&
+    driverUsesSdkMcp &&
+    !lastResult.success &&
+    !skipColdStartRetry &&
+    !failureIsBilling &&
+    !failureIsCapped &&
+    !failureIsRateLimited
+  ) {
+    bracketedConsoleLog(
+      spinner,
+      chalk.yellow(
+        `\n    ! Phase failed with MCP enabled, retrying without MCP...`,
+      ),
+    );
+
+    // Create config copy with MCP disabled
+    const configWithoutMcp: ExecutionConfig = {
+      ...config,
+      mcp: false,
+    };
+
+    const retryResult = await runPhaseAttempt(ctx, configWithoutMcp);
+
+    if (retryResult.success) {
+      bracketedConsoleLog(
+        spinner,
+        chalk.green(
+          `    ✓ Phase succeeded without MCP (MCP cold-start issue detected)`,
+        ),
+      );
+      return retryResult;
+    }
+
+    // Update lastResult for Phase 3 (spec retry)
+    lastResult = retryResult;
+
+    // Non-spec phases: return original error after MCP fallback exhausted
+    if (phase !== "spec") {
+      return {
+        ...lastResult,
+        error: originalError,
+      };
+    }
+  }
+
+  // Phase 3: Spec-specific retry — spec has a higher transient failure rate
+  // than other phases (~8.6%), so one extra retry with backoff recovers most cases.
+  if (phase === "spec" && !lastResult.success) {
+    for (let i = 0; i < SPEC_EXTRA_RETRIES; i++) {
+      bracketedConsoleLog(
+        spinner,
+        chalk.yellow(
+          `\n    ⟳ Spec phase failed, retrying with ${SPEC_RETRY_BACKOFF_MS}ms backoff... (spec retry ${i + 1}/${SPEC_EXTRA_RETRIES})`,
+        ),
+      );
+
+      await ctx.delayFn(SPEC_RETRY_BACKOFF_MS);
+
+      const specRetryResult = await runPhaseAttempt(ctx);
+
+      if (specRetryResult.success) {
+        bracketedConsoleLog(
+          spinner,
+          chalk.green(`    ✓ Spec phase succeeded on retry`),
+        );
+        return specRetryResult;
+      }
+
+      lastResult = specRetryResult;
+    }
+
+    // All spec retries exhausted — return with original error for diagnostics
+    return {
+      ...lastResult,
+      error: originalError,
+    };
+  }
+
+  return lastResult;
+}
+
 /**
  * Execute a phase with automatic retry for cold-start failures and MCP fallback.
  *
@@ -2068,347 +2520,25 @@ export async function executePhaseWithRetry(
     phaseRegistry.has(phase) &&
     phaseRegistry.get(phase).retryStrategy?.maxRetries === 0;
 
-  let lastResult: PhaseResult & {
-    sessionId?: string;
-    resumeHandle?: ResumeHandle;
+  const ctx: RetryContext = {
+    issueNumber,
+    phase,
+    config,
+    resumeHandle,
+    worktreePath,
+    shutdownManager,
+    spinner,
+    executePhaseFn,
+    delayFn,
+    autoWaitLedger,
   };
 
-  if (skipColdStartRetry) {
-    // Single attempt — no cold-start retry loop. The only thing that re-enters
-    // this loop is a granted auto-wait (#804): `maxRetries: 0` means "a retry
-    // cannot help", but a reopened rate-limit window is precisely the case
-    // where it can. Bounded by AUTO_WAIT_MAX_WAITS.
-    for (;;) {
-      lastResult = await executePhaseFn(
-        issueNumber,
-        phase,
-        config,
-        resumeHandle,
-        worktreePath,
-        shutdownManager,
-        spinner,
-      );
-
-      if (lastResult.success) {
-        return lastResult;
-      }
-
-      // Turn-capped phase (#739): incomplete-but-not-hard-failed. A retry cannot
-      // un-cap a turn limit, so short-circuit before any fallback — same rationale
-      // as the billing skip (#732), but capped must skip *all* retries (incl.
-      // cold-start), so an explicit early return is required, not just a guard
-      // flag at the MCP gate.
-      if (lastResult.capped) {
-        return lastResult;
-      }
-
-      // #995 (#971 AC-4): the agent declared the spec impossible as written.
-      // Modelled on the `capped` early return directly above and terminal for
-      // the same reason — a retry cannot un-contradict a spec. AC-4's "halts
-      // without escalating" has to hold against the RETRY path too, not only
-      // against the ladder: a cold-start re-spawn or the MCP fallback would
-      // re-dispatch the phase and hand the ladder a second observation to
-      // escalate on.
-      if (lastResult.specDivergence) {
-        return lastResult;
-      }
-
-      // #804: without this, `--auto-wait` would silently not cover the `loop`
-      // phase — the one phase registered with `maxRetries: 0` — and a window
-      // limit hitting /loop would still hard-halt with the flag set.
-      const decision = shouldAutoWaitForReset(
-        lastResult.structuredError,
-        autoWaitLedger,
-      );
-      if (!decision) break;
-
-      const { aborted } = await performAutoWait(
-        issueNumber,
-        phase,
-        config,
-        decision,
-        autoWaitLedger,
-        delayFn,
-        shutdownManager,
-        spinner,
-      );
-      if (aborted) return lastResult;
-    }
-  } else {
-    // Phase 1: Cold-start retry attempts (with MCP enabled if configured)
-    for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
-      lastResult = await executePhaseFn(
-        issueNumber,
-        phase,
-        config,
-        resumeHandle,
-        worktreePath,
-        shutdownManager,
-        spinner,
-      );
-
-      const duration = lastResult.durationSeconds ?? 0;
-
-      // Success → return immediately
-      if (lastResult.success) {
-        return lastResult;
-      }
-
-      // Turn-capped phase (#739): short-circuit before cold-start retries, the
-      // MCP fallback, and the spec-extra retry — a retry cannot un-cap a turn
-      // limit. The early return here (rather than a guard at the MCP gate alone)
-      // is what skips the cold-start re-spawns, unlike the billing case which
-      // still cold-start-retries in the <60s window.
-      if (lastResult.capped) {
-        return lastResult;
-      }
-
-      // #995 (#971 AC-4): spec divergence short-circuits every remaining
-      // cold-start retry, the MCP fallback, and the spec-extra retry — same
-      // early-return placement and same rationale as the capped guard above.
-      if (lastResult.specDivergence) {
-        return lastResult;
-      }
-
-      // Window-exhausted rate limit (#761 AC-2): the reset is hours away, so
-      // every retry re-spawns into the same closed window — worst case
-      // ~4 × phaseTimeout (≈2h) of doomed attempts before the run halts.
-      // Modelled on the `capped` early return above: skip all remaining
-      // cold-start retries and (via the return) the MCP fallback. Checked
-      // before the duration branch because a rate-limit rejection typically
-      // fails fast and would otherwise be mistaken for a cold-start failure.
-      if (isWindowExhaustedRateLimit(lastResult.structuredError)) {
-        // #804: opt-in auto-wait. Sits between phase attempts (never inside a
-        // spawn), so `phaseTimeout` is not implicated. Returns null — and this
-        // falls through to today's halt — whenever auto-wait is off, the
-        // budget/bound is spent, or the failure is billing rather than a rate
-        // limit.
-        const decision = shouldAutoWaitForReset(
-          lastResult.structuredError,
-          autoWaitLedger,
-        );
-        if (decision) {
-          const { aborted } = await performAutoWait(
-            issueNumber,
-            phase,
-            config,
-            decision,
-            autoWaitLedger,
-            delayFn,
-            shutdownManager,
-            spinner,
-          );
-          if (!aborted) {
-            // A wait is not a cold-start retry, so it must not consume one:
-            // the loop's `attempt++` cancels this out. Bounded by
-            // AUTO_WAIT_MAX_WAITS, which is what makes this safe from looping.
-            attempt--;
-            continue;
-          }
-          return lastResult;
-        }
-
-        if (config.verbose) {
-          bracketedConsoleLog(
-            spinner,
-            chalk.yellow(
-              `\n    ✕ ${lastResult.error ?? "Rate limited"} — window exhausted, skipping retries`,
-            ),
-          );
-        }
-        return lastResult;
-      }
-
-      // Transient rate limit (#761 AC-4): retry, but with real backoff — the
-      // bare `continue` this replaces re-spawned immediately into the same
-      // throttle. Reuses the injected `delayFn`; delay doubles per attempt.
-      // Metadata-absent rate limits land here by design (AC-9 fallback rule).
-      if (
-        lastResult.structuredError instanceof RateLimitError &&
-        attempt < COLD_START_MAX_RETRIES
-      ) {
-        const backoffMs = RATE_LIMIT_RETRY_BACKOFF_MS * 2 ** attempt;
-        if (config.verbose) {
-          bracketedConsoleLog(
-            spinner,
-            chalk.yellow(
-              `\n    ⟳ ${lastResult.error ?? "Rate limited"} — backing off ${backoffMs}ms before retry... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
-            ),
-          );
-        }
-        await delayFn(backoffMs);
-        continue;
-      }
-
-      // Genuine failure (took long enough to be real work) → skip cold-start retries.
-      // Use error classification (AC-9): if the error is retryable (e.g., API
-      // rate limit, transient 503), allow one more attempt even for genuine failures.
-      if (duration >= COLD_START_THRESHOLD_SECONDS) {
-        // Prefer the driver's structured cause (#732) — it reflects the real
-        // SDK rate-limit/billing signal — over stderr-regex classification,
-        // which only sees text and never the structured data.
-        const typedError =
-          lastResult.structuredError ??
-          classifyError(lastResult.stderrTail ?? [], lastResult.exitCode);
-        if (typedError.isRetryable && attempt < COLD_START_MAX_RETRIES) {
-          if (config.verbose) {
-            const label =
-              typedError instanceof ApiError
-                ? `API error (status ${typedError.metadata.statusCode ?? "unknown"})`
-                : typedError.name;
-            bracketedConsoleLog(
-              spinner,
-              chalk.yellow(
-                `\n    ⟳ Retryable error: ${label}, retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
-              ),
-            );
-          }
-          continue;
-        }
-        if (phase === "spec") {
-          break;
-        }
-        return lastResult;
-      }
-
-      // Cold-start failure detected — retry
-      if (attempt < COLD_START_MAX_RETRIES) {
-        if (config.verbose) {
-          bracketedConsoleLog(
-            spinner,
-            chalk.yellow(
-              `\n    ⟳ Cold-start failure detected (${duration.toFixed(1)}s), retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
-            ),
-          );
-        }
-      }
-    }
+  const outcome = skipColdStartRetry
+    ? await runSingleAttemptLoop(ctx)
+    : await runColdStartLoop(ctx);
+  if (outcome.kind === "return") {
+    return outcome.result;
   }
 
-  // Capture the original error for better diagnostics
-  const originalError = lastResult!.error;
-
-  // Phase 2: MCP fallback - if MCP is enabled and we're still failing, try without MCP
-  // This handles npx-based MCP servers that fail on first run due to cold-cache issues.
-  // Skip for `loop` phase — MCP is never the cause of loop failures (#488).
-  //
-  // Also skip when the failure is a billing/credits error (#732): a no-MCP
-  // retry cannot refill credits, so the misleading "retrying without MCP"
-  // noise (#592) would only mask the real cause. The accurate structured
-  // message (e.g. "Out of credits") is surfaced instead.
-  const failureIsBilling = lastResult!.structuredError instanceof BillingError;
-  // Belt-and-suspenders (#739): the capped early-returns above already exit
-  // before reaching here, but gate the MCP fallback on `!failureIsCapped` too so
-  // intent is documented and future code paths can't accidentally re-spawn a
-  // capped phase without MCP.
-  const failureIsCapped = lastResult!.capped === true;
-  // A throttle must not trigger "retrying without MCP" (#761 AC-3): MCP was
-  // never the cause, and the re-spawn burns up to another full phaseTimeout
-  // against the same limit while mislabeling the failure as MCP-related.
-  const failureIsRateLimited =
-    lastResult!.structuredError instanceof RateLimitError;
-  // #996 AC-5: only drivers that actually consume `config.mcp` can fail
-  // *because* of it. For opencode/aider the retry would re-run an identical
-  // command under a second full phaseTimeout and mislabel the cause.
-  const driverUsesSdkMcp = getDriver(resolvePhaseAgent(config, phase), {
-    aiderSettings: config.aiderSettings,
-    opencodeSettings: config.opencodeSettings,
-    codexSettings: config.codexSettings,
-  }).usesSdkMcp;
-  if (
-    config.mcp &&
-    driverUsesSdkMcp &&
-    !lastResult!.success &&
-    !skipColdStartRetry &&
-    !failureIsBilling &&
-    !failureIsCapped &&
-    !failureIsRateLimited
-  ) {
-    bracketedConsoleLog(
-      spinner,
-      chalk.yellow(
-        `\n    ! Phase failed with MCP enabled, retrying without MCP...`,
-      ),
-    );
-
-    // Create config copy with MCP disabled
-    const configWithoutMcp: ExecutionConfig = {
-      ...config,
-      mcp: false,
-    };
-
-    const retryResult = await executePhaseFn(
-      issueNumber,
-      phase,
-      configWithoutMcp,
-      resumeHandle,
-      worktreePath,
-      shutdownManager,
-      spinner,
-    );
-
-    if (retryResult.success) {
-      bracketedConsoleLog(
-        spinner,
-        chalk.green(
-          `    ✓ Phase succeeded without MCP (MCP cold-start issue detected)`,
-        ),
-      );
-      return retryResult;
-    }
-
-    // Update lastResult for Phase 3 (spec retry)
-    lastResult = retryResult;
-
-    // Non-spec phases: return original error after MCP fallback exhausted
-    if (phase !== "spec") {
-      return {
-        ...lastResult!,
-        error: originalError,
-      };
-    }
-  }
-
-  // Phase 3: Spec-specific retry — spec has a higher transient failure rate
-  // than other phases (~8.6%), so one extra retry with backoff recovers most cases.
-  if (phase === "spec" && !lastResult!.success) {
-    for (let i = 0; i < SPEC_EXTRA_RETRIES; i++) {
-      bracketedConsoleLog(
-        spinner,
-        chalk.yellow(
-          `\n    ⟳ Spec phase failed, retrying with ${SPEC_RETRY_BACKOFF_MS}ms backoff... (spec retry ${i + 1}/${SPEC_EXTRA_RETRIES})`,
-        ),
-      );
-
-      await delayFn(SPEC_RETRY_BACKOFF_MS);
-
-      const specRetryResult = await executePhaseFn(
-        issueNumber,
-        phase,
-        config,
-        resumeHandle,
-        worktreePath,
-        shutdownManager,
-        spinner,
-      );
-
-      if (specRetryResult.success) {
-        bracketedConsoleLog(
-          spinner,
-          chalk.green(`    ✓ Spec phase succeeded on retry`),
-        );
-        return specRetryResult;
-      }
-
-      lastResult = specRetryResult;
-    }
-
-    // All spec retries exhausted — return with original error for diagnostics
-    return {
-      ...lastResult!,
-      error: originalError,
-    };
-  }
-
-  return lastResult!;
+  return runRetryFallbacks(ctx, outcome.result, skipColdStartRetry);
 }

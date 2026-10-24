@@ -322,6 +322,69 @@ export function enrichPhasePoliciesFromResults(
   return enriched;
 }
 
+// ── run() stage state (#1508, ADR-0020 Option A) ────────────────────────────
+
+/** Read-only inputs every `RunOrchestrator.run` stage shares, built once. */
+interface RunEnv {
+  init: RunInit;
+  resolved: ResolvedRun;
+  mergedOptions: RunOptions;
+  config: ExecutionConfig;
+  baseBranch: string;
+  /** #867: the run's single wall-clock origin. */
+  runStartedAt: number;
+  /** Closes the wall-clock bracket; every `run()` return calls it (#867). */
+  wallClock: () => number;
+}
+
+/** Mutable per-call state the `run()` stages hand to each other. */
+interface RunState {
+  issueNumbers: number[];
+  logWriter: LogWriter | null;
+  stateManager: StateManager | null;
+  shutdown: ShutdownManager;
+  /**
+   * #1222 AC-2: the worktree-removal cleanups are registered before the
+   * `RunOrchestrator` instance exists, so they read this box lazily.
+   */
+  shutdownOrchestratorRef: { instance?: RunOrchestrator };
+  chainResume: ChainResumePlan | undefined;
+  lockedResults: IssueResult[];
+}
+
+/** Skills pre-flight inputs shared by the main-checkout and worktree checks. */
+function buildPreflightBase(
+  env: RunEnv,
+  issueNumbers: number[],
+  issueInfoMap: Map<number, { title: string; labels: string[] }>,
+) {
+  const { config, mergedOptions, resolved } = env;
+  return {
+    agent: resolveRunAgent(config),
+    phasePolicies: config.phasePolicies,
+    aiderSettings: config.aiderSettings,
+    phases: config.phases,
+    autoDetectPhases: resolved.autoDetectPhases,
+    qualityLoop: config.qualityLoop,
+    testgen: mergedOptions.testgen,
+    securityReview: mergedOptions.securityReview,
+    issueNumbers,
+    issueInfoMap,
+  };
+}
+
+/** Issue info + worktree provisioning state, built once the issue set is final. */
+interface ProvisionState {
+  issueInfoMap: Map<number, { title: string; labels: string[] }>;
+  worktreeMap: Map<number, WorktreeInfo>;
+  /** #1469: filled by provisioning; an issue in it never runs a phase. */
+  worktreeFailures: Map<number, string>;
+  useWorktreeIsolation: boolean;
+  worktreeRequired: boolean;
+  skillsPreflightActive: boolean;
+  preflightBase: ReturnType<typeof buildPreflightBase>;
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────────
 
 /**
@@ -750,8 +813,6 @@ export class RunOrchestrator {
     issueArgs: string[],
     batches?: number[][] | null,
   ): Promise<RunResult> {
-    const { manifest, onProgress, phasePauseHandle, settings } = init;
-
     // #867: capture the run's start before any service/log setup, so wall clock
     // is independent of whether the log writer exists (AC-3: correct under
     // --no-log and when log init fails). This single origin is the source of
@@ -765,10 +826,8 @@ export class RunOrchestrator {
     // ── Config resolution ──────────────────────────────────────────────
     const resolved = RunOrchestrator.resolveConfig(init, issueArgs, batches);
     const { mergedOptions, config, baseBranch } = resolved;
-    let { issueNumbers } = resolved;
-    const resolvedBatches = resolved.batches;
 
-    if (issueNumbers.length === 0) {
+    if (resolved.issueNumbers.length === 0) {
       return {
         results: [],
         logPath: null,
@@ -781,6 +840,61 @@ export class RunOrchestrator {
         wallClockDurationSeconds: wallClock(),
       };
     }
+
+    const env: RunEnv = {
+      init,
+      resolved,
+      mergedOptions,
+      config,
+      baseBranch,
+      runStartedAt,
+      wallClock,
+    };
+    const state = await RunOrchestrator.setupServices(env);
+
+    const guardExit = await RunOrchestrator.runStateGuard(env, state);
+    if (guardExit) return guardExit;
+    const lockExit = RunOrchestrator.acquireRunLocks(env, state);
+    if (lockExit) return lockExit;
+    const chainExit = await RunOrchestrator.chainContentPreflight(env, state);
+    if (chainExit) return chainExit;
+
+    // ── Issue info + worktree setup ────────────────────────────────────
+    const { issueInfoMap, missingIssues } = await RunOrchestrator.loadIssueInfo(
+      env,
+      state,
+    );
+    const missingExit = RunOrchestrator.abortOnMissingIssues(
+      env,
+      state,
+      issueInfoMap,
+      missingIssues,
+    );
+    if (missingExit) return missingExit;
+
+    const prov = RunOrchestrator.buildProvisionState(env, state, issueInfoMap);
+    const mainExit = await RunOrchestrator.mainCheckoutSkillsPreflight(
+      env,
+      state,
+      prov,
+    );
+    if (mainExit) return mainExit;
+    await RunOrchestrator.provisionWorktrees(env, state, prov);
+    RunOrchestrator.warnMainCheckoutFreshness(env, state, prov);
+    const worktreeExit = await RunOrchestrator.worktreeSkillsPreflight(
+      env,
+      state,
+      prov,
+    );
+    if (worktreeExit) return worktreeExit;
+
+    return RunOrchestrator.executeAndFinalize(env, state, prov);
+  }
+
+  /** `run()` stage: log writer, state manager and shutdown manager. */
+  private static async setupServices(env: RunEnv): Promise<RunState> {
+    const { init, mergedOptions, config, runStartedAt } = env;
+    const { settings } = init;
 
     // ── Services setup ─────────────────────────────────────────────────
     let logWriter: LogWriter | null = null;
@@ -840,6 +954,25 @@ export class RunOrchestrator {
       registerRunLogFinalizer(shutdown, logWriter);
     }
 
+    return {
+      issueNumbers: env.resolved.issueNumbers,
+      logWriter,
+      stateManager,
+      shutdown,
+      shutdownOrchestratorRef,
+      chainResume: undefined,
+      lockedResults: [],
+    };
+  }
+
+  /** `run()` stage: pre-flight state guard, chain resume and skip guard. */
+  private static async runStateGuard(
+    env: RunEnv,
+    state: RunState,
+  ): Promise<RunResult | null> {
+    const { config, mergedOptions, wallClock } = env;
+    const { stateManager, shutdown } = state;
+
     // ── Pre-flight state guard ─────────────────────────────────────────
     if (stateManager && !config.dryRun) {
       try {
@@ -862,107 +995,13 @@ export class RunOrchestrator {
       }
     }
 
-    let chainResume: ChainResumePlan | undefined;
     if (stateManager && !config.dryRun && !mergedOptions.force) {
       if (mergedOptions.chain) {
-        // ── Chain-aware resume (#760) ──────────────────────────────────
-        // Don't just drop completed links (chain-unaware skip leaves the
-        // first incomplete link at index 0, where the #748 successor-rebase
-        // never fires → it silently builds on main). Instead compute a
-        // chain-correct plan that resumes at the first incomplete link,
-        // rebased onto the completed prefix's committed tip.
-        const resolver: CompletedLinkResolver = {
-          resolveBranchTip: (branch) => revParseRef(branch),
-          resolveBaseTip: () => revParseRef(baseBranch),
-          // `unknown` is not dirty: a gone worktree is the branch-tip
-          // check's case (#760, chain-resume.ts).
-          isWorktreeDirty: (worktreePath) =>
-            worktreeStatus(worktreePath) === "dirty",
-        };
-        const plan = await planChainResumeFromState(
-          issueNumbers,
-          baseBranch,
-          (issueNumber) => stateManager.getIssueState(issueNumber),
-          resolver,
-          (issueNumber, error) =>
-            logNonFatalWarning(
-              `  !  State lookup failed for #${issueNumber}, treating as incomplete...`,
-              error,
-              config.verbose,
-            ),
-        );
-
-        if (plan.failFast) {
-          console.log(
-            chalk.red(`\n  ❌ Chain resume aborted: ${plan.failFast}`),
-          );
-          shutdown.dispose();
-          return {
-            results: [
-              {
-                issueNumber: plan.resumeIssue ?? issueNumbers[0],
-                success: false,
-                phaseResults: [],
-                durationSeconds: 0,
-                loopTriggered: false,
-                abortReason: `chain resume aborted: ${plan.failFast}`,
-              },
-            ],
-            logPath: null,
-            exitCode: 1,
-            worktreeMap: new Map(),
-            issueInfoMap: new Map(),
-            config,
-            mergedOptions,
-            logWriter: null,
-            wallClockDurationSeconds: wallClock(),
-          };
-        }
-
-        if (plan.allComplete) {
-          console.log(
-            chalk.yellow(
-              `\n  All chain links already completed. Use --force to re-run.`,
-            ),
-          );
-          shutdown.dispose();
-          return {
-            results: [],
-            logPath: null,
-            exitCode: 0,
-            worktreeMap: new Map(),
-            issueInfoMap: new Map(),
-            config,
-            mergedOptions,
-            logWriter: null,
-            wallClockDurationSeconds: wallClock(),
-          };
-        }
-
-        if (plan.skipped.length > 0) {
-          chainResume = plan;
-          issueNumbers = plan.active;
-          const resumeAt = plan.resumeBaseCommit
-            ? plan.resumeBaseCommit.slice(0, 8)
-            : (plan.resumeBase ?? "base");
-          for (const s of plan.skipped) {
-            console.log(
-              chalk.yellow(
-                `  !  #${s.issueNumber}: already ${s.status} — skipping (use --force to re-run)`,
-              ),
-            );
-          }
-          console.log(
-            chalk.cyan(
-              `  ↻ Resuming chain at #${plan.resumeIssue} from ${resumeAt}` +
-                ` (${plan.resumeBase})`,
-            ),
-          );
-        }
+        return RunOrchestrator.resumeChain(env, state, stateManager);
       } else {
         // ── Non-chain skip guard (unchanged) ───────────────────────────
         const activeIssues: number[] = [];
-        for (const issueNumber of issueNumbers) {
+        for (const issueNumber of state.issueNumbers) {
           try {
             const issueState = await stateManager.getIssueState(issueNumber);
             if (issueState && isCompletedIssueStatus(issueState.status)) {
@@ -983,9 +1022,9 @@ export class RunOrchestrator {
             activeIssues.push(issueNumber);
           }
         }
-        if (activeIssues.length < issueNumbers.length) {
-          issueNumbers = activeIssues;
-          if (issueNumbers.length === 0) {
+        if (activeIssues.length < state.issueNumbers.length) {
+          state.issueNumbers = activeIssues;
+          if (state.issueNumbers.length === 0) {
             console.log(
               chalk.yellow(
                 `\n  All issues already completed. Use --force to re-run.`,
@@ -1007,6 +1046,119 @@ export class RunOrchestrator {
         }
       }
     }
+    return null;
+  }
+
+  /** `run()` stage: chain-aware resume (#760). */
+  private static async resumeChain(
+    env: RunEnv,
+    state: RunState,
+    stateManager: StateManager,
+  ): Promise<RunResult | null> {
+    const { config, mergedOptions, baseBranch, wallClock } = env;
+    const { shutdown } = state;
+    // ── Chain-aware resume (#760) ──────────────────────────────────
+    // Don't just drop completed links (chain-unaware skip leaves the
+    // first incomplete link at index 0, where the #748 successor-rebase
+    // never fires → it silently builds on main). Instead compute a
+    // chain-correct plan that resumes at the first incomplete link,
+    // rebased onto the completed prefix's committed tip.
+    const resolver: CompletedLinkResolver = {
+      resolveBranchTip: (branch) => revParseRef(branch),
+      resolveBaseTip: () => revParseRef(baseBranch),
+      // `unknown` is not dirty: a gone worktree is the branch-tip
+      // check's case (#760, chain-resume.ts).
+      isWorktreeDirty: (worktreePath) =>
+        worktreeStatus(worktreePath) === "dirty",
+    };
+    const plan = await planChainResumeFromState(
+      state.issueNumbers,
+      baseBranch,
+      (issueNumber) => stateManager.getIssueState(issueNumber),
+      resolver,
+      (issueNumber, error) =>
+        logNonFatalWarning(
+          `  !  State lookup failed for #${issueNumber}, treating as incomplete...`,
+          error,
+          config.verbose,
+        ),
+    );
+
+    if (plan.failFast) {
+      console.log(chalk.red(`\n  ❌ Chain resume aborted: ${plan.failFast}`));
+      shutdown.dispose();
+      return {
+        results: [
+          {
+            issueNumber: plan.resumeIssue ?? state.issueNumbers[0],
+            success: false,
+            phaseResults: [],
+            durationSeconds: 0,
+            loopTriggered: false,
+            abortReason: `chain resume aborted: ${plan.failFast}`,
+          },
+        ],
+        logPath: null,
+        exitCode: 1,
+        worktreeMap: new Map(),
+        issueInfoMap: new Map(),
+        config,
+        mergedOptions,
+        logWriter: null,
+        wallClockDurationSeconds: wallClock(),
+      };
+    }
+
+    if (plan.allComplete) {
+      console.log(
+        chalk.yellow(
+          `\n  All chain links already completed. Use --force to re-run.`,
+        ),
+      );
+      shutdown.dispose();
+      return {
+        results: [],
+        logPath: null,
+        exitCode: 0,
+        worktreeMap: new Map(),
+        issueInfoMap: new Map(),
+        config,
+        mergedOptions,
+        logWriter: null,
+        wallClockDurationSeconds: wallClock(),
+      };
+    }
+
+    if (plan.skipped.length > 0) {
+      state.chainResume = plan;
+      state.issueNumbers = plan.active;
+      const resumeAt = plan.resumeBaseCommit
+        ? plan.resumeBaseCommit.slice(0, 8)
+        : (plan.resumeBase ?? "base");
+      for (const s of plan.skipped) {
+        console.log(
+          chalk.yellow(
+            `  !  #${s.issueNumber}: already ${s.status} — skipping (use --force to re-run)`,
+          ),
+        );
+      }
+      console.log(
+        chalk.cyan(
+          `  ↻ Resuming chain at #${plan.resumeIssue} from ${resumeAt}` +
+            ` (${plan.resumeBase})`,
+        ),
+      );
+    }
+    return null;
+  }
+
+  /** `run()` stage: concurrency lock (#625). */
+  private static acquireRunLocks(
+    env: RunEnv,
+    state: RunState,
+  ): RunResult | null {
+    const { config, mergedOptions, wallClock } = env;
+    const { issueNumbers, shutdown, lockedResults } = state;
 
     // ── Concurrency lock (#625) ────────────────────────────────────────
     // Acquired here — after the state guard, before worktree creation — so
@@ -1014,7 +1166,6 @@ export class RunOrchestrator {
     // wouldn't release. Locked issues are skipped from the run with a
     // synthetic IssueResult so the batch continues.
     const lockManager = new LockManager();
-    const lockedResults: IssueResult[] = [];
     if (!lockManager.isNoop && !config.dryRun) {
       const commandLabel = `npx sequant run ${issueNumbers.join(" ")}`;
       const claimed: number[] = [];
@@ -1049,7 +1200,7 @@ export class RunOrchestrator {
           );
         }
       }
-      issueNumbers = claimed;
+      state.issueNumbers = claimed;
       if (claimed.length > 0) {
         shutdown.registerCleanup("Release issue locks", async () => {
           lockManager.releaseAll();
@@ -1063,7 +1214,7 @@ export class RunOrchestrator {
           process.off("exit", exitHandler);
         });
       }
-      if (issueNumbers.length === 0) {
+      if (state.issueNumbers.length === 0) {
         shutdown.dispose();
         return {
           results: lockedResults,
@@ -1078,6 +1229,17 @@ export class RunOrchestrator {
         };
       }
     }
+    return null;
+  }
+
+  /** `run()` stage: chain content pre-flight (#762). */
+  private static async chainContentPreflight(
+    env: RunEnv,
+    state: RunState,
+  ): Promise<RunResult | null> {
+    const { config, mergedOptions, resolved, wallClock } = env;
+    const { phasePauseHandle } = env.init;
+    const { issueNumbers, shutdown } = state;
 
     // ── Chain content pre-flight (#762) ────────────────────────────────
     // Warn-by-default; `--strict-preflight` turns warnings fatal. Runs BEFORE
@@ -1121,8 +1283,21 @@ export class RunOrchestrator {
         }
       }
     }
+    return null;
+  }
 
-    // ── Issue info + worktree setup ────────────────────────────────────
+  /** `run()` stage: fetch issue info for every active issue. */
+  private static async loadIssueInfo(
+    env: RunEnv,
+    state: RunState,
+  ): Promise<{
+    issueInfoMap: Map<number, { title: string; labels: string[] }>;
+    missingIssues: number[];
+  }> {
+    const { config } = env;
+    const { phasePauseHandle } = env.init;
+    const { issueNumbers } = state;
+
     const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
     const missingIssues: number[] = [];
     for (const issueNumber of issueNumbers) {
@@ -1137,6 +1312,19 @@ export class RunOrchestrator {
       }
       issueInfoMap.set(issueNumber, { title: info.title, labels: info.labels });
     }
+    return { issueInfoMap, missingIssues };
+  }
+
+  /** `run()` stage: a dry run exits 1 on an issue gh can't find (#1257). */
+  private static abortOnMissingIssues(
+    env: RunEnv,
+    state: RunState,
+    issueInfoMap: Map<number, { title: string; labels: string[] }>,
+    missingIssues: number[],
+  ): RunResult | null {
+    const { config, mergedOptions, wallClock } = env;
+    const { phasePauseHandle } = env.init;
+    const { shutdown } = state;
 
     // #1257 AC-5: a dry run is the plan preview. Planning an issue gh says
     // doesn't exist used to print "✔ passed"; report it and exit 1 instead.
@@ -1163,12 +1351,22 @@ export class RunOrchestrator {
         wallClockDurationSeconds: wallClock(),
       };
     }
+    return null;
+  }
+
+  /** `run()` stage: isolation flags and the skills pre-flight inputs. */
+  private static buildProvisionState(
+    env: RunEnv,
+    state: RunState,
+    issueInfoMap: Map<number, { title: string; labels: string[] }>,
+  ): ProvisionState {
+    const { config, mergedOptions } = env;
+    const { issueNumbers } = state;
 
     const useWorktreeIsolation =
       mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
 
-    let worktreeMap: Map<number, WorktreeInfo> = new Map();
-    // #1469: filled by provisioning; an issue in it never runs a phase.
+    const worktreeMap: Map<number, WorktreeInfo> = new Map();
     const worktreeFailures = new Map<number, string>();
     const worktreeRequired = useWorktreeIsolation && !config.dryRun;
 
@@ -1179,20 +1377,28 @@ export class RunOrchestrator {
     // its own driver — an aider run with a claude-code exec phase still needs
     // the exec skill.
     const skillsPreflightActive = !config.dryRun && runResolvesSkills(config);
-    const preflightBase = {
-      agent: resolveRunAgent(config),
-      phasePolicies: config.phasePolicies,
-      aiderSettings: config.aiderSettings,
-      phases: config.phases,
-      autoDetectPhases: resolved.autoDetectPhases,
-      qualityLoop: config.qualityLoop,
-      testgen: mergedOptions.testgen,
-      securityReview: mergedOptions.securityReview,
-      issueNumbers,
+    return {
       issueInfoMap,
+      worktreeMap,
+      worktreeFailures,
+      useWorktreeIsolation,
+      worktreeRequired,
+      skillsPreflightActive,
+      preflightBase: buildPreflightBase(env, issueNumbers, issueInfoMap),
     };
-    const skillsPreflightAbort = (reason: string): RunResult => ({
-      results: issueNumbers.map((issueNumber) => ({
+  }
+
+  /** The `RunResult` for a skills pre-flight abort. */
+  private static skillsPreflightAbort(
+    env: RunEnv,
+    state: RunState,
+    prov: ProvisionState,
+    reason: string,
+  ): RunResult {
+    const { config, mergedOptions, wallClock } = env;
+    const { worktreeMap, issueInfoMap } = prov;
+    return {
+      results: state.issueNumbers.map((issueNumber) => ({
         issueNumber,
         success: false,
         phaseResults: [],
@@ -1208,7 +1414,19 @@ export class RunOrchestrator {
       mergedOptions,
       logWriter: null,
       wallClockDurationSeconds: wallClock(),
-    });
+    };
+  }
+
+  /** `run()` stage: main-checkout skills pre-flight (#1193, #1354). */
+  private static async mainCheckoutSkillsPreflight(
+    env: RunEnv,
+    state: RunState,
+    prov: ProvisionState,
+  ): Promise<RunResult | null> {
+    const { baseBranch } = env;
+    const { phasePauseHandle } = env.init;
+    const { shutdown } = state;
+    const { skillsPreflightActive, useWorktreeIsolation, preflightBase } = prov;
 
     // #1354: worktrees are checked out from git, so uncommitted skill edits
     // in the main checkout (typically an uncommitted `sequant sync`) never
@@ -1262,9 +1480,22 @@ export class RunOrchestrator {
         );
         bracketedConsoleLog(phasePauseHandle, chalk.red(`    ${remedy}`));
         shutdown.dispose();
-        return skillsPreflightAbort(remedy);
+        return RunOrchestrator.skillsPreflightAbort(env, state, prov, remedy);
       }
     }
+    return null;
+  }
+
+  /** `run()` stage: provision worktrees and register their removal cleanup. */
+  private static async provisionWorktrees(
+    env: RunEnv,
+    state: RunState,
+    prov: ProvisionState,
+  ): Promise<void> {
+    const { config, mergedOptions, baseBranch } = env;
+    const { manifest, settings, phasePauseHandle } = env.init;
+    const { issueNumbers, shutdown, shutdownOrchestratorRef } = state;
+    const { issueInfoMap, worktreeFailures, worktreeRequired } = prov;
 
     if (worktreeRequired) {
       const issueData = issueNumbers.map((num) => ({
@@ -1275,8 +1506,8 @@ export class RunOrchestrator {
         // On resume (#760), provision the first incomplete link from the
         // completed prefix's committed tip (resumeBase) instead of the base
         // branch, so the chain rebuilds onto the work already done.
-        const chainBase = chainResume?.resumeBase ?? baseBranch;
-        worktreeMap = await ensureWorktreesChain(
+        const chainBase = state.chainResume?.resumeBase ?? baseBranch;
+        prov.worktreeMap = await ensureWorktreesChain(
           issueData,
           config.verbose,
           manifest.packageManager,
@@ -1285,7 +1516,7 @@ export class RunOrchestrator {
           { failures: worktreeFailures },
         );
       } else {
-        worktreeMap = await ensureWorktrees(
+        prov.worktreeMap = await ensureWorktrees(
           issueData,
           config.verbose,
           manifest.packageManager,
@@ -1294,7 +1525,7 @@ export class RunOrchestrator {
           { failures: worktreeFailures },
         );
       }
-      for (const [issueNum, worktree] of worktreeMap.entries()) {
+      for (const [issueNum, worktree] of prov.worktreeMap.entries()) {
         if (!worktree.existed) {
           // #935 D13: preserve a dirty worktree on signal-driven shutdown —
           // force-removing it here would delete exactly the directory the
@@ -1314,6 +1545,18 @@ export class RunOrchestrator {
         }
       }
     }
+  }
+
+  /** `run()` stage: main-checkout freshness warning (#1193). */
+  private static warnMainCheckoutFreshness(
+    env: RunEnv,
+    state: RunState,
+    prov: ProvisionState,
+  ): void {
+    const { config, baseBranch } = env;
+    const { phasePauseHandle } = env.init;
+    const { issueNumbers } = state;
+    const { useWorktreeIsolation, preflightBase } = prov;
 
     // ── Main-checkout freshness warning (#1193) ────────────────────────
     // The phases that run in the main checkout plan against whatever it has
@@ -1342,6 +1585,22 @@ export class RunOrchestrator {
         );
       }
     }
+  }
+
+  /** `run()` stage: per-worktree skills pre-flight (#933, was #813). */
+  private static async worktreeSkillsPreflight(
+    env: RunEnv,
+    state: RunState,
+    prov: ProvisionState,
+  ): Promise<RunResult | null> {
+    const { phasePauseHandle } = env.init;
+    const { shutdown } = state;
+    const {
+      skillsPreflightActive,
+      worktreeMap,
+      worktreeRequired,
+      preflightBase,
+    } = prov;
 
     // ── Skills pre-flight (#933, was #813) ──────────────────────────────
     // Fail fast when the driver resolves phases via `.claude/skills/` and a
@@ -1446,10 +1705,38 @@ export class RunOrchestrator {
             chalk.red(`    ${worktreeRemedy}`),
           );
           shutdown.dispose();
-          return skillsPreflightAbort(worktreeRemedy);
+          return RunOrchestrator.skillsPreflightAbort(
+            env,
+            state,
+            prov,
+            worktreeRemedy,
+          );
         }
       }
     }
+    return null;
+  }
+
+  /** `run()` stage: execute, finalize the log, record metrics. */
+  private static async executeAndFinalize(
+    env: RunEnv,
+    state: RunState,
+    prov: ProvisionState,
+  ): Promise<RunResult> {
+    const { init, config, mergedOptions, baseBranch, wallClock } = env;
+    const { manifest, onProgress, phasePauseHandle } = init;
+    const resolvedBatches = env.resolved.batches;
+    const {
+      issueNumbers,
+      logWriter,
+      stateManager,
+      shutdown,
+      shutdownOrchestratorRef,
+      chainResume,
+      lockedResults,
+    } = state;
+    const { issueInfoMap, worktreeMap, worktreeRequired, worktreeFailures } =
+      prov;
 
     // ── Execute ────────────────────────────────────────────────────────
     let results: IssueResult[] = [];

@@ -46,4 +46,4 @@ Option A gives up a shorter file. In return, no test changes and the export surf
 - Easier: a fix to one stage is a diff to one function of at most 200 counted lines, and `max-lines-per-function` now holds for the whole file.
 - Easier: the spec and loop paths share `buildPhaseErrorContext`, `phaseLogStatus` and `persistResumeHandle` where their output was already byte-identical. Spec's run-log entry still omits the diff stats, commit hash and verdict, as before.
 - Harder: control flow crosses function boundaries. A reader must follow `"break"` and `null` back to the loop that acts on them.
-- Revisit when #1508 splits `RunOrchestrator.run` and `executePhaseWithRetry`, if those use a different pattern.
+- #1508 applied the same pattern to the rest of `src/lib/workflow`: `RunOrchestrator.run`, `ensureWorktree`, `executePhase`, `executePhaseWithRetry`, `runReadyGate` and `ClaudeCodeDriver.executePhase` became private stage functions in their own files, and `max-lines-per-function` (200) now holds for `src/lib/workflow/**`.
