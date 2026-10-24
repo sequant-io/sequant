@@ -24,22 +24,22 @@ import { parseAcceptanceCriteria } from "../ac-parser.js";
 import type { MutationMarker } from "./mutation-marker.js";
 
 /** First line of the comment; dedup and the outcome script match on it. */
-export const READ_FIRST_HEADING = "## Read first";
+const READ_FIRST_HEADING = "## Read first";
 
 /** Machine marker carried by every Read-first comment. */
-export const READ_FIRST_MARKER = "SEQUANT_READ_FIRST";
+const READ_FIRST_MARKER = "SEQUANT_READ_FIRST";
 
 /** A file with this many `fix` commits in the window is hot. */
-export const HOT_FILE_THRESHOLD = 3;
+const HOT_FILE_THRESHOLD = 3;
 
 /** Changed non-test lines above which the diff itself is residue. */
-export const SIZE_BUDGET_LINES = 400;
+const SIZE_BUDGET_LINES = 400;
 
 /** The window the hot-file count reads. */
 export const HOT_FILE_WINDOW = "28.days";
 
 /** Per-file tautology-detector result, as `--json` reports it. */
-export interface TautologyHit {
+interface TautologyHit {
   filePath: string;
   totalTests: number;
   tautologicalCount: number;
@@ -66,12 +66,12 @@ export interface ReviewResidueInput {
 
 export type SeamClass = "real" | "mock" | "prose";
 
-export interface ResidueLine {
+interface ResidueLine {
   text: string;
   command: string;
 }
 
-export interface TestLine {
+interface TestLine {
   path: string;
   seam: SeamClass;
   /** Module specifiers mocked that the project does not own. */
@@ -141,7 +141,7 @@ function namesPath(token: string, path: string): boolean {
  * Map each diff path to the ACs whose evidence names it. A path no AC names
  * is absent from the map (R-2: unattributed is residue).
  */
-export function attributeFiles(
+function attributeFiles(
   issueBody: string,
   paths: string[],
 ): Map<string, string[]> {

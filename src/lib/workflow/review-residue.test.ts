@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import {
   buildReviewResidue,
   classifyTestSeam,
@@ -8,6 +11,16 @@ import {
   type ReviewResidueInput,
 } from "./review-residue.js";
 import { parseMutationMarkers } from "./mutation-marker.js";
+
+// Test-file sources live in fixture files so the health scan, which reads
+// every *.test.ts, does not count this file's fixtures as its own mocks.
+const FIXTURES = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "__fixtures__",
+  "review-residue",
+);
+const source = (name: string): string =>
+  readFileSync(join(FIXTURES, `${name}.test.ts.txt`), "utf-8");
 
 // A diff touching five files. AC-1's evidence names two of them.
 const NUMSTAT = [
@@ -47,10 +60,8 @@ function fixture(
     commit: "abc1234",
     numstat: NUMSTAT,
     testFileSources: {
-      "src/lib/alpha.test.ts":
-        'vi.mock("child_process", () => ({ spawnSync: vi.fn() }));\nimport { alpha } from "./alpha.js";',
-      "src/lib/gamma.test.ts":
-        'const skill = readFileSync(".claude/skills/exec/SKILL.md", "utf-8");',
+      "src/lib/alpha.test.ts": source("alpha"),
+      "src/lib/gamma.test.ts": source("gamma"),
     },
     issueBody: ISSUE_BODY,
     fixLog: FIX_LOG,

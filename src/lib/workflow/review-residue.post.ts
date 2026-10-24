@@ -39,7 +39,7 @@ function git(cwd: string, args: string[]): string {
   return result.stdout;
 }
 
-export interface CollectArgs {
+interface CollectArgs {
   worktreePath: string;
   baseBranch: string;
   prNumber: number;
@@ -52,7 +52,7 @@ export interface CollectArgs {
  * Throws on any git failure: a partial input would render a residue that
  * looks emptier than it is.
  */
-export function collectReviewResidueInput(
+function collectReviewResidueInput(
   args: CollectArgs,
 ): Omit<ReviewResidueInput, "issueBody"> {
   const { worktreePath } = args;
