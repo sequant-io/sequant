@@ -113,6 +113,8 @@ import {
 import { isCompletedIssueStatus } from "./completed-status.js";
 import { bracketedConsoleLog } from "./notice.js";
 import { noteSuppressed } from "./suppressed.js";
+import { deliverReadFirstComment } from "./review-residue.post.js";
+import { parseMutationMarkersFromExecOutput } from "./mutation-marker.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -3016,6 +3018,34 @@ async function settleIssueStatus(
 }
 
 /**
+ * #1520: the "Read first" comment, once per PR, after QA. Runs on the
+ * post-QA `openOrUpdatePR` path only, which both a first run and a qa-only
+ * re-run pass through; dedup reads the PR, so a later run posts nothing.
+ * A run that ran no qa posts nothing: the comment points at the QA verdict.
+ */
+async function postReadFirstForPR(
+  env: IssueRunEnv,
+  state: IssueRunState,
+  worktreePath: string,
+  prNumber: number,
+): Promise<void> {
+  const { issueNumber, chain, baseBranch } = env.ctx;
+  if (!state.phaseResults.some((p) => p.phase === "qa")) return;
+  const mutationMarkers = state.phaseResults
+    .filter((p) => p.phase === "exec" && p.output)
+    .flatMap((p) => parseMutationMarkersFromExecOutput(p.output ?? ""));
+  await deliverReadFirstComment({
+    provider: env.ctx.readFirstProvider ?? new GitHubProvider(),
+    worktreePath,
+    baseBranch: chain?.predecessorBranch ?? baseBranch ?? "main",
+    prNumber,
+    issueNumber,
+    mutationMarkers,
+    warn: env.warn,
+  });
+}
+
+/**
  * #1507: the run's delivery — rebase, the post-QA PR, relay deactivation —
  * and the issue's `IssueResult`.
  */
@@ -3101,6 +3131,7 @@ async function deliverIssueBranch(
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;
       prUrl = prResult.prUrl;
+      await postReadFirstForPR(env, state, worktreePath, prNumber);
     } else if (prResult.attempted && !prResult.success) {
       // #879: PR creation was attempted (branch/QA passed) but failed. This is
       // a run failure — the deliverable never reached GitHub.

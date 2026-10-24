@@ -11,6 +11,7 @@ import type {
 import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
+import type { PlatformProvider } from "./platforms/platform-provider.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import type { SequantError } from "../errors.js";
 import type { ErrorCategory } from "./error-classifier.js";
@@ -982,6 +983,11 @@ export interface IssueExecutionContext {
    * real `GitHubProvider().postComment` when unset.
    */
   postComment?: (issueNumber: number, body: string) => Promise<void>;
+  /**
+   * @internal Test seam for the #1520 "Read first" PR comment. Defaults to a
+   * real `GitHubProvider` when unset.
+   */
+  readFirstProvider?: PlatformProvider;
   /**
    * @internal Test seam for #971's per-iteration loop-progress snapshot.
    * Defaults to `qa-stagnation.ts`'s `snapshotLoopProgress` when unset, and is
