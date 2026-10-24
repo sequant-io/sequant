@@ -566,6 +566,153 @@ function formatReadyGapsMarker(remaining: ReadyGapItem[]): string {
 }
 
 /**
+ * #697: run a phase while emitting live-progress events around it. `iteration`
+ * is the 1-based QA-pass index so the renderer can render `loop N/M`. Emits
+ * `failed` (and re-throws) if the runner itself throws so the catch path in
+ * ready.ts disposes a renderer that already reflects the failed cell.
+ */
+async function runReadyPhaseTracked(
+  opts: RunReadyGateOptions,
+  phase: "qa" | "loop",
+  config: ExecutionConfig,
+  iteration: number,
+): Promise<PhaseResult> {
+  opts.onProgress?.(opts.issueNumber, phase, "start", { iteration });
+  let phaseResult: PhaseResult;
+  try {
+    phaseResult = await opts.runPhase(phase, config, opts.worktreePath);
+  } catch (err) {
+    opts.onProgress?.(opts.issueNumber, phase, "failed", {
+      iteration,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+  opts.onProgress?.(
+    opts.issueNumber,
+    phase,
+    phaseResult.success === false ? "failed" : "complete",
+    {
+      iteration,
+      durationSeconds: phaseResult.durationSeconds,
+      error: phaseResult.success === false ? phaseResult.error : undefined,
+    },
+  );
+  return phaseResult;
+}
+
+type HaltBundleReason =
+  "SPEC_DIVERGENCE" | "DIVERGENCE_SUSPECT" | "TOP_OF_LADDER";
+
+/** #995: assemble the bundle for a gate-side ladder halt. */
+function buildReadyHaltBundle(
+  history: {
+    issueNumber: number;
+    iterationRecords: DivergenceIterationRecord[];
+    modelEscalations: ModelEscalationRecord[];
+  },
+  reason: HaltBundleReason,
+  phase: string,
+  declared?: { acs?: string; message?: string },
+): EvidenceBundle {
+  const { issueNumber, iterationRecords, modelEscalations } = history;
+  return {
+    issueNumber,
+    phase,
+    reason,
+    shasTried: [
+      ...new Set(
+        iterationRecords
+          .map((r) => r.sha)
+          .filter((sha): sha is string => Boolean(sha)),
+      ),
+    ],
+    iterations: [...iterationRecords],
+    escalationHistory: [...modelEscalations],
+    ...(reason === "SPEC_DIVERGENCE"
+      ? { declaredAcs: declared?.acs ?? "" }
+      : {}),
+    ...(declared?.message ? { message: declared.message } : {}),
+  };
+}
+
+/** The gate's accumulated state at the moment it stops. */
+interface ReadyGateSnapshot {
+  iterations: number;
+  finalVerdict: QaVerdict | null;
+  autoFixed: string[];
+  remaining: ReadyGapItem[];
+  tokensUsed: number;
+  effortEscalations: EscalationRecord[];
+  modelEscalations: ModelEscalationRecord[];
+  haltBundle: EvidenceBundle | null;
+}
+
+/** Build the terminal result, render its report and (#937 AC-4) post it. */
+async function finishReadyGate(
+  opts: RunReadyGateOptions,
+  reason: ReadyTerminalReason,
+  snapshot: ReadyGateSnapshot,
+): Promise<ReadyResult> {
+  const { issueNumber, policy } = opts;
+  const {
+    iterations,
+    finalVerdict,
+    autoFixed,
+    remaining,
+    tokensUsed,
+    effortEscalations,
+    modelEscalations,
+    haltBundle,
+  } = snapshot;
+  const ready = reason === "AC_MET" || reason === "READY_FOR_MERGE";
+  const issueStatus: IssueStatus = ready
+    ? "waiting_for_human_merge"
+    : "blocked";
+  const result: ReadyResult = {
+    issueNumber,
+    policy,
+    ready,
+    reason,
+    issueStatus,
+    iterations,
+    finalVerdict,
+    autoFixed,
+    remaining,
+    tokensUsed,
+    report: "",
+    effortEscalations,
+    modelEscalations,
+    ...(haltBundle ? { haltBundle: formatEvidenceBundle(haltBundle) } : {}),
+  };
+  result.report = formatReadyReport(result);
+
+  // #937 AC-4: persist the gap report as an issue comment once the gate
+  // reaches a terminal state carrying a QA verdict. `finalVerdict === null`
+  // covers NO_IMPLEMENTATION/UNCOMMITTED_ONLY/NO_VERDICT and the guard
+  // TOKEN_BUDGET check before the first QA pass — none of those have a gap
+  // report worth persisting. Best-effort: a post failure must never fail
+  // the gate — `result.report` (returned either way) is the primary
+  // channel, same rationale as `sequant ready`'s existing state-persistence
+  // try/catch.
+  if (result.finalVerdict !== null && opts.postReport) {
+    try {
+      await opts.postReport(result.report);
+    } catch (error) {
+      // Non-fatal — see comment above — but never silent (#1315).
+      const warn = opts.log ?? ((m: string) => console.warn(m));
+      warn(
+        `Failed to post ready-gate report for #${issueNumber}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  return result;
+}
+
+/**
  * Drive the policy-bounded `qa → loop → qa` ready gate.
  */
 export async function runReadyGate(
@@ -583,38 +730,12 @@ export async function runReadyGate(
   const classifyChangesFn = opts.classifyChangesFn ?? classifyExecChanges;
   const snapshotFn = opts.snapshotFn ?? snapshotLoopProgress;
 
-  // #697: run a phase while emitting live-progress events around it. `iteration`
-  // is the 1-based QA-pass index so the renderer can render `loop N/M`. Emits
-  // `failed` (and re-throws) if the runner itself throws so the catch path in
-  // ready.ts disposes a renderer that already reflects the failed cell.
-  const runPhaseTracked = async (
+  const runPhaseTracked = (
     phase: "qa" | "loop",
     config: ExecutionConfig,
     iteration: number,
-  ): Promise<PhaseResult> => {
-    opts.onProgress?.(opts.issueNumber, phase, "start", { iteration });
-    let phaseResult: PhaseResult;
-    try {
-      phaseResult = await opts.runPhase(phase, config, worktreePath);
-    } catch (err) {
-      opts.onProgress?.(opts.issueNumber, phase, "failed", {
-        iteration,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
-    }
-    opts.onProgress?.(
-      opts.issueNumber,
-      phase,
-      phaseResult.success === false ? "failed" : "complete",
-      {
-        iteration,
-        durationSeconds: phaseResult.durationSeconds,
-        error: phaseResult.success === false ? phaseResult.error : undefined,
-      },
-    );
-    return phaseResult;
-  };
+  ): Promise<PhaseResult> =>
+    runReadyPhaseTracked(opts, phase, config, iteration);
 
   let iterations = 0;
   let finalVerdict: QaVerdict | null = null;
@@ -646,75 +767,28 @@ export async function runReadyGate(
 
   /** #995: assemble the bundle for a gate-side ladder halt. */
   const buildBundle = (
-    reason: "SPEC_DIVERGENCE" | "DIVERGENCE_SUSPECT" | "TOP_OF_LADDER",
+    reason: HaltBundleReason,
     phase: string,
     declared?: { acs?: string; message?: string },
-  ): EvidenceBundle => ({
-    issueNumber,
-    phase,
-    reason,
-    shasTried: [
-      ...new Set(
-        iterationRecords
-          .map((r) => r.sha)
-          .filter((sha): sha is string => Boolean(sha)),
-      ),
-    ],
-    iterations: [...iterationRecords],
-    escalationHistory: [...modelEscalations],
-    ...(reason === "SPEC_DIVERGENCE"
-      ? { declaredAcs: declared?.acs ?? "" }
-      : {}),
-    ...(declared?.message ? { message: declared.message } : {}),
-  });
-
-  const finish = async (reason: ReadyTerminalReason): Promise<ReadyResult> => {
-    const ready = reason === "AC_MET" || reason === "READY_FOR_MERGE";
-    const issueStatus: IssueStatus = ready
-      ? "waiting_for_human_merge"
-      : "blocked";
-    const result: ReadyResult = {
-      issueNumber,
-      policy,
-      ready,
+  ): EvidenceBundle =>
+    buildReadyHaltBundle(
+      { issueNumber, iterationRecords, modelEscalations },
       reason,
-      issueStatus,
+      phase,
+      declared,
+    );
+
+  const finish = (reason: ReadyTerminalReason): Promise<ReadyResult> =>
+    finishReadyGate(opts, reason, {
       iterations,
       finalVerdict,
       autoFixed,
       remaining,
       tokensUsed,
-      report: "",
       effortEscalations,
       modelEscalations,
-      ...(haltBundle ? { haltBundle: formatEvidenceBundle(haltBundle) } : {}),
-    };
-    result.report = formatReadyReport(result);
-
-    // #937 AC-4: persist the gap report as an issue comment once the gate
-    // reaches a terminal state carrying a QA verdict. `finalVerdict === null`
-    // covers NO_IMPLEMENTATION/UNCOMMITTED_ONLY/NO_VERDICT and the guard
-    // TOKEN_BUDGET check before the first QA pass — none of those have a gap
-    // report worth persisting. Best-effort: a post failure must never fail
-    // the gate — `result.report` (returned either way) is the primary
-    // channel, same rationale as `sequant ready`'s existing state-persistence
-    // try/catch.
-    if (result.finalVerdict !== null && opts.postReport) {
-      try {
-        await opts.postReport(result.report);
-      } catch (error) {
-        // Non-fatal — see comment above — but never silent (#1315).
-        const warn = opts.log ?? ((m: string) => console.warn(m));
-        warn(
-          `Failed to post ready-gate report for #${issueNumber}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-
-    return result;
-  };
+      haltBundle,
+    });
 
   const budgetExceeded = (): boolean =>
     typeof tokenBudget === "number" &&
