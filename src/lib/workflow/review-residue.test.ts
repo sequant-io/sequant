@@ -208,7 +208,11 @@ describe("renderReadFirst", () => {
 
   it("an empty residue still names its command", () => {
     const body = renderReadFirst(
-      fixture({ numstat: "1\t0\tsrc/lib/alpha.ts", fixLog: "" }),
+      fixture({
+        numstat: "1\t0\tsrc/lib/alpha.ts",
+        fixLog: "",
+        issueBody: "- [ ] AC-1: a. Evidence: `src/lib/alpha.ts` exports it",
+      }),
     );
     expect(section(body, "## Residue")).toEqual([
       "- none — `git diff --numstat origin/main...HEAD`",
