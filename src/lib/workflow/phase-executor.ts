@@ -1635,7 +1635,7 @@ function resolvePhaseFiles(agent: string, cwd: string): string[] | undefined {
       }
     } catch (err) {
       // No changed files or git error — proceed without file context
-      noteSuppressed("other", err, "phase-executor:executePhase");
+      noteSuppressed("other", err, "phase-executor:resolvePhaseFiles");
     }
   }
   return files;
@@ -1729,7 +1729,7 @@ async function buildPhaseEnv(
       if (framePath) env.SEQUANT_RELAY_FRAME = framePath;
     } catch (err) {
       /* relay module unavailable — fall back to bash's search heuristic. */
-      noteSuppressed("other", err, "phase-executor:executePhase#2");
+      noteSuppressed("other", err, "phase-executor:buildPhaseEnv");
     }
   }
   return env;
@@ -1837,7 +1837,7 @@ async function executePhase(
           onActivity(text);
         } catch (err) {
           // Activity reporting must never disrupt the run.
-          noteSuppressed("other", err, "phase-executor:executePhase#3");
+          noteSuppressed("other", err, "phase-executor:executePhase");
         }
       }, ACTIVITY_THROTTLE_MS)
     : undefined;
