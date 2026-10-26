@@ -113,6 +113,8 @@ import {
 import { isCompletedIssueStatus } from "./completed-status.js";
 import { bracketedConsoleLog } from "./notice.js";
 import { noteSuppressed } from "./suppressed.js";
+import { deliverReadFirstComment } from "./review-residue.post.js";
+import { parseMutationMarkersFromExecOutput } from "./mutation-marker.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -1216,6 +1218,12 @@ interface IssueRunState {
    * (AC-3).
    */
   lastTrigger: EscalationTrigger | null;
+  /**
+   * #1520: the PR opened right after exec (#1247), kept so the Read-first
+   * comment reaches it when the run ends at a failing verdict and the
+   * post-QA PR update never runs.
+   */
+  earlyPr: { number: number; url: string } | null;
 }
 
 /** #1507: one outer quality-loop iteration, as its phase steps see it. */
@@ -1259,6 +1267,7 @@ function createIssueRunState(): IssueRunState {
     consecutiveDivergenceSuspect: 0,
     ladderState: createLadderState(),
     lastTrigger: null,
+    earlyPr: null,
   };
 }
 
@@ -2540,6 +2549,9 @@ async function recordLoopPhaseOutcome(
     hasExecChanges(worktreePath)
   ) {
     const early = await openOrUpdatePR(env, state, worktreePath, branch);
+    if (early.success && early.prNumber && early.prUrl) {
+      state.earlyPr = { number: early.prNumber, url: early.prUrl };
+    }
     if (early.attempted && !early.success) {
       warn(
         `    !  PR after exec failed (retried after QA): ${early.error ?? "unknown error"}`,
@@ -3016,6 +3028,73 @@ async function settleIssueStatus(
 }
 
 /**
+ * #1520: the PR this run left behind, for the Read-first comment. The
+ * post-QA PR when QA passed; the PR opened after exec (#1247) when the run
+ * ended at a failing verdict; on a qa-only re-run, the PR the state recorded.
+ * The class failure this guards against is a receipt that reaches one path
+ * and misses the others (#964, #1247, #1302, #1340).
+ */
+async function resolveReadFirstPR(
+  postQaPr: number | undefined,
+  state: IssueRunState,
+  stateManager: StateManager | null,
+  issueNumber: number,
+  provider: PlatformProvider,
+): Promise<number | undefined> {
+  if (postQaPr) return postQaPr;
+  if (state.earlyPr) return state.earlyPr.number;
+  if (!stateManager) return undefined;
+  try {
+    const recorded = (await stateManager.getIssueState(issueNumber))?.pr
+      ?.number;
+    if (!recorded) return undefined;
+    // The record may name a PR from an earlier attempt that was closed or
+    // merged since; a comment about this diff does not belong on it.
+    const status = await provider.getPRStatus(String(recorded));
+    return status.state === "open" ? recorded : undefined;
+  } catch (err) {
+    noteSuppressed("state", err, "batch-executor:resolveReadFirstPR");
+    return undefined;
+  }
+}
+
+/**
+ * #1520: the "Read first" comment, once per PR, after the last QA iteration,
+ * whatever its verdict. Dedup reads the PR, so a later run posts nothing.
+ * A run that ran no qa posts nothing: the comment points at the QA verdict.
+ */
+async function postReadFirstForPR(
+  env: IssueRunEnv,
+  state: IssueRunState,
+  worktreePath: string,
+  postQaPr: number | undefined,
+): Promise<void> {
+  const { issueNumber, chain, baseBranch, services } = env.ctx;
+  if (!state.phaseResults.some((p) => p.phase === "qa")) return;
+  const provider = env.ctx.readFirstProvider ?? new GitHubProvider();
+  const prNumber = await resolveReadFirstPR(
+    postQaPr,
+    state,
+    services.stateManager,
+    issueNumber,
+    provider,
+  );
+  if (!prNumber) return;
+  const mutationMarkers = state.phaseResults
+    .filter((p) => p.phase === "exec" && p.output)
+    .flatMap((p) => parseMutationMarkersFromExecOutput(p.output ?? ""));
+  await deliverReadFirstComment({
+    provider,
+    worktreePath,
+    baseBranch: chain?.predecessorBranch ?? baseBranch ?? "main",
+    prNumber,
+    issueNumber,
+    mutationMarkers,
+    warn: env.warn,
+  });
+}
+
+/**
  * #1507: the run's delivery — rebase, the post-QA PR, relay deactivation —
  * and the issue's `IssueResult`.
  */
@@ -3106,6 +3185,10 @@ async function deliverIssueBranch(
       // a run failure — the deliverable never reached GitHub.
       prCreationError = prResult.error ?? "PR creation failed";
     }
+  }
+  // #1520: on every verdict, not only the success path above.
+  if (worktreePath && !options.noPr) {
+    await postReadFirstForPR(env, state, worktreePath, prNumber);
   }
 
   // Deactivate relay (#383) — archive inbox/outbox transcripts to
