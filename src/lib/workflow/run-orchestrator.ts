@@ -2367,7 +2367,7 @@ export class RunOrchestrator {
     worktreeMap: Map<number, WorktreeInfo>,
     issueNumbers: number[],
     wallClockDurationSeconds: number,
-    usage: RunUsage,
+    usage: RunUsage = RunOrchestrator.collectUsage(results, worktreeMap),
   ): Promise<void> {
     const metricsWriter = new MetricsWriter({ verbose: config.verbose });
     // #867: run wall clock, not the sum of per-issue durations — under

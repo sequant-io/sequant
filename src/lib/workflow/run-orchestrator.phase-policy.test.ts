@@ -448,7 +448,7 @@ describe("#986: RunOrchestrator.recordMetrics aggregates driver modelUsage", () 
 });
 
 /**
- * #986 AC-4 gate — scoped to the `recordMetrics` body, so a mention of the old
+ * #986 AC-4 gate — scoped to the `collectUsage` + `recordMetrics` bodies, so a mention of the old
  * call in a comment or in an unrelated method cannot satisfy or break it.
  */
 describe("#986 AC-4 gate: the metrics read is worktree-anchored", () => {
@@ -456,7 +456,9 @@ describe("#986 AC-4 gate: the metrics read is worktree-anchored", () => {
 
   function recordMetricsRegion(): string {
     const src = fs.readFileSync(SOURCE, "utf-8");
-    const start = src.indexOf("private static async recordMetrics(");
+    // #1527: the usage totals (and the hook-file read) moved into `collectUsage`,
+    // which sits directly before `recordMetrics`; the region spans both.
+    const start = src.indexOf("private static collectUsage(");
     expect(start).toBeGreaterThan(-1);
     const end = src.indexOf("function findOrAppendPhase", start);
     expect(end).toBeGreaterThan(start);
