@@ -49,6 +49,24 @@ export interface ClosedIssueRaw {
   labels: { name: string }[];
 }
 
+/** A closed issue with its body (#1520 AC-1). */
+export interface ClosedIssueWithBody {
+  number: number;
+  closedAt: string;
+  body: string;
+}
+
+/** A merged PR with its comments (#1520 AC-6). */
+export interface MergedPRWithComments {
+  number: number;
+  mergedAt: string;
+  comments: {
+    author: { login: string } | null;
+    body: string;
+    createdAt: string;
+  }[];
+}
+
 /**
  * Result of a raw `gh pr create` CLI call.
  */
@@ -141,6 +159,8 @@ function spawnGh(args: string[], opts: GhRunOptions): GhRunResult {
     timeout: opts.timeout,
     cwd: opts.cwd,
     input: opts.input,
+    // #1520: issue and PR lists with bodies run past the 1 MB default.
+    maxBuffer: 32 * 1024 * 1024,
   });
   return {
     status: result.status,
@@ -336,6 +356,59 @@ export class GitHubProvider implements PlatformProvider {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Issues closed on or after `since` (YYYY-MM-DD), with bodies (#1520 AC-1).
+   * Throws on failure: the attribution-rate script must not report a rate
+   * over an empty list it could not read.
+   */
+  listClosedIssuesWithBodySync(
+    since: string,
+    limit: number = 1000,
+  ): ClosedIssueWithBody[] {
+    const stdout = this.runOrThrow(
+      [
+        "issue",
+        "list",
+        "--state",
+        "closed",
+        "--search",
+        `closed:>=${since}`,
+        "--json",
+        "number,closedAt,body",
+        "--limit",
+        String(limit),
+      ],
+      60000,
+    );
+    return JSON.parse(stdout) as ClosedIssueWithBody[];
+  }
+
+  /**
+   * PRs merged on or after `since` (YYYY-MM-DD), with comments (#1520 AC-6).
+   * Throws on failure, like {@link listClosedIssuesWithBodySync}.
+   */
+  listMergedPRsWithCommentsSync(
+    since: string,
+    limit: number = 1000,
+  ): MergedPRWithComments[] {
+    const stdout = this.runOrThrow(
+      [
+        "pr",
+        "list",
+        "--state",
+        "merged",
+        "--search",
+        `merged:>=${since}`,
+        "--json",
+        "number,mergedAt,comments",
+        "--limit",
+        String(limit),
+      ],
+      60000,
+    );
+    return JSON.parse(stdout) as MergedPRWithComments[];
   }
 
   /**

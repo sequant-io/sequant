@@ -1,0 +1,2 @@
+vi.mock("child_process", () => ({ spawnSync: vi.fn() }));
+import { alpha } from "./alpha.js";
