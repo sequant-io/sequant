@@ -477,9 +477,24 @@ export const RunLogSchema = z.object({
       byScope: z.record(z.string(), z.number().int().nonnegative()),
     })
     .optional(),
+  /**
+   * Run-level cost and tokens, the same figure `.sequant/metrics.json` records
+   * for this run (#1527). The cost is the SDK's estimate, not a billing
+   * statement. Each key is absent when the run recorded nothing for it.
+   * Optional, so `version` stays 1.
+   */
+  cost: z
+    .object({
+      usd: z.number().nonnegative().optional(),
+      tokens: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
 });
 
 export type RunLog = z.infer<typeof RunLogSchema>;
+
+/** The run-level `cost` block of a run log (#1527). */
+export type RunCost = NonNullable<RunLog["cost"]>;
 
 /**
  * Default log directory paths

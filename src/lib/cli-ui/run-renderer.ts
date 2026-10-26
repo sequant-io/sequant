@@ -19,7 +19,12 @@ import path from "node:path";
 import chalk from "chalk";
 import logUpdate from "log-update";
 import stringWidth from "string-width";
-import { formatElapsedTime, formatTimestamp } from "./format.js";
+import {
+  COST_CAVEAT,
+  formatCostLine,
+  formatElapsedTime,
+  formatTimestamp,
+} from "./format.js";
 import { formatResetTime } from "../errors.js";
 import type { PhasePauseHandle } from "../workflow/types.js";
 import { pipelineHasFailed } from "../workflow/status-derivation.js";
@@ -1561,6 +1566,11 @@ function renderSummaryBlock(
       ? `  ${c.cyan(`${issues.length} planned`)} · ${c.dim("nothing executed")}`
       : `  ${c.green(`${passed} passed`)} · ${c.red(`${failed} failed`)}`,
   );
+  // A dry run executes nothing, so it has no cost to state (#1527).
+  if (!input.dryRun) {
+    out.push(`  ${formatCostLine(input.cost)}`);
+    out.push(`  ${c.dim(COST_CAVEAT)}`);
+  }
   if (input.logPath) {
     out.push(`  ${c.dim(`Log: ${input.logPath}`)}`);
   }

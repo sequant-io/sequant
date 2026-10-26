@@ -208,6 +208,7 @@ export function displaySummary(
       totalDurationSeconds: totalSeconds,
       logPath,
       dryRun: config.dryRun,
+      cost: result.cost,
     });
   } else {
     renderRunSummary({
@@ -215,6 +216,7 @@ export function displaySummary(
       totalDurationSeconds: totalSeconds,
       logPath,
       dryRun: config.dryRun,
+      cost: result.cost,
     });
   }
 
