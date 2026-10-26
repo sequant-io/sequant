@@ -7,6 +7,7 @@ import {
   classifyTestSeam,
   countFixCommits,
   evidenceTargets,
+  isTestPath,
   renderReadFirst,
   type ReviewResidueInput,
 } from "./review-residue.js";
@@ -101,6 +102,30 @@ describe("buildReviewResidue", () => {
     ]);
   });
 
+  it("a bare file name in evidence explains only a root-level file (R-2)", () => {
+    const body = ISSUE_BODY.replace(
+      "`src/lib/alpha.ts` exports it",
+      "`alpha.ts` exports it; `CHANGELOG.md` has a line",
+    );
+    const r = buildReviewResidue(
+      fixture({
+        issueBody: body,
+        numstat: `${NUMSTAT}\n1\t0\tCHANGELOG.md`,
+      }),
+    );
+    const explained = r.explained.map((e) => e.path);
+    expect(explained).toContain("CHANGELOG.md");
+    expect(explained).not.toContain("src/lib/alpha.ts");
+  });
+
+  it("fixtures and helpers under __tests__ are not test files", () => {
+    expect(isTestPath("src/__tests__/foo.test.ts")).toBe(true);
+    expect(isTestPath("src/lib/__tests__/helpers.ts")).toBe(true);
+    expect(isTestPath("__tests__/fixtures/qa-comments/1.md")).toBe(false);
+    expect(isTestPath("__tests__/fixtures/hook-corpus.jsonl")).toBe(false);
+    expect(isTestPath("src/__tests__/helpers/skill-fence.ts")).toBe(false);
+  });
+
   it("an AC whose evidence names no path explains nothing", () => {
     expect(evidenceTargets("a human reads the page and agrees")).toEqual([]);
     const body = ISSUE_BODY.replace(
@@ -139,6 +164,9 @@ describe("buildReviewResidue", () => {
     expect(t.seam).toBe("mock");
     expect(t.foreignMocks).toEqual(["child_process"]);
     expect(classifyTestSeam('vi.mock("./local.js");').foreignMocks).toEqual([]);
+    expect(
+      classifyTestSeam('vi.mock(import("child_process"), () => ({}));'),
+    ).toEqual({ seam: "mock", foreignMocks: ["child_process"] });
   });
 
   it("classes a SKILL.md reader as prose", () => {
@@ -160,6 +188,18 @@ describe("buildReviewResidue", () => {
     const tests = buildReviewResidue(fixture()).tests;
     expect(
       tests.find((t) => t.path === "src/lib/alpha.test.ts")!.mutationAc,
+    ).toBe("AC-1");
+    // The #939 classifier accepts a bare file name as a path suffix; so does
+    // the Tests line, or a marker the gate calls valid would read "none".
+    const bare = buildReviewResidue(
+      fixture({
+        mutationMarkers: parseMutationMarkers(
+          MARKER_BODY.replace("src/lib/alpha.test.ts >", "alpha.test.ts >"),
+        ),
+      }),
+    ).tests;
+    expect(
+      bare.find((t) => t.path === "src/lib/alpha.test.ts")!.mutationAc,
     ).toBe("AC-1");
     expect(
       tests.find((t) => t.path === "src/lib/gamma.test.ts")!.mutationAc,

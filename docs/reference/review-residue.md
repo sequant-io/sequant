@@ -24,7 +24,7 @@ The residue lists what nothing vouches for. Read it in full.
 | Tautology hit | A test file with tests that call no production code | `npx tsx scripts/qa/tautology-detector-cli.ts --json` |
 | Over budget | More than 400 changed non-test lines | `git diff --numstat <base>...HEAD` |
 
-Unattributed means residue. A file is explained only when an AC's evidence names its path, either as a bare path or as a command argument. For example, `npx vitest run src/a.test.ts` names `src/a.test.ts`. An AC whose evidence names no path explains nothing. Its files stay in residue. When the residue is empty, the section has one line: `- none` with the numstat command.
+Unattributed means residue. A file is explained only when an AC's evidence names its path, either as a bare path or as a command argument. For example, `npx vitest run src/a.test.ts` names `src/a.test.ts`. A token with a directory also matches as a path suffix (`workflow/a.ts` names `src/lib/workflow/a.ts`); a bare file name such as `SKILL.md` or `index.ts` names only a root-level file, so it cannot explain every file with that name in the diff. An AC whose evidence names no path explains nothing. Its files stay in residue. When the residue is empty, the section has one line: `- none` with the numstat command.
 
 ## Tests
 

@@ -61,25 +61,39 @@ function collectReviewResidueInput(
   }
   const base = resolveDiffBase(worktreePath, args.baseBranch);
   if (!base) throw new Error(`no diff base for ${args.baseBranch}`);
+  // core.quotepath=off: a non-ASCII path must come back as itself, not as a
+  // C-quoted string, because it becomes a filesystem path, an attribution
+  // key and the text of a rendered command.
   const numstat = git(worktreePath, [
+    "-c",
+    "core.quotepath=off",
     "diff",
     "--numstat",
     "--no-renames",
     `${base}...HEAD`,
   ]);
+  const rows = parseNumstat(numstat);
   // History up to the base only: the PR's own `fix(...)` commits must not
-  // make the files it touches hot.
-  const fixLog = git(worktreePath, [
-    "log",
-    `--since=${HOT_FILE_WINDOW}`,
-    "--format=%x00%s",
-    "--name-only",
-    base,
-  ]);
+  // make the files it touches hot. Restricted to the diff's paths, so the
+  // log is the same query as the per-path command the comment prints.
+  const fixLog =
+    rows.length === 0
+      ? ""
+      : git(worktreePath, [
+          "-c",
+          "core.quotepath=off",
+          "log",
+          `--since=${HOT_FILE_WINDOW}`,
+          "--format=%x00%s",
+          "--name-only",
+          base,
+          "--",
+          ...rows.map((r) => r.path),
+        ]);
   const commit = git(worktreePath, ["rev-parse", "--short", "HEAD"]).trim();
 
   const testFileSources: Record<string, string> = {};
-  for (const { path } of parseNumstat(numstat)) {
+  for (const { path } of rows) {
     const abs = join(worktreePath, path);
     if (isTestPath(path) && existsSync(abs)) {
       testFileSources[path] = readFileSync(abs, "utf-8");
@@ -158,7 +172,16 @@ export async function deliverReadFirstComment(
 ): Promise<boolean> {
   const collect = args.collect ?? collectReviewResidueInput;
   try {
-    // git first: a missing worktree fails here, before any provider call.
+    // A missing worktree fails here, before any provider call.
+    if (!existsSync(args.worktreePath)) {
+      throw new Error(`worktree ${args.worktreePath} does not exist`);
+    }
+    // Dedup before the collection: a second QA iteration, a qa-only re-run
+    // or a --resume finds the comment and pays for nothing else.
+    const existing = await args.provider.getIssueComments(
+      String(args.prNumber),
+    );
+    if (existing.some((c) => isReadFirstComment(c.body))) return false;
     const collected = collect(args);
     const issue = await args.provider.fetchIssue(String(args.issueNumber));
     // The PR body carries the SEQUANT_MUTATION records (#939); a qa-only

@@ -3039,12 +3039,19 @@ async function resolveReadFirstPR(
   state: IssueRunState,
   stateManager: StateManager | null,
   issueNumber: number,
+  provider: PlatformProvider,
 ): Promise<number | undefined> {
   if (postQaPr) return postQaPr;
   if (state.earlyPr) return state.earlyPr.number;
   if (!stateManager) return undefined;
   try {
-    return (await stateManager.getIssueState(issueNumber))?.pr?.number;
+    const recorded = (await stateManager.getIssueState(issueNumber))?.pr
+      ?.number;
+    if (!recorded) return undefined;
+    // The record may name a PR from an earlier attempt that was closed or
+    // merged since; a comment about this diff does not belong on it.
+    const status = await provider.getPRStatus(String(recorded));
+    return status.state === "open" ? recorded : undefined;
   } catch (err) {
     noteSuppressed("state", err, "batch-executor:resolveReadFirstPR");
     return undefined;
@@ -3064,18 +3071,20 @@ async function postReadFirstForPR(
 ): Promise<void> {
   const { issueNumber, chain, baseBranch, services } = env.ctx;
   if (!state.phaseResults.some((p) => p.phase === "qa")) return;
+  const provider = env.ctx.readFirstProvider ?? new GitHubProvider();
   const prNumber = await resolveReadFirstPR(
     postQaPr,
     state,
     services.stateManager,
     issueNumber,
+    provider,
   );
   if (!prNumber) return;
   const mutationMarkers = state.phaseResults
     .filter((p) => p.phase === "exec" && p.output)
     .flatMap((p) => parseMutationMarkersFromExecOutput(p.output ?? ""));
   await deliverReadFirstComment({
-    provider: env.ctx.readFirstProvider ?? new GitHubProvider(),
+    provider,
     worktreePath,
     baseBranch: chain?.predecessorBranch ?? baseBranch ?? "main",
     prNumber,

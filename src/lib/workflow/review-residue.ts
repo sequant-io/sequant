@@ -93,7 +93,11 @@ interface NumstatRow {
   deleted: number;
 }
 
-const TEST_PATH_RE = /(\.(test|spec)\.[cm]?[jt]sx?$)|(^|\/)__tests__\//;
+// A `.test`/`.spec` file anywhere, or a source file under `__tests__/` that is
+// not a fixture or helper: `__tests__/fixtures/*.md` and `__tests__/helpers/`
+// are inputs to tests, not tests.
+const TEST_PATH_RE =
+  /(\.(test|spec)\.[cm]?[jt]sx?$)|(^|\/)__tests__\/(?!fixtures\/|helpers\/).*\.[cm]?[jt]sx?$/;
 
 export function isTestPath(path: string): boolean {
   return TEST_PATH_RE.test(path);
@@ -132,10 +136,16 @@ export function evidenceTargets(evidence: string | undefined): string[] {
   return [...found];
 }
 
-/** Whether an evidence token names `path`: equal, or a path-suffix match. */
+/**
+ * Whether an evidence token names `path`: equal, or a path-suffix match for a
+ * token that carries a directory. A bare file name (`SKILL.md`, `index.ts`)
+ * matches only a root-level file: letting it explain every file with that
+ * name in the diff would be the over-attribution R-2 forbids.
+ */
 function namesPath(token: string, path: string): boolean {
   if (token.endsWith("/")) return false;
-  return path === token || path.endsWith(`/${token}`);
+  if (path === token) return true;
+  return token.includes("/") && path.endsWith(`/${token}`);
 }
 
 /**
@@ -172,7 +182,9 @@ export function countFixCommits(fixLog: string): Map<string, number> {
   return counts;
 }
 
-const MOCK_CALL_RE = /\b(?:vi|jest)\.(?:mock|doMock)\(\s*["'`]([^"'`]+)["'`]/g;
+// `vi.mock("x")`, `jest.doMock("x")` and vitest's typed `vi.mock(import("x"))`.
+const MOCK_CALL_RE =
+  /\b(?:vi|jest)\.(?:mock|doMock)\(\s*(?:import\(\s*)?["'`]([^"'`]+)["'`]/g;
 
 /** Specifiers resolved inside the project: relative, absolute or `#` aliases. */
 function isOwnedSpecifier(spec: string): boolean {
@@ -196,6 +208,20 @@ export function classifyTestSeam(source: string): {
 /** The test-file path a marker's `failedTest` names (the part before `>`). */
 function markerTestPath(marker: MutationMarker): string {
   return marker.failedTest.split(">")[0].trim();
+}
+
+/**
+ * The AC whose marker names this test file, by the same rule the #939
+ * classifier uses: equal, or the marker's bare file name is a path suffix.
+ */
+function mutationAcFor(
+  path: string,
+  markers: MutationMarker[],
+): string | undefined {
+  return markers.find((m) => {
+    const named = markerTestPath(m);
+    return path === named || path.endsWith(`/${named}`);
+  })?.ac;
 }
 
 function residueLines(
@@ -257,10 +283,6 @@ export function buildReviewResidue(input: ReviewResidueInput): ReviewResidue {
     input.issueBody,
     rows.map((r) => r.path),
   );
-  const markerByPath = new Map<string, string>();
-  for (const m of input.mutationMarkers)
-    markerByPath.set(markerTestPath(m), m.ac);
-
   const tests: TestLine[] = rows
     .filter(
       (r) => isTestPath(r.path) && input.testFileSources[r.path] !== undefined,
@@ -268,7 +290,7 @@ export function buildReviewResidue(input: ReviewResidueInput): ReviewResidue {
     .map((r) => ({
       path: r.path,
       ...classifyTestSeam(input.testFileSources[r.path]),
-      mutationAc: markerByPath.get(r.path),
+      mutationAc: mutationAcFor(r.path, input.mutationMarkers),
       command: `grep -nE 'vi\\.mock|jest\\.mock|SKILL\\.md' ${r.path}`,
     }));
 
