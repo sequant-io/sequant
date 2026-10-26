@@ -67,11 +67,14 @@ function collectReviewResidueInput(
     "--no-renames",
     `${base}...HEAD`,
   ]);
+  // History up to the base only: the PR's own `fix(...)` commits must not
+  // make the files it touches hot.
   const fixLog = git(worktreePath, [
     "log",
     `--since=${HOT_FILE_WINDOW}`,
     "--format=%x00%s",
     "--name-only",
+    base,
   ]);
   const commit = git(worktreePath, ["rev-parse", "--short", "HEAD"]).trim();
 

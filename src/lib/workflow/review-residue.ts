@@ -220,7 +220,7 @@ function residueLines(
     if (n < HOT_FILE_THRESHOLD) continue;
     lines.push({
       text: `\`${row.path}\` is hot: ${n} fix commits in 28 days`,
-      command: `git log --since=${HOT_FILE_WINDOW} --format=%s -- ${row.path} | grep -cE '^fix(\\(|:|!)'`,
+      command: `git log --since=${HOT_FILE_WINDOW} --format=%s ${input.base} -- ${row.path} | grep -cE '^fix(\\(|:|!)'`,
     });
   }
   for (const row of rows) {

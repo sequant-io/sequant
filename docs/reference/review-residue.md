@@ -19,7 +19,7 @@ The residue lists what nothing vouches for. Read it in full.
 | Line | Rule | Command shown |
 |------|------|---------------|
 | Unexplained file | No AC's `Evidence:` clause names the file's path | `git diff --numstat <base>...HEAD -- <path>` |
-| Hot file | 3 or more `fix` commits touched it in the last 28 days. A fix commit is a subject that starts with `fix:`, `fix(` or `fix!` | `git log --since=28.days --format=%s -- <path> \| grep -cE '^fix(\(\|:\|!)'` |
+| Hot file | 3 or more `fix` commits touched it in the last 28 days of history up to the PR's base; the PR's own commits do not count. A fix commit is a subject that starts with `fix:`, `fix(` or `fix!` | `git log --since=28.days --format=%s <base> -- <path> \| grep -cE '^fix(\(\|:\|!)'` |
 | Deleted or weakened test | A test file whose deleted lines outnumber its added lines | `git diff --numstat <base>...HEAD -- <path>` |
 | Tautology hit | A test file with tests that call no production code | `npx tsx scripts/qa/tautology-detector-cli.ts --json` |
 | Over budget | More than 400 changed non-test lines | `git diff --numstat <base>...HEAD` |
