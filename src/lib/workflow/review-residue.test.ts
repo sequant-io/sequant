@@ -147,6 +147,13 @@ describe("buildReviewResidue", () => {
     )!;
     expect(t.seam).toBe("prose");
     expect(classifyTestSeam('import { f } from "./f.js";').seam).toBe("real");
+    // A mention is not a read (#1566): comments, fixture paths and messages
+    // that say SKILL.md do not make a prose gate.
+    expect(
+      classifyTestSeam(
+        '// the fixture mirrors SKILL.md\nconst p = "x/SKILL.md";\nexpect(render(p)).toBe("ok");',
+      ).seam,
+    ).toBe("real");
   });
 
   it("marks a test file that a mutation record names", () => {

@@ -12,7 +12,7 @@ Two choices needed a decision. Where the orchestrator posts the comment, and how
 
 ## Decision
 
-The comment is posted by `postReadFirstForPR` in `batch-executor.ts`, called from `deliverIssueBranch` right after the post-QA `openOrUpdatePR` succeeds. That is the one point both a first run and a qa-only re-run pass through after the last QA iteration. A run that ran no qa posts nothing, because the comment links to the QA verdict.
+The comment is posted by `postReadFirstForPR` in `batch-executor.ts`, called from `deliverIssueBranch` after the last QA iteration, whatever its verdict. It targets whichever PR the run left behind: the post-QA one when QA passed, the one opened after exec (#1247) when the run ended at a failing verdict, or the PR the state records on a qa-only re-run. That is the one point every path passes through. A run that ran no qa posts nothing, because the comment links to the QA verdict; a `--no-pr` run posts nothing because there is no PR. The mutation records come from the PR body, which `gh pr view <N> --json body` shows, merged with this run's exec output.
 
 Dedup reads the PR: `postReadFirstComment` lists the PR's comments through `PlatformProvider.getIssueComments` and posts only when none starts with `## Read first` or carries the `SEQUANT_READ_FIRST` marker. It does not keep in-memory state.
 

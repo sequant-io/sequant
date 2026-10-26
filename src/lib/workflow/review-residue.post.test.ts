@@ -242,6 +242,43 @@ describe("the Read-first comment after QA (#1520 AC-4)", () => {
     ).toBe(false);
   });
 
+  it("a run whose QA ends AC_NOT_MET after the loop is spent still gets the comment on the PR opened after exec", async () => {
+    const provider = new FakeProvider(ISSUE_BODY);
+    let qaRuns = 0;
+    vi.mocked(executePhaseWithRetry).mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        qaRuns++;
+        return {
+          ...success("qa"),
+          success: false,
+          verdict: "AC_NOT_MET",
+        } as PhaseResult;
+      }
+      return success(phase as string);
+    });
+
+    const result = await runIssueWithLogging(ctx(provider));
+
+    expect(result.success).toBe(false);
+    expect(qaRuns).toBeGreaterThan(1);
+    expect(provider.posted).toHaveLength(1);
+    expect(provider.posted[0].prId).toBe(String(PR));
+    expect(provider.posted[0].body.startsWith("## Read first\n")).toBe(true);
+  });
+
+  it("a failing qa-only re-run with no PR on record posts nothing", async () => {
+    const provider = new FakeProvider(ISSUE_BODY);
+    vi.mocked(executePhaseWithRetry).mockResolvedValue({
+      ...success("qa"),
+      success: false,
+      verdict: "AC_NOT_MET",
+    } as PhaseResult);
+
+    await runIssueWithLogging(ctx(provider, ["qa"]));
+
+    expect(provider.posted).toHaveLength(0);
+  });
+
   it("a run that ran no qa posts nothing", async () => {
     const provider = new FakeProvider(ISSUE_BODY);
     vi.mocked(executePhaseWithRetry).mockResolvedValue(success("exec"));

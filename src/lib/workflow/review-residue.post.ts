@@ -14,7 +14,7 @@ import { join } from "path";
 
 import { detectTautologicalTests } from "../test-tautology-detector.js";
 import { resolveDiffBase } from "./git-diff-utils.js";
-import type { MutationMarker } from "./mutation-marker.js";
+import { parseMutationMarkers, type MutationMarker } from "./mutation-marker.js";
 import type { PlatformProvider } from "./platforms/platform-provider.js";
 import {
   HOT_FILE_WINDOW,
@@ -130,6 +130,21 @@ export interface DeliverReadFirstArgs {
   collect?: (args: CollectArgs) => Omit<ReviewResidueInput, "issueBody">;
 }
 
+/** One marker per (AC, failedTest), whichever source named it first. */
+function mergeMarkers(
+  ...sources: MutationMarker[][]
+): MutationMarker[] {
+  const seen = new Set<string>();
+  const out: MutationMarker[] = [];
+  for (const m of sources.flat()) {
+    const key = `${m.ac}|${m.failedTest}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(m);
+  }
+  return out;
+}
+
 /**
  * The orchestrator's one call: collect, render, post once. Best-effort
  * (#1315): a failure is logged through `warn` and never fails the run, and
@@ -143,7 +158,18 @@ export async function deliverReadFirstComment(
     // git first: a missing worktree fails here, before any provider call.
     const collected = collect(args);
     const issue = await args.provider.fetchIssue(String(args.issueNumber));
-    const input: ReviewResidueInput = { ...collected, issueBody: issue.body };
+    // The PR body carries the SEQUANT_MUTATION records (#939); a qa-only
+    // re-run has no exec output to read them from. To the API a PR is an
+    // issue, so the same provider call reads it.
+    const pr = await args.provider.fetchIssue(String(args.prNumber));
+    const input: ReviewResidueInput = {
+      ...collected,
+      issueBody: issue.body,
+      mutationMarkers: mergeMarkers(
+        collected.mutationMarkers,
+        parseMutationMarkers(pr.body ?? ""),
+      ),
+    };
     return await postReadFirstComment(
       args.provider,
       args.prNumber,

@@ -22,6 +22,7 @@
 
 import { parseAcceptanceCriteria } from "../ac-parser.js";
 import type { MutationMarker } from "./mutation-marker.js";
+import { isProseGate } from "../prose-gate.js";
 
 /** First line of the comment; dedup and the outcome script match on it. */
 const READ_FIRST_HEADING = "## Read first";
@@ -185,7 +186,9 @@ export function classifyTestSeam(source: string): {
 } {
   const mocked = [...source.matchAll(MOCK_CALL_RE)].map((m) => m[1]);
   const foreignMocks = [...new Set(mocked.filter((s) => !isOwnedSpecifier(s)))];
-  if (/SKILL\.md/.test(source)) return { seam: "prose", foreignMocks };
+  // #1566's rule: a read of a SKILL.md plus an assertion on it. A mention
+  // in a comment, a path string or a message is not a prose gate.
+  if (isProseGate(source)) return { seam: "prose", foreignMocks };
   if (mocked.length > 0) return { seam: "mock", foreignMocks };
   return { seam: "real", foreignMocks };
 }

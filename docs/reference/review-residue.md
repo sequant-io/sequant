@@ -4,7 +4,7 @@
 
 ## Access
 
-- **Where:** a comment on the PR, posted by the orchestrator after the post-QA PR update (see ADR-0021).
+- **Where:** a comment on the PR, posted by the orchestrator after the last QA iteration, whether QA passed or not (see ADR-0021). A `--no-pr` run or a run that ran no QA posts nothing.
 - **When:** once per PR. A later run, a second QA iteration or a qa-only re-run finds the existing comment and posts nothing. A run that ran no qa posts nothing.
 - **Requirements:** `gh` authenticated. If the git reads fail, the run logs a warning and posts nothing. It never posts a residue built from partial input.
 
