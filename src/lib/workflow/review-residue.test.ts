@@ -103,10 +103,12 @@ describe("buildReviewResidue", () => {
   });
 
   it("a bare file name in evidence explains only a root-level file (R-2)", () => {
-    const body = ISSUE_BODY.replace(
-      "`src/lib/alpha.ts` exports it",
-      "`alpha.ts` exports it; `CHANGELOG.md` has a line",
-    );
+    // Its own issue body, so AC-2's gate mutation touches this case nowhere.
+    const body = [
+      "## Acceptance Criteria",
+      "",
+      "- [ ] AC-1: names. Evidence: `alpha.ts` exports it; `CHANGELOG.md` has a line",
+    ].join("\n");
     const r = buildReviewResidue(
       fixture({
         issueBody: body,
