@@ -50,4 +50,4 @@ graph TD
 
 ## Owner-local (not issues)
 
-Done 2026-10-26: entire upgraded to 0.12.1; `sequant-dev` mod rebuilt without its `hooks/` dir (so this checkout runs the guards once); three API-key literals moved from `~/.zshrc` into `~/.claude/secrets.env`, loaded only by a `claude()` wrapper; matcha-maps `autoMode` block moved out of global settings; `cleanupPeriodDays` 365 → 30; global `~/.claude/CLAUDE.md` written (waiting, decisions, completion, secrets); 12 stale memories corrected or deleted. Still owner-only: rotate the OpenRouter key.
+Owner-local environment fixes (entire upgrade, personal mod layout, shell and settings hygiene, memory cleanup) were done the same day and are not issues.
