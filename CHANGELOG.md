@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **After a QA phase, `state.json` and the run log say what QA said about each AC (#1525).** `sequant run` parses per-AC status from the QA output (`src/lib/workflow/ac-status.ts`, the parser #1524 measured, moved from `scripts/qa/`), writes each AC of the issue through `StateManager.updateACStatus` with the row text as `notes`, and copies the list into the run log's issue entry as an optional `acs[]` (`version` stays 1). An AC the parse cannot read is written `unknown`. The declared `evidence` clause is kept. When a tracked issue has no AC record yet, it is first registered from the issue body (one extra `gh issue view`, on QA only). A failed write is counted under `suppressed.byScope.state`. `unknown` is a new value of the AC status enum, and the summary gains an optional `unknown` count: a CLI older than this release rejects a `state.json` that contains one.
 - **A run's cost is on the terminal, in its log and in `sequant logs` (#1527).** The summary prints `cost $6.45 (SDK estimate) · 69,641 tokens` under the tally, and `sequant logs <run>` prints the same line. The run log gains an optional run-level `cost` (`{ usd, tokens }`; `version` stays 1). All three read one total, computed once before the log is written, which `.sequant/metrics.json` also records. A run with no record prints `cost unrecorded`, never `$0.00`.
 
 ### Changed

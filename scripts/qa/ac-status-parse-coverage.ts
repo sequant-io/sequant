@@ -17,8 +17,8 @@
  *   --fixture      Hand-labelled fixture (`__tests__/fixtures/qa-comments/`):
  *                  precision and recall against `expected.json`.
  *
- * The parser stays in this script. RS-02 (#1525) owns the producer and may
- * lift it later.
+ * The parser lives in `src/lib/workflow/ac-status.ts` (#1525), which also
+ * owns the producer; this script measures it.
  *
  * Usage:
  *   npx tsx scripts/qa/ac-status-parse-coverage.ts --since 2026-08-01 [--json]
@@ -30,7 +30,16 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractAcceptanceCriteria } from "../../src/lib/ac-parser.js";
 
-export type AcStatus = "met" | "not_met" | "pending" | "unknown";
+import {
+  type AcStatus,
+  firstStatusToken,
+  leadingAcIds,
+  parseAcStatuses,
+} from "../../src/lib/workflow/ac-status.js";
+
+// The parser lives in src (#1525), where the run path calls it; one copy of
+// the regex, re-exported here so this script and its test read the same parse.
+export { type AcStatus, firstStatusToken, leadingAcIds, parseAcStatuses };
 
 export const AC_STATUSES: readonly AcStatus[] = [
   "met",
@@ -40,103 +49,6 @@ export const AC_STATUSES: readonly AcStatus[] = [
 ];
 
 const QA_MARKER = '<!-- SEQUANT_PHASE: {"phase":"qa"';
-
-/**
- * Status tokens, matched case-sensitively. `\b` treats `_` as a word
- * character, so `AC_NOT_MET` and `AC_MET_BUT_NOT_A_PLUS` (verdict names that
- * appear inside description cells) do not match `MET`.
- */
-const STATUS_TOKENS: Array<{ re: RegExp; status: AcStatus }> = [
-  { re: /\b(?:NOT|PARTIALLY)[ _]MET\b/g, status: "not_met" },
-  { re: /\bMET\b/g, status: "met" },
-  { re: /\bPENDING\b/g, status: "pending" },
-  { re: /✅/g, status: "met" },
-  { re: /❌/g, status: "not_met" },
-  { re: /⚠/g, status: "pending" },
-];
-
-/** First status token in `text`, by position. */
-export function firstStatusToken(text: string): AcStatus | null {
-  let best: { index: number; status: AcStatus } | null = null;
-  for (const { re, status } of STATUS_TOKENS) {
-    re.lastIndex = 0;
-    const m = re.exec(text);
-    if (m && (best === null || m.index < best.index)) {
-      best = { index: m.index, status };
-    }
-  }
-  return best?.status ?? null;
-}
-
-/**
- * The AC ids a row is *about*, and the text after them. Only the leading
- * position counts: the first cell of a table row, or the start of a list item
- * or heading. `AC-1/AC-2` and `AC-1/2/3` name several ids. An id anywhere else
- * on the line is prose and is ignored.
- */
-export function leadingAcIds(
-  line: string,
-): { ids: string[]; rest: string } | null {
-  const trimmed = line.trim();
-  let lead: string;
-  let rest: string;
-  if (trimmed.startsWith("|")) {
-    const cells = trimmed.replace(/^\|/, "").split("|");
-    lead = cells[0] ?? "";
-    rest = cells.slice(1).join("|");
-  } else {
-    const m = /^(?:[-*+]|\d+\.|#{1,6})\s+(.*)$/.exec(trimmed);
-    if (!m) return null;
-    lead = m[1];
-    rest = "";
-  }
-  const head = /^[\s*_`]*AC-(\d+)((?:\s*\/\s*(?:AC-)?\d+)*)/.exec(lead);
-  if (!head) return null;
-  const ids = [`AC-${head[1]}`];
-  for (const n of head[2].matchAll(/\d+/g)) ids.push(`AC-${n[0]}`);
-  if (!trimmed.startsWith("|")) rest = lead.slice(head[0].length);
-  else rest = lead.slice(head[0].length) + "|" + rest;
-  return { ids, rest };
-}
-
-/** Body lines outside fenced code blocks and HTML comments. */
-function proseLines(body: string): string[] {
-  const out: string[] = [];
-  let inFence = false;
-  for (const line of body.replace(/<!--[\s\S]*?-->/g, "").split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (!inFence) out.push(line);
-  }
-  return out;
-}
-
-/**
- * Candidate parse: for each id in `acIds`, the first status token on the
- * first table row, list item or heading that leads with that id. Ids with no
- * such line read `unknown`. Free prose is never read.
- */
-export function parseAcStatuses(
-  body: string,
-  acIds: readonly string[],
-): Map<string, AcStatus> {
-  const wanted = new Set(acIds.map((id) => id.toUpperCase()));
-  const found = new Map<string, AcStatus>();
-  for (const line of proseLines(body)) {
-    const lead = leadingAcIds(line);
-    if (!lead) continue;
-    const status = firstStatusToken(lead.rest);
-    if (!status) continue;
-    for (const id of lead.ids) {
-      if (wanted.has(id) && !found.has(id)) found.set(id, status);
-    }
-  }
-  const result = new Map<string, AcStatus>();
-  for (const id of wanted) result.set(id, found.get(id) ?? "unknown");
-  return result;
-}
 
 // ── Fixture scoring ─────────────────────────────────────────────────────────
 

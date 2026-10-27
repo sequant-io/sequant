@@ -103,6 +103,7 @@ import {
 } from "../relay/activation.js";
 import { getSettings } from "../settings.js";
 import { GhCommandError, GitHubProvider } from "./platforms/github.js";
+import { recordAcStatuses } from "./ac-status.js";
 import type { PlatformProvider } from "./platforms/platform-provider.js";
 import {
   runReadyGate,
@@ -2495,6 +2496,16 @@ async function recordLoopPhaseOutcome(
       injectedPostComment,
       attributionFromPhases(phaseResults, dispatchConfig),
     );
+  }
+
+  // #1525: per-AC status from the QA output, into state and the run log.
+  if (phase === "qa" && result.output) {
+    await recordAcStatuses({
+      issueNumber,
+      output: result.output,
+      stateManager,
+      logWriter: env.ctx.services.logWriter,
+    });
   }
 
   logLoopPhaseResult(env, phase, dispatched, record);

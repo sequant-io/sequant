@@ -22,6 +22,7 @@ import { getVersion } from "../version.js";
 
 // Import canonical Phase types from types.ts (single source of truth)
 import { PhaseSchema, type Phase } from "./types.js";
+import { ACStatusSchema } from "./state-schema.js";
 export { PhaseSchema };
 export type { Phase } from "./types.js";
 
@@ -372,6 +373,20 @@ export const IssueLogSchema = z.object({
   prUrl: z.string().optional(),
   /** How the spec→run phase recommendation was resolved (#921 AC-4) */
   specRecommendation: SpecRecommendationSchema.optional(),
+  /**
+   * Per-AC status as the last QA phase reported it (#1525), parsed by
+   * `ac-status.ts`; `unknown` where the output could not be read. Optional and
+   * additive, so the log stays at `version: 1`.
+   */
+  acs: z
+    .array(
+      z.object({
+        id: z.string(),
+        status: ACStatusSchema,
+        notes: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type IssueLog = z.infer<typeof IssueLogSchema>;
