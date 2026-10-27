@@ -94,7 +94,7 @@ export function renderMutationMarker(marker: MutationMarker): string {
   const { ac, mutation, failedTest } = marker;
   // JSON decodes `\u003e` / `\u003c` back to ">" / "<", so a value holding
   // "-->" cannot end the comment early and one holding "<!--" cannot start
-  // what the parser reads as the next marker. A backtick renders as ```
+  // what the parser reads as the next marker. A backtick renders as `\u0060`
   // (#1604): the parser strips inline code first, so a literal one would cut
   // the value, or the whole marker, out of what it reads. Only those
   // sequences are escaped: `failedTest` uses ` > ` as its separator, and
