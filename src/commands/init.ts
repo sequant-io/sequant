@@ -1098,6 +1098,21 @@ function pluginHookChannel(agent: string | undefined): string | null {
 }
 
 /**
+ * A re-init on a checkout that already carries the repo hooks while a plugin
+ * ships them (#1603): init still skips the hooks group, so say that both
+ * channels are now active and what `doctor` will report.
+ */
+async function warnBothHookChannels(hookPlugin: string | null): Promise<void> {
+  if (!hookPlugin || !(await fileExists(".claude/hooks"))) return;
+  console.log(
+    chalk.yellow(
+      `Hooks: .claude/hooks already exists while plugin ${hookPlugin} ships them - both channels are active. ` +
+        "Remove .claude/hooks and the hooks entries in .claude/settings.json, or `sequant doctor` fails its Hook channels check.",
+    ),
+  );
+}
+
+/**
  * Show what init will create. `hookPlugin` is the plugin that ships the hooks
  * (#1603): the tree leaves them out and one line says why.
  */
@@ -1358,6 +1373,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // One hook channel per checkout (#1603): a plugin that ships the hooks
   // makes the repo copy a second, duplicate guard on every tool call.
   const hookPlugin = pluginHookChannel(options.agent);
+  await warnBothHookChannels(hookPlugin);
 
   printPlannedFiles(options.agentsMd !== false, hookPlugin);
 

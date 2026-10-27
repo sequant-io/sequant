@@ -444,6 +444,23 @@ describe("init command", () => {
       expect(lines).toHaveLength(1);
     });
 
+    it("names both active channels when .claude/hooks already exists and a plugin ships the hooks", async () => {
+      mockDetectHookChannels.mockReturnValue({ repo: null, plugins: [plugin] });
+      mockFileExists.mockImplementation(async (p) => p === ".claude/hooks");
+
+      await initCommand({ yes: true, stack: "nextjs" });
+
+      expect(mockEnsureDir).not.toHaveBeenCalledWith(".claude/hooks");
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {
+        hooks: "plugin",
+      });
+      const notice = printed()
+        .split("\n")
+        .filter((l) => l.includes("both channels are active"));
+      expect(notice).toHaveLength(1);
+      expect(notice[0]).toContain("sequant doctor");
+    });
+
     it("writes the repo hooks when no enabled plugin ships them", async () => {
       await initCommand({ yes: true, stack: "nextjs" });
 

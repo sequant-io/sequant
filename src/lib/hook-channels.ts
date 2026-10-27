@@ -40,7 +40,7 @@ export function withoutHookChannel<T extends { path: string }>(
   return changes.filter((c) => !isHookChannelPath(c.path));
 }
 
-export interface PluginHookChannel {
+interface PluginHookChannel {
   /** The `enabledPlugins` key, e.g. `sequant@sequant`. */
   id: string;
   installPath: string;
