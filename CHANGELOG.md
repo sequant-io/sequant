@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sequant mutation begin | check | render` mutation-verifies a gate test and is where its `SEQUANT_MUTATION` marker comes from (#1604).** `begin --issue N` exits 2 on a dirty tree and records `HEAD` in `.sequant/mutations/N.json`. `check` resolves `--name` to exactly one test with `vitest list`, captures the mutation as a patch (`git add -A`, `git diff --cached --binary`), and requires the named test to fail under it. It then restores the tree with `git apply -R --index`, requires the test to pass, and appends `{ac, test, name, mutation, mutatedExit, restoredExit, ranAt, sha}`. A refusal leaves the record file unchanged and the patch on disk. `render` prints the markers through `renderMutationMarker`. Under `sequant run`, the PR body takes the markers from the worktree's record file, each marker once, alongside any exec wrote. `renderMutationMarker` now escapes a backtick as `\u0060`; before, the parser's inline-code stripping cut such a value. See `docs/reference/mutation-verification.md` and ADR-0022.
+
 - **A run's cost is on the terminal, in its log and in `sequant logs` (#1527).** The summary prints `cost $6.45 (SDK estimate) · 69,641 tokens` under the tally, and `sequant logs <run>` prints the same line. The run log gains an optional run-level `cost` (`{ usd, tokens }`; `version` stays 1). All three read one total, computed once before the log is written, which `.sequant/metrics.json` also records. A run with no record prints `cost unrecorded`, never `$0.00`.
 
 ### Changed

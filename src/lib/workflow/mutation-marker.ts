@@ -19,7 +19,8 @@
  * `{`, `}` and `<!-- … -->` inside a value are safe and a marker may still
  * span lines (#1305). {@link renderMutationMarker} escapes `-->` and `<!--`
  * inside a value (as `--\u003e` and `\u003c!--`), so a rendered value can
- * neither end the comment early nor look like the next marker; every other
+ * neither end the comment early nor look like the next marker, and a backtick
+ * as `\u0060`, so inline-code stripping cannot cut into it (#1604); every other
  * character, including the `>` separators in `failedTest`, renders as written.
  * Unlike the sibling markers (one recommendation / one status per
  * comment, latest-wins), a PR body carries one `SEQUANT_MUTATION` marker per
@@ -93,12 +94,15 @@ export function renderMutationMarker(marker: MutationMarker): string {
   const { ac, mutation, failedTest } = marker;
   // JSON decodes `\u003e` / `\u003c` back to ">" / "<", so a value holding
   // "-->" cannot end the comment early and one holding "<!--" cannot start
-  // what the parser reads as the next marker. Only those two sequences are
-  // escaped: `failedTest` uses ` > ` as its separator, and rendered markers
-  // must stay byte-identical otherwise.
+  // what the parser reads as the next marker. A backtick renders as ```
+  // (#1604): the parser strips inline code first, so a literal one would cut
+  // the value, or the whole marker, out of what it reads. Only those
+  // sequences are escaped: `failedTest` uses ` > ` as its separator, and
+  // rendered markers must stay byte-identical otherwise.
   const json = JSON.stringify({ ac, mutation, failedTest })
     .replace(/-->/g, "--\\u003e")
-    .replace(/<!--/g, "\\u003c!--");
+    .replace(/<!--/g, "\\u003c!--")
+    .replace(/`/g, "\\u0060");
   return `<!-- SEQUANT_MUTATION: ${json} -->`;
 }
 

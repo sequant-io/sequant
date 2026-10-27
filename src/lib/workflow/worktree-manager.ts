@@ -26,6 +26,7 @@ import {
   parseMutationMarkers,
   parseMutationMarkersFromExecOutput,
   renderMutationMarker,
+  type MutationMarker,
 } from "./mutation-marker.js";
 import {
   readRecordedBaseRef,
@@ -2514,6 +2515,30 @@ export function composeExecSummary(
 }
 
 /**
+ * Append the mutation receipt's markers (#1604) that `summary` does not
+ * already carry, read the way QA's §6i reads the body (code-stripped). Exec
+ * may paste `sequant mutation render` into its Summary; the same marker then
+ * appears once.
+ */
+function appendMissingMarkers(
+  summary: string | undefined,
+  markers: MutationMarker[] | undefined,
+): string | undefined {
+  if (!markers || markers.length === 0) return summary;
+  const key = (m: MutationMarker) =>
+    JSON.stringify([m.ac, m.mutation, m.failedTest]);
+  const seen = new Set(parseMutationMarkers(summary ?? "").map(key));
+  const missing: string[] = [];
+  for (const marker of markers) {
+    if (seen.has(key(marker))) continue;
+    seen.add(key(marker));
+    missing.push(renderMutationMarker(marker));
+  }
+  if (missing.length === 0) return summary;
+  return summary ? `${summary}\n\n${missing.join("\n")}` : missing.join("\n");
+}
+
+/**
  * Rewrite any closing-verb + `#N` reference inside imported summary text to
  * `Refs #N` (#1223 AC-3). GitHub reads a closing keyword anywhere in the PR
  * body, so an agent-written summary containing e.g. "Close #279 with the AC
@@ -2647,6 +2672,9 @@ export function isAutomatedPRBody(body: string | undefined): boolean {
  *   run" line naming `phasesRun`, in the verdict-note slot — a ready-gate
  *   report or a QA verdict always takes precedence, so the body never carries
  *   both.
+ * @param opts.mutationMarkers Markers from the worktree's mutation receipt
+ *   (`.sequant/mutations/<N>.json`, #1604), appended to the summary unless it
+ *   already carries the same marker.
  * @internal Exported for testing
  */
 export function buildAutomatedPRBody(
@@ -2660,13 +2688,16 @@ export function buildAutomatedPRBody(
     execSummary?: string;
     followups?: GapFinding[];
     qaNotRun?: { phasesRun: string[] };
+    mutationMarkers?: MutationMarker[];
   },
 ): string {
   const linkMode = opts?.linkMode ?? "closes";
   const closingLine =
     linkMode === "refs" ? `Refs #${issueNumber}` : `Fixes #${issueNumber}`;
-  const execSummary =
-    composeExecSummary(opts?.execOutput) ?? opts?.execSummary?.trim();
+  const execSummary = appendMissingMarkers(
+    composeExecSummary(opts?.execOutput) ?? opts?.execSummary?.trim(),
+    opts?.mutationMarkers,
+  );
   const summaryLine = execSummary
     ? sanitizeImportedClosingKeywords(execSummary)
     : `Automated PR for issue #${issueNumber}.`;
@@ -2750,6 +2781,7 @@ export function buildAutomatedPRBody(
  *   earlier run (#1247 AC-3), the fallback when `execOutput` has none.
  * @param opts.followups The latest QA pass's findings (#1249 AC-2).
  * @param opts.qaNotRun Set when QA has not run for this PR (#1246 AC-1).
+ * @param opts.mutationMarkers Markers from the mutation receipt (#1604).
  * @returns PRCreationResult with PR info or error
  * @internal Exported for testing
  */
@@ -2771,6 +2803,7 @@ export function createPR(
     execSummary?: string;
     followups?: GapFinding[];
     qaNotRun?: { phasesRun: string[] };
+    mutationMarkers?: MutationMarker[];
   },
 ): PRCreationResult {
   const github = new GitHubProvider();
@@ -2792,6 +2825,7 @@ export function createPR(
     execSummary: opts?.execSummary,
     followups: opts?.followups,
     qaNotRun: opts?.qaNotRun,
+    mutationMarkers: opts?.mutationMarkers,
   });
 
   const pushBranch = (): PRCreationResult | null => {

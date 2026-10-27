@@ -74,6 +74,7 @@ Design decisions behind these behaviours are recorded in [docs/adr/](adr/README.
 - [Halt and Resume](reference/halt-and-resume.md) — Durable rate-limit recovery (`sequant resume`)
 - [Abort Command](reference/abort-command.md) — Stop a running or stuck `sequant run` from another terminal (`sequant abort`)
 - [State Command](reference/state-command.md) — Workflow state management
+- [Mutation Verification](reference/mutation-verification.md) — `sequant mutation begin | check | render` for gate tests
 - [Conventions Command](reference/conventions-command.md) — Codebase convention detection and overrides
 - [Analytics](reference/analytics.md) — Usage tracking and metrics
 - [Logging](reference/logging.md) — Log configuration

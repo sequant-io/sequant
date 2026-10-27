@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type {
   ExecutionConfig,
   PhaseResult,
@@ -23,7 +23,16 @@ import {
   parseSpecDivergence,
 } from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
-import { readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseMutationMarkers } from "./mutation-marker.js";
 import { CodexStreamParser, evaluateCodexRun } from "./drivers/codex.js";
 import {
   BillingError,
@@ -1634,6 +1643,107 @@ describe("emitProgressLine (#624 Item 3): iteration field propagation", () => {
       expect(captured).toHaveLength(0);
     } finally {
       teardown();
+    }
+  });
+});
+
+describe("#1604: exec's PR body carries the markers from the mutation state", () => {
+  let worktree: string;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    worktree = mkdtempSync(join(tmpdir(), "sequant-1604-"));
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 1604,
+      prUrl: "https://example.test/pr/1604",
+    });
+    mockExecutePhase.mockImplementation(async (_i, phase) =>
+      phase === "exec"
+        ? { ...successResult("exec"), output: "## Summary\nNo markers here." }
+        : successResult(phase as string),
+    );
+  });
+
+  afterEach(() => {
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  function writeState(records: Array<{ ac: string; mutation: string }>) {
+    const dir = join(worktree, ".sequant", "mutations");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "1604.json"),
+      JSON.stringify({
+        issue: 1604,
+        sha: "abc123",
+        startedAt: "2026-10-26T11:00:00.000Z",
+        records: records.map((r) => ({
+          ...r,
+          test: "src/commands/mutation.test.ts",
+          name: `mutation begin > ${r.ac}`,
+          mutatedExit: 1,
+          restoredExit: 0,
+          ranAt: "2026-10-26T12:00:00.000Z",
+          sha: "abc123",
+        })),
+      }),
+    );
+  }
+
+  /** The body every `createPR` call (after exec, then after the run) would publish. */
+  async function bodiesOfRun(): Promise<string[]> {
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1604,
+        config: { phases: ["exec"] },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: worktree, branch: "feature/1604" },
+    });
+    expect(mockCreatePR).toHaveBeenCalled();
+    return mockCreatePR.mock.calls.map((call) => {
+      const opts = call.at(-1) as Parameters<typeof buildAutomatedPRBody>[1];
+      return buildAutomatedPRBody(call[1], {
+        execOutput: opts?.execOutput,
+        mutationMarkers: opts?.mutationMarkers,
+      });
+    });
+  }
+
+  it("puts one marker line per record in the body when the mutation state has two", async () => {
+    writeState([
+      { ac: "AC-1", mutation: "deleted the dirty-tree check" },
+      { ac: "AC-2", mutation: "dropped `git apply -R` > restore" },
+    ]);
+
+    for (const body of await bodiesOfRun()) {
+      expect(parseMutationMarkers(body)).toEqual([
+        {
+          ac: "AC-1",
+          mutation: "deleted the dirty-tree check",
+          failedTest: "src/commands/mutation.test.ts > mutation begin > AC-1",
+        },
+        {
+          ac: "AC-2",
+          mutation: "dropped `git apply -R` > restore",
+          failedTest: "src/commands/mutation.test.ts > mutation begin > AC-2",
+        },
+      ]);
+      expect(body.match(/SEQUANT_MUTATION/g)).toHaveLength(2);
+    }
+  });
+
+  it("puts no marker in the body for an empty or missing mutation state", async () => {
+    for (const body of await bodiesOfRun()) {
+      expect(body).not.toContain("SEQUANT_MUTATION");
+    }
+
+    vi.clearAllMocks();
+    writeState([]);
+    for (const body of await bodiesOfRun()) {
+      expect(body).not.toContain("SEQUANT_MUTATION");
     }
   });
 });
