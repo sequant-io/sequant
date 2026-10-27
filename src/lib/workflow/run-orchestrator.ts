@@ -2161,11 +2161,15 @@ export class RunOrchestrator {
             } as IssueResult;
           }
 
-          return this.executeOneIssue({
+          const result = await this.executeOneIssue({
             issueNumber,
             batchCtx: { ...batchCtx, onProgress: this.cfg.onProgress },
             parallelIssueNumber: issueNumber,
           });
+          // #1527: `costSoFar` reads this on the signal path; the sequential
+          // path pushes at its own call site, and parallel is the default.
+          this.completed.push(result);
+          return result;
         }),
       ),
     );
