@@ -259,7 +259,7 @@ describe("mutation-marker", () => {
       records,
     });
 
-    it("parses back every record, including a mutation holding } and > and -->", () => {
+    it("parses back every record, including mutation text with braces, angle brackets and comment delimiters", () => {
       const records = [
         record({
           ac: "AC-1",
