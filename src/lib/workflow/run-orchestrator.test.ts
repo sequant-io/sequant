@@ -655,3 +655,84 @@ describe("RunOrchestrator.run — title unreadable warning (#1487)", () => {
     expect(out).not.toContain("Could not read the title");
   });
 });
+
+describe("RunOrchestrator.costSoFar — both execution paths record finished issues (#1527)", () => {
+  // The signal-path finalizer reads `costSoFar`. QA on #1597 found that only
+  // the sequential path recorded a finished issue while parallel, the default,
+  // did not, so an aborted default run logged no cost. This drives the real
+  // `execute()` once per path with only `runIssueWithLogging` mocked.
+  afterEach(() => {
+    vi.mocked(runIssueWithLogging).mockReset();
+  });
+
+  function withUsage(
+    issueNumber: number,
+    costUSD: number,
+    inputTokens: number,
+  ): IssueResult {
+    return {
+      issueNumber,
+      success: true,
+      durationSeconds: 1,
+      phaseResults: [
+        {
+          phase: "exec",
+          success: true,
+          usage: [
+            {
+              model: "claude-sonnet",
+              inputTokens,
+              outputTokens: 100,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              costUSD,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  function orchestrator(sequential: boolean): RunOrchestrator {
+    return new RunOrchestrator({
+      config: {
+        phases: ["exec"],
+        concurrency: 2,
+        sequential,
+        dryRun: false,
+      } as ExecutionConfig,
+      options: {} as RunOptions,
+      issueInfoMap: new Map(),
+      worktreeMap: new Map(),
+      services: {
+        logWriter: {
+          startIssue: vi.fn(),
+          setPRInfo: vi.fn(),
+          markIssueFailed: vi.fn(),
+          completeIssue: vi.fn(),
+        } as unknown as OrchestratorConfig["services"]["logWriter"],
+      },
+    } as OrchestratorConfig);
+  }
+
+  it.each([
+    ["parallel (the default)", false],
+    ["sequential", true],
+  ])(
+    "%s: costSoFar sums the issues that have returned",
+    async (_, sequential) => {
+      // Order-independent: the parallel path settles in any order.
+      vi.mocked(runIssueWithLogging)
+        .mockResolvedValueOnce(withUsage(1, 1.25, 1_000))
+        .mockResolvedValueOnce(withUsage(2, 5.2, 2_000));
+      const orch = orchestrator(sequential);
+      expect(orch.costSoFar()).toBeUndefined();
+
+      await orch.execute([1, 2]);
+
+      const cost = orch.costSoFar();
+      expect(cost?.usd).toBeCloseTo(6.45, 2);
+      expect(cost?.tokens).toBe(3_200);
+    },
+  );
+});
