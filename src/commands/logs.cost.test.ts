@@ -52,6 +52,14 @@ describe("sequant logs cost line (#1527)", () => {
     await logsCommand({ path: dir });
     expect(out.join("\n")).toContain("cost unrecorded");
     expect(out.join("\n")).not.toContain("$0.00");
+    // No figure, so nothing for the caveat to qualify.
+    expect(out.join("\n")).not.toContain("SDK estimate");
+  });
+
+  it("prints the caveat under a recorded cost", async () => {
+    writeLog(dir, { usd: 6.45, tokens: 69641 });
+    await logsCommand({ path: dir });
+    expect(out.join("\n")).toContain("SDK estimate, not a billing statement");
   });
 
   it("still parses a version 1 log with and without cost", () => {

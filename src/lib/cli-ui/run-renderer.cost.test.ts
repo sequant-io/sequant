@@ -34,6 +34,8 @@ describe("summary cost line (#1527)", () => {
     const out = render(undefined);
     expect(out).toContain("cost unrecorded");
     expect(out).not.toContain("$0.00");
+    // No figure, so nothing for the caveat to qualify.
+    expect(out).not.toContain("SDK estimate");
   });
 
   it("prints tokens and cost unrecorded when only tokens exist", () => {

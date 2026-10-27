@@ -1566,10 +1566,12 @@ function renderSummaryBlock(
       ? `  ${c.cyan(`${issues.length} planned`)} · ${c.dim("nothing executed")}`
       : `  ${c.green(`${passed} passed`)} · ${c.red(`${failed} failed`)}`,
   );
-  // A dry run executes nothing, so it has no cost to state (#1527).
+  // A dry run executes nothing, so it has no cost to state (#1527). The
+  // caveat qualifies a recorded figure; `cost unrecorded` has none to qualify,
+  // and `sequant logs` draws the same line.
   if (!input.dryRun) {
     out.push(`  ${formatCostLine(input.cost)}`);
-    out.push(`  ${c.dim(COST_CAVEAT)}`);
+    if (input.cost) out.push(`  ${c.dim(COST_CAVEAT)}`);
   }
   if (input.logPath) {
     out.push(`  ${c.dim(`Log: ${input.logPath}`)}`);
