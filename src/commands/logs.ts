@@ -14,7 +14,11 @@ import {
   formatBytes,
 } from "../lib/workflow/log-rotation.js";
 import { resolveLogDir, listLogFiles, parseLogFile } from "../lib/run-logs.js";
-import { formatDuration } from "../lib/cli-ui/format.js";
+import {
+  COST_CAVEAT,
+  formatCostLine,
+  formatDuration,
+} from "../lib/cli-ui/format.js";
 import { getSettings } from "../lib/settings.js";
 
 interface LogsOptions {
@@ -96,6 +100,9 @@ function displayLogSummary(
       chalk.gray(`  Suppressed errors: ${log.suppressed.total} (${scopes})`),
     );
   }
+
+  console.log(chalk.gray(`  ${formatCostLine(log.cost)}`));
+  if (log.cost) console.log(chalk.gray(`  ${COST_CAVEAT}`));
 
   // Show issues
   for (const issue of log.issues) {

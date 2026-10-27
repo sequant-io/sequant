@@ -20,6 +20,8 @@ export function registerLogsTool(server: McpServer): void {
         "Get structured run logs for recent workflow executions. " +
         "Each log contains per-issue phase results (duration, status, errors) and QA verdicts. " +
         "Use after a sequant_run completes or fails to understand what happened. " +
+        "A log's optional cost ({ usd, tokens }) is the SDK's estimate, not a billing statement; " +
+        "absent means unrecorded, not free. " +
         "Logs are stored as run-<ISO-timestamp>-<uuid>.json files.",
       annotations: {
         readOnlyHint: true,
@@ -108,6 +110,10 @@ export function registerLogsTool(server: McpServer): void {
                   startTime: log.startTime,
                   config: log.config,
                   summary: log.summary,
+                  // #1527: the run's cost, when the log carries one. The CLI's
+                  // `sequant logs` prints the same figure; absent means
+                  // unrecorded, never free.
+                  ...(log.cost && { cost: log.cost }),
                   issues: log.issues.map((issue) => ({
                     issueNumber: issue.issueNumber,
                     title: issue.title,

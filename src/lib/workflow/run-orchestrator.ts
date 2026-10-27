@@ -39,7 +39,7 @@ import {
   worktreeStatus,
 } from "./worktree-manager.js";
 import { LogWriter } from "./log-writer.js";
-import type { RunConfig } from "./run-log-schema.js";
+import type { RunConfig, RunCost } from "./run-log-schema.js";
 import { StateManager } from "./state-manager.js";
 import { ShutdownManager } from "../shutdown.js";
 import {
@@ -253,6 +253,23 @@ export interface ResolvedRun {
   stateEnabled: boolean;
 }
 
+/** Totals `collectUsage` returns; `recordMetrics` writes the same values. */
+interface RunUsage {
+  phaseUsage: MetricPhaseUsage[];
+  driverTotals: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheTokens: number;
+    costUSD: number;
+  };
+  tokenUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheTokens: number;
+    tokensUsed: number;
+  };
+}
+
 /**
  * Structured result of a full orchestrator run.
  */
@@ -261,6 +278,8 @@ export interface RunResult {
   results: IssueResult[];
   /** Log file path (if logging enabled) */
   logPath: string | null;
+  /** Run-level cost and tokens, as recorded in the metrics record (#1527). */
+  cost?: RunCost;
   /** Non-zero if any issue failed */
   exitCode: number;
   /** Worktree map (for summary display) */
@@ -402,6 +421,8 @@ export class RunOrchestrator {
   private readonly phaseStartTimes = new Map<string, number>();
   private readonly emitter: WorkflowEventEmitter;
   private done = false;
+  /** Issue results that have returned so far, for `costSoFar` (#1527). */
+  private readonly completed: IssueResult[] = [];
 
   constructor(config: OrchestratorConfig) {
     this.validate(config);
@@ -951,7 +972,7 @@ export class RunOrchestrator {
     // at shutdown time, once `.instance` has been set below.
     const shutdownOrchestratorRef: { instance?: RunOrchestrator } = {};
     if (logWriter) {
-      registerRunLogFinalizer(shutdown, logWriter);
+      registerRunLogFinalizer(shutdown, logWriter, shutdownOrchestratorRef);
     }
 
     return {
@@ -1790,11 +1811,20 @@ export class RunOrchestrator {
         results = await orchestrator.execute(issueNumbers);
       }
 
+      // #1527: totals first — the log is written before metrics are recorded,
+      // and both must carry the same figure.
+      const recordsMetrics = !config.dryRun && results.length > 0;
+      const usage = recordsMetrics
+        ? RunOrchestrator.collectUsage(results, worktreeMap)
+        : undefined;
+      const runCost = usage ? RunOrchestrator.toRunCost(usage) : undefined;
+
       // ── Finalize logs ──────────────────────────────────────────────
       let logPath: string | null = null;
       if (logWriter) {
         logPath = await logWriter.finalize({
           endCommit: getCommitHash(process.cwd()),
+          cost: runCost,
         });
       }
 
@@ -1805,7 +1835,7 @@ export class RunOrchestrator {
       const wallClockDurationSeconds = wallClock();
 
       // ── Record metrics ─────────────────────────────────────────────
-      if (!config.dryRun && results.length > 0) {
+      if (usage) {
         try {
           await RunOrchestrator.recordMetrics(
             config,
@@ -1814,6 +1844,7 @@ export class RunOrchestrator {
             worktreeMap,
             issueNumbers,
             wallClockDurationSeconds,
+            usage,
           );
         } catch (metricsError) {
           logNonFatalWarning(
@@ -1828,6 +1859,7 @@ export class RunOrchestrator {
       return {
         results: allResults,
         logPath,
+        cost: runCost,
         exitCode: allResults.some((r) => !r.success) && !config.dryRun ? 1 : 0,
         worktreeMap,
         issueInfoMap,
@@ -1840,6 +1872,22 @@ export class RunOrchestrator {
       orchestrator.markDone();
       shutdown.dispose();
     }
+  }
+
+  /**
+   * The cost of the issues that have returned so far (#1527), for the run log
+   * of a run cut short by a signal. The normal path computes the same figure
+   * once in `run()` after every issue has returned. An issue still in flight
+   * is not counted, so an aborted run's `cost` covers its completed issues
+   * only; `undefined` when none has.
+   */
+  costSoFar(): RunCost | undefined {
+    if (this.cfg.config.dryRun || this.completed.length === 0) {
+      return undefined;
+    }
+    return RunOrchestrator.toRunCost(
+      RunOrchestrator.collectUsage(this.completed, this.cfg.worktreeMap),
+    );
   }
 
   /**
@@ -2080,6 +2128,7 @@ export class RunOrchestrator {
           : undefined,
       });
       results.push(result);
+      this.completed.push(result);
 
       // A chain halts on ANY failed link, QA or otherwise: every successor
       // rebases onto its predecessor's committed work, so continuing past a
@@ -2112,11 +2161,15 @@ export class RunOrchestrator {
             } as IssueResult;
           }
 
-          return this.executeOneIssue({
+          const result = await this.executeOneIssue({
             issueNumber,
             batchCtx: { ...batchCtx, onProgress: this.cfg.onProgress },
             parallelIssueNumber: issueNumber,
           });
+          // #1527: `costSoFar` reads this on the signal path; the sequential
+          // path pushes at its own call site, and parallel is the default.
+          this.completed.push(result);
+          return result;
         }),
       ),
     );
@@ -2236,42 +2289,16 @@ export class RunOrchestrator {
     }
   }
 
-  private static async recordMetrics(
-    config: ExecutionConfig,
-    mergedOptions: RunOptions,
+  /**
+   * The run's token and cost totals, computed once (#1527). The run log, the
+   * summary and `.sequant/metrics.json` all take their number from this value:
+   * the hook-file fallback read deletes the files it reads, so a second call
+   * would see nothing. Cost is the SDK's estimate, not a billing statement.
+   */
+  private static collectUsage(
     results: IssueResult[],
     worktreeMap: Map<number, WorktreeInfo>,
-    issueNumbers: number[],
-    wallClockDurationSeconds: number,
-  ): Promise<void> {
-    const metricsWriter = new MetricsWriter({ verbose: config.verbose });
-    // #867: run wall clock, not the sum of per-issue durations — under
-    // --parallel that sum double-counts overlapping issues (same defect the
-    // SUMMARY header had). The orchestrator owns the run's start/end and passes
-    // the single authoritative value in.
-    const totalDuration = wallClockDurationSeconds;
-    const allPhases = new Set<MetricPhase>();
-    for (const result of results) {
-      for (const pr of result.phaseResults) {
-        const phase = pr.phase as MetricPhase;
-        if (
-          [
-            "spec",
-            "security-review",
-            "testgen",
-            "exec",
-            "test",
-            "qa",
-            "loop",
-          ].includes(phase)
-        ) {
-          allPhases.add(phase);
-        }
-      }
-    }
-    let totalFilesChanged = 0;
-    let totalLinesAdded = 0;
-    let totalQaIterations = 0;
+  ): RunUsage {
     // #986: driver-sourced usage. `phaseUsage` rows are appended in
     // `phaseResults` order and never keyed by phase name — grouping is exactly
     // what would silently merge a quality-loop retry into its first attempt.
@@ -2287,16 +2314,6 @@ export class RunOrchestrator {
     };
     for (const result of results) {
       const wt = worktreeMap.get(result.issueNumber);
-      if (wt?.path) {
-        const s = getWorktreeDiffStats(wt.path);
-        totalFilesChanged += s.filesChanged;
-        totalLinesAdded += s.linesAdded;
-      }
-      if (result.loopTriggered) {
-        totalQaIterations += result.phaseResults.filter(
-          (p) => p.phase === "loop",
-        ).length;
-      }
       const issueRows = result.phaseResults.flatMap((pr) =>
         // #971 AC-10: append the escalation columns to #986's row shape.
         // Spread conditionally so a non-escalated execution's row is
@@ -2353,6 +2370,79 @@ export class RunOrchestrator {
         driverTotals.outputTokens +
         fallback.tokensUsed,
     };
+    return { phaseUsage, driverTotals, tokenUsage };
+  }
+
+  /**
+   * The run log's `cost` block from `collectUsage`'s totals (#1527): the same
+   * `costUSD` and `tokensUsed` that `recordMetrics` writes to
+   * `.sequant/metrics.json`. A zero is absent, not `0`, so a run that recorded
+   * nothing reads `cost unrecorded` rather than free; `undefined` when neither
+   * figure exists.
+   */
+  private static toRunCost(usage: RunUsage): RunCost | undefined {
+    const cost: RunCost = {
+      ...(usage.driverTotals.costUSD
+        ? { usd: usage.driverTotals.costUSD }
+        : {}),
+      ...(usage.tokenUsage.tokensUsed
+        ? { tokens: usage.tokenUsage.tokensUsed }
+        : {}),
+    };
+    return Object.keys(cost).length > 0 ? cost : undefined;
+  }
+
+  private static async recordMetrics(
+    config: ExecutionConfig,
+    mergedOptions: RunOptions,
+    results: IssueResult[],
+    worktreeMap: Map<number, WorktreeInfo>,
+    issueNumbers: number[],
+    wallClockDurationSeconds: number,
+    usage: RunUsage = RunOrchestrator.collectUsage(results, worktreeMap),
+  ): Promise<void> {
+    const metricsWriter = new MetricsWriter({ verbose: config.verbose });
+    // #867: run wall clock, not the sum of per-issue durations — under
+    // --parallel that sum double-counts overlapping issues (same defect the
+    // SUMMARY header had). The orchestrator owns the run's start/end and passes
+    // the single authoritative value in.
+    const totalDuration = wallClockDurationSeconds;
+    const allPhases = new Set<MetricPhase>();
+    for (const result of results) {
+      for (const pr of result.phaseResults) {
+        const phase = pr.phase as MetricPhase;
+        if (
+          [
+            "spec",
+            "security-review",
+            "testgen",
+            "exec",
+            "test",
+            "qa",
+            "loop",
+          ].includes(phase)
+        ) {
+          allPhases.add(phase);
+        }
+      }
+    }
+    let totalFilesChanged = 0;
+    let totalLinesAdded = 0;
+    let totalQaIterations = 0;
+    for (const result of results) {
+      const wt = worktreeMap.get(result.issueNumber);
+      if (wt?.path) {
+        const s = getWorktreeDiffStats(wt.path);
+        totalFilesChanged += s.filesChanged;
+        totalLinesAdded += s.linesAdded;
+      }
+      if (result.loopTriggered) {
+        totalQaIterations += result.phaseResults.filter(
+          (p) => p.phase === "loop",
+        ).length;
+      }
+    }
+    const { phaseUsage, driverTotals, tokenUsage } = usage;
     const cliFlags: string[] = [];
     if (mergedOptions.sequential) cliFlags.push("--sequential");
     if (mergedOptions.chain) cliFlags.push("--chain");
@@ -2574,15 +2664,22 @@ function extractActivityLine(raw: string | undefined): string | undefined {
 export function registerRunLogFinalizer(
   shutdown: ShutdownManager,
   writer: Pick<LogWriter, "finalize">,
+  orchestratorRef?: { instance?: Pick<RunOrchestrator, "costSoFar"> },
 ): void {
   // #856: forward the abort cause into the log. This cleanup runs on the
   // SIGINT/SIGTERM path, where no phase result will ever arrive for the
   // in-flight issue — without the context, `finalize()` writes that issue
   // out as if the run had simply ended.
+  // #1527: the cost of the issues that did finish rides along; the orchestrator
+  // is read lazily because it is constructed after this registration.
   shutdown.registerCleanup(
     "Finalize run logs",
     async (abort) => {
-      await writer.finalize(abort ? { aborted: abort } : undefined);
+      await writer.finalize(
+        abort
+          ? { aborted: abort, cost: orchestratorRef?.instance?.costSoFar() }
+          : undefined,
+      );
     },
     { phase: "finalize" },
   );

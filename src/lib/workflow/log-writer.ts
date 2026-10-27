@@ -23,6 +23,7 @@ import {
   type IssueLog,
   type PhaseLog,
   type Phase,
+  type RunCost,
   type IssueStatus,
   type SpecRecommendation,
   createEmptyRunLog,
@@ -357,6 +358,7 @@ export class LogWriter {
    *
    * @param options - Optional finalization options
    * @param options.endCommit - Git commit SHA at run end (AC-2)
+   * @param options.cost - Run-level cost and tokens (#1527)
    * @param options.aborted - Set when finalizing because the run was
    *   terminated by an external signal (#856). Every still-in-flight issue is
    *   recorded as an abort naming its cause, and the run log carries
@@ -367,6 +369,8 @@ export class LogWriter {
   async finalize(options?: {
     endCommit?: string;
     aborted?: { signal: string; reason: string };
+    /** Run-level cost and tokens (#1527); omitted when nothing was recorded. */
+    cost?: RunCost;
   }): Promise<string> {
     if (!this.runLog) {
       throw new Error("LogWriter not initialized.");
@@ -388,6 +392,7 @@ export class LogWriter {
       abortedBy: abort?.signal,
     });
     finalLog.suppressed = suppressedCounts();
+    if (options?.cost) finalLog.cost = options.cost;
     const filename = generateLogFilename(
       finalLog.runId,
       new Date(finalLog.startTime),

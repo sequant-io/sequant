@@ -646,6 +646,26 @@ npx sequant run 42 --no-color
   exiting `0` (#856).
 - `sync --dry-run` / `update --dry-run` exit non-zero when work is pending.
 
+## Cost
+
+A finished run prints one cost line under the summary:
+
+```
+cost $6.45 (SDK estimate) · 69,641 tokens
+SDK estimate, not a billing statement
+```
+
+The figure is the SDK's estimate, not a billing statement. It is the same
+number `sequant run` writes to `.sequant/metrics.json` (`metrics.costUSD` and
+`metrics.tokensUsed`) and the number `sequant stats` reports, summed over every
+phase of the run. It is the cost of the run's own phase sessions, billed to the
+API key the run used; a separate review session is not part of it. The run log
+(`.sequant/logs/run-*.json`) carries it as the optional run-level `cost`
+(`{ usd, tokens }`), and `sequant logs` prints the same line.
+
+A run with no recorded cost prints `cost unrecorded`, never `$0.00`. A dry run
+prints no cost line.
+
 ## Environment Variables
 
 | Variable | Description | Default |

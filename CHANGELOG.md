@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A run's cost is on the terminal, in its log and in `sequant logs` (#1527).** The summary prints `cost $6.45 (SDK estimate) · 69,641 tokens` under the tally, and `sequant logs <run>` prints the same line. The run log gains an optional run-level `cost` (`{ usd, tokens }`; `version` stays 1). All three read one total, computed once before the log is written, which `.sequant/metrics.json` also records. A run with no record prints `cost unrecorded`, never `$0.00`.
+
 ### Changed
 
 - **No function in `src/lib/workflow` exceeds 200 counted lines, and `max-lines-per-function` (200) now enforces it for `src/lib/workflow/**` (#1508).** `RunOrchestrator.run`, `ensureWorktree`, `executePhase`, `executePhaseWithRetry`, `runReadyGate` and `ClaudeCodeDriver.executePhase` are split into private stage functions in the same files (ADR-0020). No behaviour, export or log line changes, and no test changed. The health baseline's `functions.over200` and `over400` fall to 0.
