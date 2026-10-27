@@ -11,7 +11,7 @@
  * `check`. `check` restores the tree with `git apply -R --index` of the patch
  * it captured, never with `checkout`, `stash` or `reset`, so a deleted file
  * and a new file are restored too. See docs/reference/mutation-verification.md
- * and ADR-0022.
+ * and ADR-0023.
  */
 
 import chalk from "chalk";
@@ -68,7 +68,7 @@ function stateExclude(root: string): string[] {
 /** State of the named test in one vitest run. */
 export type VitestTestState = "passed" | "failed" | "skipped" | "missing";
 
-export interface VitestRunResult {
+interface VitestRunResult {
   exit: number;
   testState: VitestTestState;
   /** Tail of vitest's stdout/stderr, for the refusal message. */
@@ -174,7 +174,7 @@ function tail(text: string, lines = 15): string {
 }
 
 /** `npx vitest`, reading results from the JSON vitest writes to a temp file. */
-export const defaultVitestRunner: VitestRunner = {
+const defaultVitestRunner: VitestRunner = {
   list(root, file, pattern) {
     const dir = mkdtempSync(join(tmpdir(), "sequant-mutation-"));
     const out = join(dir, "list.json");
@@ -429,8 +429,21 @@ export function checkMutation(opts: {
   mkdirSync(dirname(patchPath), { recursive: true });
   writeFileSync(patchPath, diff.stdout);
 
-  // (4) Under the mutation, the named test itself must fail.
-  const mutated = runner.run(root, test, pattern, fullName);
+  // (4) Under the mutation, the named test itself must fail. A runner that
+  // throws (vitest missing, spawn failure) must not leave the tree mutated:
+  // restore first, then report, naming the patch.
+  let mutated: VitestRunResult;
+  try {
+    mutated = runner.run(root, test, pattern, fullName);
+  } catch (error) {
+    const restoreError = restore(root, patchPath);
+    return {
+      exitCode: EXIT_ERROR,
+      message:
+        `The test runner threw before a result: ${error instanceof Error ? error.message : String(error)}. ` +
+        (restoreError ?? `The tree is restored; the patch is at ${patchPath}.`),
+    };
+  }
 
   // (5) Restore by patch, before judging (4), so no outcome leaves it mutated.
   const restoreError = restore(root, patchPath);
@@ -475,7 +488,7 @@ export function checkMutation(opts: {
 }
 
 /** `render`: the marker lines for the records, one per AC. */
-export function renderMutation(opts: { cwd: string; issue: number }): {
+function renderMutation(opts: { cwd: string; issue: number }): {
   exitCode: 0 | typeof EXIT_ERROR;
   lines: string[];
   message?: string;

@@ -230,6 +230,27 @@ describe("mutation check restores the tree", () => {
     expect(status(root)).toBe("");
   });
 
+  it("restores the tree and names the patch when the runner throws under the mutation", () => {
+    writeFileSync(join(root, "src/gate.ts"), "export const X = 1;\n");
+    const { runner, calls } = fakeRunner(guardPresent);
+    runner.run = () => {
+      calls.run++;
+      throw new Error("spawn vitest ENOENT");
+    };
+
+    const outcome = check(root, runner);
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.message).toContain("spawn vitest ENOENT");
+    expect(outcome.message).toContain(mutationPatchPath(root, ISSUE));
+    expect(calls.run).toBe(1);
+    expect(readMutationState(root, ISSUE)?.records).toEqual([]);
+    expect(status(root)).toBe("");
+    expect(readFileSync(join(root, "src/gate.ts"), "utf8")).toBe(
+      "export const GUARD = true;\n",
+    );
+  });
+
   it("restores a deleted file byte-for-byte and removes an added one", () => {
     const binBefore = readFileSync(join(root, "src/fixture.bin"));
     const gateBefore = readFileSync(join(root, "src/gate.ts"));

@@ -1,4 +1,4 @@
-# ADR-0022: Mutation verification is a CLI that certifies the named test's own result, with vitest behind an injected runner
+# ADR-0023: Mutation verification is a CLI that certifies the named test's own result, with vitest behind an injected runner
 
 **Status:** Proposed
 **Date:** 2026-10-26

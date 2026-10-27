@@ -126,4 +126,4 @@ Under `sequant run`, the orchestrator reads the same state file from the issue's
 
 `.sequant/mutations/<N>.patch` exists only after a refused `check`, and holds the mutation that was undone.
 
-See also: [ADR-0022](../adr/0022-mutation-verification-cli.md).
+See also: [ADR-0023](../adr/0023-mutation-verification-cli.md).
