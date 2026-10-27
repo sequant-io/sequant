@@ -108,6 +108,10 @@ export function registerLogsTool(server: McpServer): void {
                   startTime: log.startTime,
                   config: log.config,
                   summary: log.summary,
+                  // #1527: the run's cost, when the log carries one. The CLI's
+                  // `sequant logs` prints the same figure; absent means
+                  // unrecorded, never free.
+                  ...(log.cost && { cost: log.cost }),
                   issues: log.issues.map((issue) => ({
                     issueNumber: issue.issueNumber,
                     title: issue.title,

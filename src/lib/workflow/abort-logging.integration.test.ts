@@ -171,7 +171,9 @@ describe("abort surfacing end-to-end (#856 AC-4)", () => {
       /registerCleanup\(\s*"Finalize run logs",[\s\S]*?\n {4}\{ phase: "finalize" \},\n {2}\);/,
     );
     expect(block, "Finalize run logs cleanup block not found").not.toBeNull();
-    expect(source).toMatch(/registerRunLogFinalizer\(shutdown, logWriter\)/);
+    expect(source).toMatch(
+      /registerRunLogFinalizer\(shutdown, logWriter, shutdownOrchestratorRef\)/,
+    );
 
     const body = block![0];
     // The callback must accept the abort parameter...

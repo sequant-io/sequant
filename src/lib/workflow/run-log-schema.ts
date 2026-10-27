@@ -480,8 +480,9 @@ export const RunLogSchema = z.object({
   /**
    * Run-level cost and tokens, the same figure `.sequant/metrics.json` records
    * for this run (#1527). The cost is the SDK's estimate, not a billing
-   * statement. Each key is absent when the run recorded nothing for it.
-   * Optional, so `version` stays 1.
+   * statement. Each key is absent when the run recorded nothing for it. For a
+   * run ended by a signal (`abortedBy`), it covers the issues that had
+   * finished, not the one in flight. Optional, so `version` stays 1.
    */
   cost: z
     .object({

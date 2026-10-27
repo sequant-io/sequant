@@ -253,9 +253,6 @@ export interface ResolvedRun {
   stateEnabled: boolean;
 }
 
-/**
- * Structured result of a full orchestrator run.
- */
 /** Totals `collectUsage` returns; `recordMetrics` writes the same values. */
 interface RunUsage {
   phaseUsage: MetricPhaseUsage[];
@@ -273,6 +270,9 @@ interface RunUsage {
   };
 }
 
+/**
+ * Structured result of a full orchestrator run.
+ */
 export interface RunResult {
   /** Per-issue results */
   results: IssueResult[];
@@ -421,6 +421,8 @@ export class RunOrchestrator {
   private readonly phaseStartTimes = new Map<string, number>();
   private readonly emitter: WorkflowEventEmitter;
   private done = false;
+  /** Issue results that have returned so far, for `costSoFar` (#1527). */
+  private readonly completed: IssueResult[] = [];
 
   constructor(config: OrchestratorConfig) {
     this.validate(config);
@@ -970,7 +972,7 @@ export class RunOrchestrator {
     // at shutdown time, once `.instance` has been set below.
     const shutdownOrchestratorRef: { instance?: RunOrchestrator } = {};
     if (logWriter) {
-      registerRunLogFinalizer(shutdown, logWriter);
+      registerRunLogFinalizer(shutdown, logWriter, shutdownOrchestratorRef);
     }
 
     return {
@@ -1815,17 +1817,7 @@ export class RunOrchestrator {
       const usage = recordsMetrics
         ? RunOrchestrator.collectUsage(results, worktreeMap)
         : undefined;
-      const cost = usage
-        ? {
-            ...(usage.driverTotals.costUSD
-              ? { usd: usage.driverTotals.costUSD }
-              : {}),
-            ...(usage.tokenUsage.tokensUsed
-              ? { tokens: usage.tokenUsage.tokensUsed }
-              : {}),
-          }
-        : undefined;
-      const runCost = cost && Object.keys(cost).length > 0 ? cost : undefined;
+      const runCost = usage ? RunOrchestrator.toRunCost(usage) : undefined;
 
       // ── Finalize logs ──────────────────────────────────────────────
       let logPath: string | null = null;
@@ -1880,6 +1872,22 @@ export class RunOrchestrator {
       orchestrator.markDone();
       shutdown.dispose();
     }
+  }
+
+  /**
+   * The cost of the issues that have returned so far (#1527), for the run log
+   * of a run cut short by a signal. The normal path computes the same figure
+   * once in `run()` after every issue has returned. An issue still in flight
+   * is not counted, so an aborted run's `cost` covers its completed issues
+   * only; `undefined` when none has.
+   */
+  costSoFar(): RunCost | undefined {
+    if (this.cfg.config.dryRun || this.completed.length === 0) {
+      return undefined;
+    }
+    return RunOrchestrator.toRunCost(
+      RunOrchestrator.collectUsage(this.completed, this.cfg.worktreeMap),
+    );
   }
 
   /**
@@ -2120,6 +2128,7 @@ export class RunOrchestrator {
           : undefined,
       });
       results.push(result);
+      this.completed.push(result);
 
       // A chain halts on ANY failed link, QA or otherwise: every successor
       // rebases onto its predecessor's committed work, so continuing past a
@@ -2358,6 +2367,25 @@ export class RunOrchestrator {
         fallback.tokensUsed,
     };
     return { phaseUsage, driverTotals, tokenUsage };
+  }
+
+  /**
+   * The run log's `cost` block from `collectUsage`'s totals (#1527): the same
+   * `costUSD` and `tokensUsed` that `recordMetrics` writes to
+   * `.sequant/metrics.json`. A zero is absent, not `0`, so a run that recorded
+   * nothing reads `cost unrecorded` rather than free; `undefined` when neither
+   * figure exists.
+   */
+  private static toRunCost(usage: RunUsage): RunCost | undefined {
+    const cost: RunCost = {
+      ...(usage.driverTotals.costUSD
+        ? { usd: usage.driverTotals.costUSD }
+        : {}),
+      ...(usage.tokenUsage.tokensUsed
+        ? { tokens: usage.tokenUsage.tokensUsed }
+        : {}),
+    };
+    return Object.keys(cost).length > 0 ? cost : undefined;
   }
 
   private static async recordMetrics(
@@ -2632,15 +2660,22 @@ function extractActivityLine(raw: string | undefined): string | undefined {
 export function registerRunLogFinalizer(
   shutdown: ShutdownManager,
   writer: Pick<LogWriter, "finalize">,
+  orchestratorRef?: { instance?: Pick<RunOrchestrator, "costSoFar"> },
 ): void {
   // #856: forward the abort cause into the log. This cleanup runs on the
   // SIGINT/SIGTERM path, where no phase result will ever arrive for the
   // in-flight issue — without the context, `finalize()` writes that issue
   // out as if the run had simply ended.
+  // #1527: the cost of the issues that did finish rides along; the orchestrator
+  // is read lazily because it is constructed after this registration.
   shutdown.registerCleanup(
     "Finalize run logs",
     async (abort) => {
-      await writer.finalize(abort ? { aborted: abort } : undefined);
+      await writer.finalize(
+        abort
+          ? { aborted: abort, cost: orchestratorRef?.instance?.costSoFar() }
+          : undefined,
+      );
     },
     { phase: "finalize" },
   );

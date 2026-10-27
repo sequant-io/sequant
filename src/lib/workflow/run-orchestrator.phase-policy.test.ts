@@ -482,3 +482,128 @@ describe("#986 AC-4 gate: the metrics read is worktree-anchored", () => {
     ).toContain("readWorktreeTokenUsage(");
   });
 });
+
+/**
+ * #1527 parity: the run log's `cost` and the metrics record's `costUSD` and
+ * `tokensUsed` come from one `collectUsage` call. The hook-file fallback read
+ * deletes what it reads, so a second computation would see nothing; this
+ * pins the single read as well as the equal figures.
+ */
+describe("#1527: run-log cost and metrics record share one usage computation", () => {
+  type RunUsageLike = {
+    driverTotals: { costUSD: number };
+    tokenUsage: { tokensUsed: number };
+  };
+  const privates = RunOrchestrator as unknown as {
+    collectUsage(
+      results: IssueResult[],
+      worktreeMap: Map<number, unknown>,
+    ): RunUsageLike;
+    toRunCost(
+      usage: RunUsageLike,
+    ): { usd?: number; tokens?: number } | undefined;
+    recordMetrics(
+      config: ExecutionConfig,
+      mergedOptions: RunOptions,
+      results: IssueResult[],
+      worktreeMap: Map<number, unknown>,
+      issueNumbers: number[],
+      wallClockDurationSeconds: number,
+      usage: RunUsageLike,
+    ): Promise<void>;
+  };
+
+  function lastRecordRun() {
+    const writerMock = vi.mocked(MetricsWriter);
+    const lastInstance =
+      writerMock.mock.results[writerMock.mock.results.length - 1].value;
+    return lastInstance.recordRun.mock.calls[0][0];
+  }
+
+  const rows: PhaseUsage[] = [
+    {
+      model: "claude-sonnet",
+      inputTokens: 40_000,
+      outputTokens: 2_500,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUSD: 1.25,
+    },
+    {
+      model: "claude-opus",
+      inputTokens: 25_000,
+      outputTokens: 2_141,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      costUSD: 5.2,
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(readWorktreeTokenUsage).mockReturnValue({
+      tokensUsed: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheTokens: 0,
+    });
+  });
+
+  it("1527 the log's cost equals the metrics record's costUSD and tokensUsed", async () => {
+    const results = [
+      issueResult({
+        issueNumber: 1527,
+        phaseResults: [{ phase: "exec", success: true, usage: rows }],
+      }),
+    ];
+    const usage = privates.collectUsage(results, new Map());
+    await privates.recordMetrics(
+      baseConfig(),
+      {} as RunOptions,
+      results,
+      new Map(),
+      [1527],
+      42,
+      usage,
+    );
+
+    const metrics = lastRecordRun().metrics;
+    expect(privates.toRunCost(usage)).toEqual({
+      usd: metrics.costUSD,
+      tokens: metrics.tokensUsed,
+    });
+    expect(metrics.costUSD).toBeCloseTo(6.45, 2);
+    expect(metrics.tokensUsed).toBe(69_641);
+  });
+
+  it("1527 the hook-file fallback is read once for both surfaces", async () => {
+    vi.mocked(readWorktreeTokenUsage).mockReturnValue({
+      tokensUsed: 1_200,
+      inputTokens: 1_000,
+      outputTokens: 200,
+      cacheTokens: 0,
+    });
+    const results = [issueResult({ issueNumber: 1527, phaseResults: [] })];
+    const worktreeMap = new Map([[1527, { path: "/wt/1527" }]]);
+    const usage = privates.collectUsage(results, worktreeMap);
+    await privates.recordMetrics(
+      baseConfig(),
+      {} as RunOptions,
+      results,
+      worktreeMap,
+      [1527],
+      42,
+      usage,
+    );
+
+    expect(vi.mocked(readWorktreeTokenUsage)).toHaveBeenCalledTimes(1);
+    // Tokens without a cost: the log says so, never `$0.00`.
+    expect(privates.toRunCost(usage)).toEqual({ tokens: 1_200 });
+    expect(lastRecordRun().metrics.tokensUsed).toBe(1_200);
+  });
+
+  it("1527 a run with nothing recorded has no cost block", () => {
+    const usage = privates.collectUsage([], new Map());
+    expect(privates.toRunCost(usage)).toBeUndefined();
+  });
+});
