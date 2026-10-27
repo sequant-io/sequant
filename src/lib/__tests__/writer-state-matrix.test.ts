@@ -750,7 +750,10 @@ function symlinkTargetUntouched(cell: Cell): boolean {
 }
 
 beforeAll(async () => {
-  for (const k of ["SEQUANT_TEMPLATES_DIR", "HOME"]) saved[k] = process.env[k];
+  for (const k of ["SEQUANT_TEMPLATES_DIR", "HOME", "CLAUDE_CONFIG_DIR"])
+    saved[k] = process.env[k];
+  // init reads the plugin registry from $CLAUDE_CONFIG_DIR before ~/.claude (#1603).
+  delete process.env.CLAUDE_CONFIG_DIR;
   scratchRoot = mkdtempSync(join(tmpdir(), "writer-matrix-"));
   process.env.SEQUANT_TEMPLATES_DIR = TEMPLATES_DIR;
   // init reads (never writes) the user's MCP client configs; keep it off the real home.
