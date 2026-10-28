@@ -35,7 +35,9 @@ const readBody = (fixture: string): string =>
  * The three ACs #1524 measured the parse getting wrong (its precision and
  * recall), pinned by `scripts/qa/ac-status-parse-coverage.test.ts`. Each
  * entry names what the parse reads instead of the label. A miss that appears
- * or disappears fails its fixture's case.
+ * or disappears fails its fixture's case, whichever side moved: the parse
+ * (checked against the overlay) or the `expected.json` label (checked to
+ * still differ from the overlay, so an edit to a pinned label is not hidden).
  */
 const KNOWN_MISSES: Record<string, Record<string, AcStatus>> = {
   // "## Closing — AC-3 resolved against the gate": no status token.
@@ -57,6 +59,17 @@ describe("parseAcStatuses against the qa-comments fixture (AC-1)", () => {
         entry.acs.map((a) => [a.id, KNOWN_MISSES[fixture]?.[a.id] ?? a.status]),
       );
       expect(Object.fromEntries(got)).toEqual(want);
+      for (const [id, reads] of Object.entries(KNOWN_MISSES[fixture] ?? {})) {
+        const label = entry.acs.find((a) => a.id === id)?.status;
+        expect(
+          label,
+          `${fixture} ${id}: pinned miss has no label`,
+        ).toBeDefined();
+        expect(
+          label,
+          `${fixture} ${id}: label equals the pinned parse`,
+        ).not.toBe(reads);
+      }
     },
   );
 
