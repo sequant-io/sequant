@@ -34,16 +34,22 @@ const readBody = (fixture: string): string =>
 /**
  * The three ACs #1524 measured the parse getting wrong (its precision and
  * recall), pinned by `scripts/qa/ac-status-parse-coverage.test.ts`. Each
- * entry names what the parse reads instead of the label. A miss that appears
- * or disappears fails its fixture's case, whichever side moved: the parse
- * (checked against the overlay) or the `expected.json` label (checked to
- * still differ from the overlay, so an edit to a pinned label is not hidden).
+ * entry pins both sides: the `expected.json` label and what the parse reads
+ * instead. A miss that appears or disappears fails its fixture's case,
+ * whichever side moved: the parse (checked against `reads`) or the label
+ * (checked against `label`, so any edit to a pinned label is caught).
  */
-const KNOWN_MISSES: Record<string, Record<string, AcStatus>> = {
+const KNOWN_MISSES: Record<
+  string,
+  Record<string, { label: AcStatus; reads: AcStatus }>
+> = {
   // "## Closing — AC-3 resolved against the gate": no status token.
-  "922-5236374780.md": { "AC-3": "unknown" },
+  "922-5236374780.md": { "AC-3": { label: "met", reads: "unknown" } },
   // "| AC-2 | MET (locally) / PENDING (CI) |": the first token wins.
-  "1265-5933933577.md": { "AC-2": "met", "AC-7": "met" },
+  "1265-5933933577.md": {
+    "AC-2": { label: "pending", reads: "met" },
+    "AC-7": { label: "pending", reads: "met" },
+  },
 };
 
 describe("parseAcStatuses against the qa-comments fixture (AC-1)", () => {
@@ -56,19 +62,15 @@ describe("parseAcStatuses against the qa-comments fixture (AC-1)", () => {
         entry.acs.map((a) => a.id),
       );
       const want = Object.fromEntries(
-        entry.acs.map((a) => [a.id, KNOWN_MISSES[fixture]?.[a.id] ?? a.status]),
+        entry.acs.map((a) => [
+          a.id,
+          KNOWN_MISSES[fixture]?.[a.id]?.reads ?? a.status,
+        ]),
       );
       expect(Object.fromEntries(got)).toEqual(want);
-      for (const [id, reads] of Object.entries(KNOWN_MISSES[fixture] ?? {})) {
+      for (const [id, miss] of Object.entries(KNOWN_MISSES[fixture] ?? {})) {
         const label = entry.acs.find((a) => a.id === id)?.status;
-        expect(
-          label,
-          `${fixture} ${id}: pinned miss has no label`,
-        ).toBeDefined();
-        expect(
-          label,
-          `${fixture} ${id}: label equals the pinned parse`,
-        ).not.toBe(reads);
+        expect(label, `${fixture} ${id}: pinned label moved`).toBe(miss.label);
       }
     },
   );
