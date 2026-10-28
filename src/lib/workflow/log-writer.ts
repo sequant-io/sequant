@@ -226,6 +226,21 @@ export class LogWriter {
   }
 
   /**
+   * Record the per-AC status the QA phase reported (#1525). Same post-hoc
+   * setter shape as {@link setSpecRecommendation}; a later QA phase in the
+   * same run replaces the list.
+   */
+  setAcStatuses(acs: NonNullable<IssueLog["acs"]>, issueNumber?: number): void {
+    const issue = issueNumber
+      ? (this.activeIssues.get(issueNumber) ?? this.currentIssue)
+      : this.currentIssue;
+    if (!issue) {
+      return;
+    }
+    issue.acs = acs;
+  }
+
+  /**
    * Force the in-flight issue's status to `failure` (#879).
    *
    * `deriveIssueLogStatus` runs at phase-log time, so an issue whose phases all
@@ -330,6 +345,9 @@ export class LogWriter {
       }),
       ...(issue.specRecommendation != null && {
         specRecommendation: issue.specRecommendation,
+      }),
+      ...(issue.acs != null && {
+        acs: issue.acs,
       }),
     };
 

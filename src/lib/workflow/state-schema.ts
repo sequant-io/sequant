@@ -209,6 +209,7 @@ export const ACStatusSchema = z.enum([
   "met", // Verified as satisfied
   "not_met", // Verified as not satisfied
   "blocked", // Cannot verify due to external dependency
+  "unknown", // QA ran, but its output could not be read for this AC (#1525)
 ]);
 
 export type ACStatus = z.infer<typeof ACStatusSchema>;
@@ -266,6 +267,8 @@ export const AcceptanceCriteriaSchema = z.object({
     notMet: z.number().int().nonnegative(),
     pending: z.number().int().nonnegative(),
     blocked: z.number().int().nonnegative(),
+    /** Optional so records written before #1525 still validate. */
+    unknown: z.number().int().nonnegative().optional(),
   }),
 });
 
@@ -552,6 +555,7 @@ export function updateAcceptanceCriteriaSummary(
     notMet: ac.items.filter((i) => i.status === "not_met").length,
     pending: ac.items.filter((i) => i.status === "pending").length,
     blocked: ac.items.filter((i) => i.status === "blocked").length,
+    unknown: ac.items.filter((i) => i.status === "unknown").length,
   };
   return { ...ac, summary };
 }
