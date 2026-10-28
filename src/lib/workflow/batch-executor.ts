@@ -2498,14 +2498,22 @@ async function recordLoopPhaseOutcome(
     );
   }
 
-  // #1525: per-AC status from the QA output, into state and the run log.
+  // #1525: per-AC status from the QA output, into state and the run log. An
+  // id the QA output names but the issue does not declare is not written; it
+  // is reported here so the count is visible (`warn`, not `log`: `log` is a
+  // no-op in parallel mode, #1342).
   if (phase === "qa" && result.output) {
-    await recordAcStatuses({
+    const { ignored } = await recordAcStatuses({
       issueNumber,
       output: result.output,
       stateManager,
       logWriter: env.ctx.services.logWriter,
     });
+    if (ignored.length > 0) {
+      warn(
+        `    !  AC status: ${ignored.length} id(s) in the QA output not declared by the issue, ignored: ${ignored.join(", ")}`,
+      );
+    }
   }
 
   logLoopPhaseResult(env, phase, dispatched, record);
