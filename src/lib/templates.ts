@@ -957,6 +957,12 @@ export interface CopyTemplatesOptions {
    * `"skills"`.
    */
   only?: "skills";
+  /**
+   * Leave out the repo hook channel: no `.claude/hooks/**` and no
+   * `.claude/settings.json` (the template holds only hook registrations).
+   * Set when a plugin ships the hooks (#1603).
+   */
+  skipHooks?: boolean;
 }
 
 /**
@@ -1335,8 +1341,10 @@ export async function copyTemplates(
     // Copy agent definitions
     await copyDir(join(templatesDir, "agents"), ".claude/agents");
 
-    // Copy hooks
-    await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
+    // Copy hooks, unless a plugin ships them (#1603)
+    if (!options.skipHooks) {
+      await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
+    }
 
     // Copy memory (constitution, etc.)
     await copyDir(join(templatesDir, "memory"), ".claude/memory");
@@ -1393,7 +1401,7 @@ export async function copyTemplates(
 
     // Copy settings.json
     const settingsPath = join(templatesDir, "settings.json");
-    if (await fileExists(settingsPath)) {
+    if (!options.skipHooks && (await fileExists(settingsPath))) {
       // Written here rather than through `copyDir`, so it needs the same
       // directory guard `copyDir` has (#1122).
       if (await isDirectory(".claude/settings.json")) {

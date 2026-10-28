@@ -15,6 +15,7 @@ import {
   computeTemplateChanges,
   type TemplateChange,
 } from "../lib/templates.js";
+import { withoutHookChannel } from "../lib/hook-channels.js";
 import { getConfig, saveConfig } from "../lib/config.js";
 import {
   getStackConfig,
@@ -274,7 +275,11 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   // Symlink-mode scripts/dev entries are `sync`-only: their status compares
   // the link target, and writing `rendered` here as a regular file would
   // leave them `modified` on every later run (#1159).
-  const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+  // A plugin-channel install (`"hooks": "plugin"`, #1603) keeps hooks absent.
+  const allChanges = withoutHookChannel(
+    await computeTemplateChanges(manifest.stack, tokens),
+    manifest,
+  );
   const changes = allChanges.filter((c) => c.linkTarget === undefined);
   const pendingLinks = allChanges.filter(
     (c) => c.linkTarget !== undefined && c.status !== "unchanged",
