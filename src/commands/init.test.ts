@@ -84,6 +84,12 @@ vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
 }));
 
+// Hook channels (#1603): the detector reads ~/.claude, so every test sets
+// what it reports instead of inheriting this machine's plugins.
+vi.mock("../lib/hook-channels.js", () => ({
+  detectHookChannels: vi.fn(),
+}));
+
 // Mock stack-config
 vi.mock("../lib/stack-config.js", () => ({
   saveStackConfig: vi.fn(),
@@ -240,6 +246,7 @@ import {
 } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest, getManifest } from "../lib/manifest.js";
+import { detectHookChannels } from "../lib/hook-channels.js";
 import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings } from "../lib/settings.js";
 import { commandExists, isGhAuthenticated } from "../lib/system.js";
@@ -274,6 +281,7 @@ const mockInquirerPrompt = vi.mocked(inquirer.prompt);
 const mockDetectMcpClients = vi.mocked(detectMcpClients);
 const mockAddSequantToMcpConfig = vi.mocked(addSequantToMcpConfig);
 const mockCreateProjectMcpJson = vi.mocked(createProjectMcpJson);
+const mockDetectHookChannels = vi.mocked(detectHookChannels);
 
 describe("init command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -292,6 +300,7 @@ describe("init command", () => {
       directoryCollisions: [],
     });
     mockCreateManifest.mockResolvedValue(undefined);
+    mockDetectHookChannels.mockReturnValue({ repo: null, plugins: [] });
     mockSaveConfig.mockResolvedValue(undefined);
     // createDefaultSettings now reports what it did (#1071) — the default
     // here is the fresh-repo outcome the rest of this suite assumes.
@@ -399,6 +408,80 @@ describe("init command", () => {
     });
   });
 
+  describe("1603 AC-2: plugin channel", () => {
+    const plugin = {
+      id: "sequant@sequant",
+      installPath: "/plugins/sequant/2.20.0",
+      hooksJson: "/plugins/sequant/2.20.0/hooks/hooks.json",
+    };
+
+    beforeEach(() => {
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
+    });
+
+    function printed(): string {
+      return consoleLogSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    }
+
+    it("skips the hooks and settings.json and records hooks: plugin when a plugin ships the hooks", async () => {
+      mockDetectHookChannels.mockReturnValue({ repo: null, plugins: [plugin] });
+
+      await initCommand({ yes: true, stack: "nextjs" });
+
+      expect(mockEnsureDir).not.toHaveBeenCalledWith(".claude/hooks");
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        expect.anything(),
+        expect.objectContaining({ skipHooks: true }),
+      );
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {
+        hooks: "plugin",
+      });
+      const lines = printed()
+        .split("\n")
+        .filter((l) => l.includes("plugin sequant@sequant ships them"));
+      expect(lines).toHaveLength(1);
+    });
+
+    it("names both active channels when .claude/hooks already exists and a plugin ships the hooks", async () => {
+      mockDetectHookChannels.mockReturnValue({ repo: null, plugins: [plugin] });
+      mockFileExists.mockImplementation(async (p) => p === ".claude/hooks");
+
+      await initCommand({ yes: true, stack: "nextjs" });
+
+      expect(mockEnsureDir).not.toHaveBeenCalledWith(".claude/hooks");
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {
+        hooks: "plugin",
+      });
+      const notice = printed()
+        .split("\n")
+        .filter((l) => l.includes("both channels are active"));
+      expect(notice).toHaveLength(1);
+      expect(notice[0]).toContain("sequant doctor");
+    });
+
+    it("writes the repo hooks when no enabled plugin ships them", async () => {
+      await initCommand({ yes: true, stack: "nextjs" });
+
+      expect(mockEnsureDir).toHaveBeenCalledWith(".claude/hooks");
+      expect(mockCopyTemplates.mock.calls[0][2]).not.toHaveProperty(
+        "skipHooks",
+      );
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {});
+      expect(printed()).not.toContain("ships them");
+    });
+
+    it("keeps the repo hooks for codex, whose wrapper runs .claude/hooks/pre-tool.sh", async () => {
+      mockDetectHookChannels.mockReturnValue({ repo: null, plugins: [plugin] });
+
+      await initCommand({ yes: true, stack: "nextjs", agent: "codex" });
+
+      expect(mockEnsureDir).toHaveBeenCalledWith(".claude/hooks");
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {});
+    });
+  });
+
   describe("initialization flow", () => {
     it("completes successfully with --yes and --stack flags", async () => {
       mockCommandExists.mockReturnValue(true);
@@ -431,7 +514,7 @@ describe("init command", () => {
           additionalStacks: [],
         },
       );
-      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm", {});
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Sequant initialized successfully");

@@ -95,6 +95,11 @@ import {
   worktreeResolveCommand,
   worktreeVerifyCommand,
 } from "../src/commands/worktree.js";
+import {
+  mutationBeginCommand,
+  mutationCheckCommand,
+  mutationRenderCommand,
+} from "../src/commands/mutation.js";
 import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
 import { abortCommand } from "../src/commands/abort.js";
@@ -919,6 +924,58 @@ worktreeCmd
   .option("--issue <issue>", "Also require the branch to belong to this issue")
   .option("--json", "Output as JSON")
   .action(worktreeVerifyCommand);
+
+// Mutation verification for gate tests (#1604): the only producer of
+// SEQUANT_MUTATION markers. See docs/reference/mutation-verification.md.
+const mutationCmd = program
+  .command("mutation")
+  .description(
+    "Mutation-verify a gate test: begin on a clean tree, check one test, render the markers",
+  );
+
+mutationCmd
+  .command("begin")
+  .description(
+    "Refuse a dirty tree (exit 2); record HEAD in .sequant/mutations/<issue>.json",
+  )
+  .requiredOption(
+    "--issue <issue>",
+    "Issue number",
+    parseWholeNumber("--issue", { min: 1 }),
+  )
+  .action(mutationBeginCommand);
+
+mutationCmd
+  .command("check")
+  .description(
+    "Run one test under your mutation and after a restore by patch; record it only if it failed, then passed",
+  )
+  .requiredOption(
+    "--issue <issue>",
+    "Issue number",
+    parseWholeNumber("--issue", { min: 1 }),
+  )
+  .requiredOption("--ac <id>", "Acceptance criterion the test gates, e.g. AC-3")
+  .requiredOption(
+    "--test <file>",
+    "Test file, relative to the current directory",
+  )
+  .requiredOption(
+    "--name <name>",
+    'Test name, "<describe> > <case>"; must match exactly one test',
+  )
+  .requiredOption("--mutation <text>", "What the mutation removed or changed")
+  .action(mutationCheckCommand);
+
+mutationCmd
+  .command("render")
+  .description("Print the SEQUANT_MUTATION marker lines from the records")
+  .requiredOption(
+    "--issue <issue>",
+    "Issue number",
+    parseWholeNumber("--issue", { min: 1 }),
+  )
+  .action(mutationRenderCommand);
 
 // Skills-install pre-flight (#713, #988): warn-only. A stale install
 // (version-marker mismatch) or in-place content drift prints a warning that

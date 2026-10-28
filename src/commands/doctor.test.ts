@@ -205,6 +205,7 @@ import {
   doctorCommand,
   checkClosedIssues,
   checkShadowingLocalSequant,
+  checkHookChannels,
   isVersionBelow,
   UPSTREAM_SUBAGENT_WARNING,
   findOpencodeShim,
@@ -328,6 +329,12 @@ describe("doctor command", () => {
     mockReaddir.mockResolvedValue([] as never);
     mockIsSymlink.mockResolvedValue(false);
     mockGetSymlinkTarget.mockResolvedValue(null);
+    // Hook channels (#1603) read the real ~/.claude unless pointed elsewhere;
+    // a missing config dir means no plugin channel, whatever this machine has.
+    vi.stubEnv(
+      "CLAUDE_CONFIG_DIR",
+      join(tmpdir(), "sequant-doctor-test-no-claude-config"),
+    );
     // Default: no closed issues (gh issue list answers [])
     gh.fixtures = [closedIssues([])];
     // Default git answers for a set-up repo (#1257): a GitHub remote, and any
@@ -344,6 +351,7 @@ describe("doctor command", () => {
   afterEach(() => {
     consoleLogSpy.mockRestore();
     processExitSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   // #1257: outside a git repo nothing in sequant works, but doctor used to
@@ -1507,6 +1515,172 @@ describe("doctor command", () => {
         .find((line) => line.includes("user-owned (preserved by sync)"));
       expect(userOwnedLine).toBeDefined();
       expect(userOwnedLine).not.toContain("--force");
+    });
+  });
+
+  describe("1603 AC-1: Hook channels", () => {
+    let cwd: string;
+    let home: string;
+    let pluginDir: string;
+
+    const PLUGIN_ID = "sequant@sequant";
+    const hooksConfig = (command: string) => ({
+      hooks: {
+        PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command }] }],
+      },
+    });
+
+    beforeEach(() => {
+      cwd = mkdtempSync(join(tmpdir(), "sequant-channels-cwd-"));
+      home = mkdtempSync(join(tmpdir(), "sequant-channels-home-"));
+      pluginDir = mkdtempSync(join(tmpdir(), "sequant-channels-plugin-"));
+      mkdirSync(join(cwd, ".claude"), { recursive: true });
+      mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
+    });
+
+    afterEach(() => {
+      for (const dir of [cwd, home, pluginDir]) {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    function writeJson(path: string, value: unknown): void {
+      writeFileSync(path, JSON.stringify(value));
+    }
+
+    function registerRepoHooks(): void {
+      writeJson(
+        join(cwd, ".claude", "settings.json"),
+        hooksConfig('"$CLAUDE_PROJECT_DIR"/.claude/hooks/pre-tool.sh'),
+      );
+    }
+
+    function enablePlugin(
+      entries: unknown = [{ scope: "user", installPath: pluginDir }],
+    ): void {
+      writeJson(join(home, ".claude", "settings.json"), {
+        enabledPlugins: { [PLUGIN_ID]: true },
+      });
+      writeJson(join(home, ".claude", "plugins", "installed_plugins.json"), {
+        version: 2,
+        plugins: { [PLUGIN_ID]: entries },
+      });
+    }
+
+    function shipPluginHooks(): void {
+      mkdirSync(join(pluginDir, "hooks"), { recursive: true });
+      writeJson(
+        join(pluginDir, "hooks", "hooks.json"),
+        hooksConfig('"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool.sh"'),
+      );
+    }
+
+    it("fails when repo hooks and a hook-shipping plugin are both active, naming both paths", () => {
+      registerRepoHooks();
+      enablePlugin();
+      shipPluginHooks();
+
+      const check = checkHookChannels(cwd, home);
+
+      expect(check.name).toBe("Hook channels");
+      expect(check.status).toBe("fail");
+      expect(check.message).toContain(join(cwd, ".claude", "settings.json"));
+      expect(check.message).toContain(join(pluginDir, "hooks", "hooks.json"));
+      expect(check.message).toContain(`"${PLUGIN_ID}": false`);
+      expect(check.message).toContain('"hooks": "plugin"');
+    });
+
+    it("passes with repo hooks only", () => {
+      registerRepoHooks();
+
+      const check = checkHookChannels(cwd, home);
+
+      expect(check.status).toBe("pass");
+      expect(check.message).toContain("repo");
+    });
+
+    it("passes with the plugin channel only", () => {
+      enablePlugin();
+      shipPluginHooks();
+
+      const check = checkHookChannels(cwd, home);
+
+      expect(check.status).toBe("pass");
+      expect(check.message).toContain(PLUGIN_ID);
+    });
+
+    it("passes when the enabled plugin's install path has no hooks/hooks.json", () => {
+      registerRepoHooks();
+      enablePlugin();
+
+      const check = checkHookChannels(cwd, home);
+
+      expect(check.status).toBe("pass");
+      expect(check.message).toContain("repo");
+    });
+
+    it("passes when .claude/settings.local.json disables a plugin the user settings enable", () => {
+      registerRepoHooks();
+      enablePlugin();
+      shipPluginHooks();
+      writeJson(join(cwd, ".claude", "settings.local.json"), {
+        enabledPlugins: { [PLUGIN_ID]: false },
+      });
+
+      expect(checkHookChannels(cwd, home).status).toBe("pass");
+    });
+
+    it("resolves a local-scope install for this checkout only", () => {
+      registerRepoHooks();
+      shipPluginHooks();
+      enablePlugin([
+        { scope: "local", projectPath: home, installPath: pluginDir },
+      ]);
+      expect(checkHookChannels(cwd, home).status).toBe("pass");
+
+      enablePlugin([
+        { scope: "local", projectPath: cwd, installPath: pluginDir },
+      ]);
+      expect(checkHookChannels(cwd, home).status).toBe("fail");
+    });
+
+    it("passes without throwing when the plugin registry is malformed", () => {
+      registerRepoHooks();
+      enablePlugin();
+      shipPluginHooks();
+      writeFileSync(
+        join(home, ".claude", "plugins", "installed_plugins.json"),
+        "{ not json",
+      );
+
+      expect(checkHookChannels(cwd, home).status).toBe("pass");
+    });
+
+    it("doctor reports Hooks and Settings as pass on a plugin-channel install with neither present", async () => {
+      mockGetManifest.mockResolvedValue({
+        version: "0.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01T00:00:00.000Z",
+        files: {},
+        hooks: "plugin",
+      });
+      mockFileExists.mockImplementation(
+        async (p: string) =>
+          p !== ".claude/hooks" &&
+          p !== ".claude/settings.json" &&
+          p !== ".claude/hooks/pre-tool.sh",
+      );
+
+      await doctorCommand({ skipIssueCheck: true });
+
+      const lines = consoleLogSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes("Hooks come from the plugin"))).toBe(
+        true,
+      );
+      expect(
+        lines.some((l) => l.includes("the plugin registers the hooks")),
+      ).toBe(true);
+      expect(lines.some((l) => l.includes("No hooks directory"))).toBe(false);
     });
   });
 

@@ -15,6 +15,7 @@ import {
   getPackageVersion,
   type InstallScope,
 } from "../lib/manifest.js";
+import { withoutHookChannel } from "../lib/hook-channels.js";
 import {
   copyTemplates,
   computeTemplateChanges,
@@ -270,9 +271,12 @@ async function computeContentDrift(
     if (!manifest) return 0;
     const config = await getConfig();
     const tokens = config?.tokens || {};
-    const changes = filterToInstallScope(
-      await computeTemplateChanges(manifest.stack, tokens),
-      getInstallScope(manifest),
+    const changes = withoutHookChannel(
+      filterToInstallScope(
+        await computeTemplateChanges(manifest.stack, tokens),
+        getInstallScope(manifest),
+      ),
+      manifest,
     );
     const contentDrift = changes.filter(
       (c) => c.status === "new" || c.status === "modified",
@@ -470,7 +474,10 @@ interface SyncStepContext {
  */
 async function reportVersionCurrentDrift(ctx: SyncStepContext): Promise<void> {
   const { manifest, tokens, skillsOnly, quiet, installScope } = ctx;
-  const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+  const allChanges = withoutHookChannel(
+    await computeTemplateChanges(manifest.stack, tokens),
+    manifest,
+  );
   const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
   const drifted = changes.filter(
     (c) => c.status === "new" || c.status === "modified",
@@ -530,7 +537,10 @@ async function reportVersionCurrentDrift(ctx: SyncStepContext): Promise<void> {
 /** `--dry-run`: report exactly what the apply would write, without mutating. */
 async function previewDryRun(ctx: SyncStepContext): Promise<void> {
   const { manifest, tokens, skillsOnly, force, quiet, agentsMdEnabled } = ctx;
-  const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+  const allChanges = withoutHookChannel(
+    await computeTemplateChanges(manifest.stack, tokens),
+    manifest,
+  );
   const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
   const newFiles = changes.filter((c) => c.status === "new");
   const modifiedFiles = changes.filter((c) => c.status === "modified");
@@ -794,6 +804,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     force: true, // Always overwrite the managed skills/agents/hooks trees
     overwriteCustomizable: force, // Clobber user-owned files only on explicit --force
     ...(skillsOnly && { only: "skills" as const }), // #1209 AC-3 / #1485: restrict the write-set to .claude/skills/**
+    ...(manifest.hooks === "plugin" && { skipHooks: true }), // #1603: a plugin ships the hooks
   };
 
   // #1090 AC-5: resolve the ownership decision for every file *before* the
@@ -811,7 +822,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // decision has to be visible *before* the write, not after it (#1030 I-2).
   let applyChanges: TemplateChange[] = [];
   if (!quiet) {
-    applyChanges = await computeTemplateChanges(manifest.stack, tokens);
+    applyChanges = withoutHookChannel(
+      await computeTemplateChanges(manifest.stack, tokens),
+      manifest,
+    );
     if (skillsOnly) {
       applyChanges = filterToSkillsOnly(applyChanges);
     }

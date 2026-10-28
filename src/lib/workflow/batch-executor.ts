@@ -115,7 +115,14 @@ import { isCompletedIssueStatus } from "./completed-status.js";
 import { bracketedConsoleLog } from "./notice.js";
 import { noteSuppressed } from "./suppressed.js";
 import { deliverReadFirstComment } from "./review-residue.post.js";
-import { parseMutationMarkersFromExecOutput } from "./mutation-marker.js";
+import {
+  parseMutationMarkersFromExecOutput,
+  type MutationMarker,
+} from "./mutation-marker.js";
+import {
+  mutationMarkersFromState,
+  readMutationState,
+} from "./mutation-state.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -1349,6 +1356,28 @@ function phaseLogStatus(
       : "failure";
 }
 
+/**
+ * #1604: the markers the worktree's mutation receipt certifies, one per AC.
+ * A receipt that cannot be read adds none and says so: the PR body then
+ * carries only what exec wrote, which QA's §6i still checks.
+ */
+function receiptMarkers(
+  env: IssueRunEnv,
+  worktreePath: string,
+): MutationMarker[] {
+  try {
+    return mutationMarkersFromState(
+      readMutationState(worktreePath, env.ctx.issueNumber),
+    );
+  } catch (err) {
+    noteSuppressed("state", err, "batch-executor:receiptMarkers");
+    env.warn(
+      `    !  Mutation receipt for #${env.ctx.issueNumber} unreadable: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return [];
+  }
+}
+
 // #1247: the one call site of `createPR` (the only PR producer under the
 // orchestrator). It runs after each successful exec pass, so a PR exists
 // while qa reads the PR body, and again after QA, where `createPR`'s update
@@ -1438,7 +1467,13 @@ async function openOrUpdatePR(
   // nothing" and "exec wrote a summary the extractor missed" read
   // differently. `warn`, not `log`: `log` is a no-op in parallel mode
   // (every MCP run), which hid this warning.
-  if (!composeExecSummary(execOutput) && !execSummary?.trim()) {
+  // #1604: the receipt's markers reach the body without exec writing them.
+  const mutationMarkers = receiptMarkers(env, prPath);
+  if (
+    !composeExecSummary(execOutput) &&
+    !execSummary?.trim() &&
+    mutationMarkers.length === 0
+  ) {
     env.warn(
       `    !  PR body for #${issueNumber}: exec output (${execOutput?.length ?? 0} chars) has no Summary or mutation markers; using placeholder`,
     );
@@ -1465,6 +1500,7 @@ async function openOrUpdatePR(
       execSummary,
       followups: after.followups,
       qaNotRun,
+      mutationMarkers,
     },
   );
   if (prResult.success && prResult.prNumber && prResult.prUrl && stateManager) {
@@ -3099,9 +3135,12 @@ async function postReadFirstForPR(
     provider,
   );
   if (!prNumber) return;
-  const mutationMarkers = state.phaseResults
-    .filter((p) => p.phase === "exec" && p.output)
-    .flatMap((p) => parseMutationMarkersFromExecOutput(p.output ?? ""));
+  const mutationMarkers = [
+    ...receiptMarkers(env, worktreePath),
+    ...state.phaseResults
+      .filter((p) => p.phase === "exec" && p.output)
+      .flatMap((p) => parseMutationMarkersFromExecOutput(p.output ?? "")),
+  ];
   await deliverReadFirstComment({
     provider,
     worktreePath,

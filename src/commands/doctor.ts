@@ -18,6 +18,7 @@ import {
 } from "../lib/fs.js";
 import { checkSkillsInstalled } from "../lib/skills-check.js";
 import { getInstallScope, getManifest } from "../lib/manifest.js";
+import { detectHookChannels } from "../lib/hook-channels.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -237,6 +238,39 @@ export async function checkShadowingLocalSequant(
   }
 
   return results;
+}
+
+/**
+ * One hook channel per checkout (#1603). Claude Code runs both the repo's
+ * `.claude/settings.json` hooks and an enabled plugin's `hooks/hooks.json`,
+ * so with both present every tool call runs the guard twice. `fail` names
+ * both sources and both fixes; `pass` otherwise.
+ */
+export function checkHookChannels(
+  cwd: string = process.cwd(),
+  home?: string,
+): Check {
+  const { repo, plugins } = detectHookChannels({ cwd, home });
+  const plugin = plugins[0];
+  if (repo && plugin) {
+    return {
+      name: "Hook channels",
+      status: "fail",
+      message:
+        `Hooks run twice: ${repo} registers pre-tool.sh and plugin ${plugin.id} ships ${plugin.hooksJson}. ` +
+        `Keep one: disable the plugin here ("${plugin.id}": false in .claude/settings.local.json), ` +
+        `or drop the repo copy (delete .claude/hooks/ and the hooks entries in .claude/settings.json, then add "hooks": "plugin" to .sequant-manifest.json)`,
+    };
+  }
+  return {
+    name: "Hook channels",
+    status: "pass",
+    message: plugin
+      ? `One channel: plugin ${plugin.id}`
+      : repo
+        ? "One channel: repo (.claude/settings.json)"
+        : "No sequant hooks registered",
+  };
 }
 
 // TODO: remove when anthropics/claude-code#43869 closes
@@ -589,6 +623,49 @@ export function formatSkillsDriftMessage(
   return `${status.contentDrift} file(s) differ from bundled content (version ${status.packageVersion}) - run: ${formatSkillsDriftRemedy(status.installScope, cli)}`;
 }
 
+/**
+ * Check 4: `.claude/hooks`. With `"hooks": "plugin"` in the manifest the
+ * directory is absent by design, so its absence passes (#1603).
+ */
+async function checkHooksDir(pluginHooks: boolean): Promise<Check> {
+  if (await fileExists(".claude/hooks")) {
+    return { name: "Hooks", status: "pass", message: "Hooks directory exists" };
+  }
+  return pluginHooks
+    ? {
+        name: "Hooks",
+        status: "pass",
+        message: 'Hooks come from the plugin (manifest: "hooks": "plugin")',
+      }
+    : {
+        name: "Hooks",
+        status: "warn",
+        message: "No hooks directory (optional but recommended)",
+      };
+}
+
+/** Check 6: `.claude/settings.json`, absent by design on a plugin-channel install (#1603). */
+async function checkSettingsFile(pluginHooks: boolean): Promise<Check> {
+  if (await fileExists(".claude/settings.json")) {
+    return {
+      name: "Settings",
+      status: "pass",
+      message: "Settings file exists",
+    };
+  }
+  return pluginHooks
+    ? {
+        name: "Settings",
+        status: "pass",
+        message: "No settings.json needed - the plugin registers the hooks",
+      }
+    : {
+        name: "Settings",
+        status: "warn",
+        message: "No settings.json (hooks won't be triggered)",
+      };
+}
+
 /** Checks 0-6: version, manifest, skills, hooks, scripts/dev and settings. */
 async function collectInstallChecks(checks: Check[]): Promise<void> {
   // Check 0: Version freshness
@@ -757,21 +834,9 @@ async function collectInstallChecks(checks: Check[]): Promise<void> {
     });
   }
 
-  // Check 4: Hooks directory
-  const hooksExist = await fileExists(".claude/hooks");
-  if (hooksExist) {
-    checks.push({
-      name: "Hooks",
-      status: "pass",
-      message: "Hooks directory exists",
-    });
-  } else {
-    checks.push({
-      name: "Hooks",
-      status: "warn",
-      message: "No hooks directory (optional but recommended)",
-    });
-  }
+  // Check 4: Hooks directory. A plugin-channel install has none by design (#1603).
+  const pluginHooks = manifest?.hooks === "plugin";
+  checks.push(await checkHooksDir(pluginHooks));
 
   // Check 5: Hook scripts executable
   const preToolHook = ".claude/hooks/pre-tool.sh";
@@ -792,6 +857,9 @@ async function collectInstallChecks(checks: Check[]): Promise<void> {
     }
   }
 
+  // Check 5.1: repo hooks and a hook-shipping plugin both active (#1603).
+  checks.push(checkHookChannels());
+
   // Check 5.5: scripts/dev symlink health (#990) - a link whose target is
   // missing or resolves outside both node_modules/sequant and the project
   // tree only worked on the machine that ran `sync`.
@@ -805,20 +873,7 @@ async function collectInstallChecks(checks: Check[]): Promise<void> {
   }
 
   // Check 6: Settings.json
-  const settingsExist = await fileExists(".claude/settings.json");
-  if (settingsExist) {
-    checks.push({
-      name: "Settings",
-      status: "pass",
-      message: "Settings file exists",
-    });
-  } else {
-    checks.push({
-      name: "Settings",
-      status: "warn",
-      message: "No settings.json (hooks won't be triggered)",
-    });
-  }
+  checks.push(await checkSettingsFile(pluginHooks));
 }
 
 /** Checks 7-10: git, GitHub CLI and Claude Code CLI. */

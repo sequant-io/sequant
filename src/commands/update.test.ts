@@ -426,3 +426,84 @@ describe("update — protected set characterization (#1090 AC-7)", () => {
     expect(process.exitCode).toBe(1);
   });
 });
+
+describe("update on a manifest with hooks: plugin (#1603 AC-3)", () => {
+  let prevExitCode: typeof process.exitCode;
+
+  const HOOK_SCRIPT = {
+    path: ".claude/hooks/pre-tool.sh",
+    templatePath: "templates/hooks/pre-tool.sh",
+    status: "new" as const,
+    rendered: "#!/bin/bash\n",
+  };
+  const HOOK_SETTINGS = {
+    path: ".claude/settings.json",
+    templatePath: "templates/settings.json",
+    status: "new" as const,
+    rendered: "{}",
+  };
+
+  beforeEach(() => {
+    prevExitCode = process.exitCode;
+    process.exitCode = undefined;
+    mockGetPackageVersion.mockReturnValue("2.6.1");
+    mockGetConfig.mockResolvedValue(CONFIG);
+    mockDecideOpencodeShimSync.mockResolvedValue("none");
+    mockComputeTemplateChanges.mockResolvedValue([
+      HOOK_SCRIPT,
+      HOOK_SETTINGS,
+      PENDING_NEW,
+    ]);
+  });
+
+  afterEach(() => {
+    process.exitCode = prevExitCode;
+    vi.restoreAllMocks();
+  });
+
+  function newFilesSection(output: string): string {
+    return output.slice(output.indexOf("New files:"));
+  }
+
+  it("hooks: plugin leaves the hook scripts and settings.json out of the files it would add", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockGetManifest.mockResolvedValue({
+      ...INITIALIZED_MANIFEST,
+      hooks: "plugin",
+    });
+
+    await updateCommand({ dryRun: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("New files: 1");
+    expect(newFilesSection(output)).toContain(PENDING_NEW.path);
+    expect(output).not.toContain(HOOK_SCRIPT.path);
+    expect(output).not.toContain(HOOK_SETTINGS.path);
+  });
+
+  it("hooks: plugin with only hook files pending reports nothing to do", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockGetManifest.mockResolvedValue({
+      ...INITIALIZED_MANIFEST,
+      hooks: "plugin",
+    });
+    mockComputeTemplateChanges.mockResolvedValue([HOOK_SCRIPT, HOOK_SETTINGS]);
+
+    await updateCommand({ dryRun: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("Everything is up to date!");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("without hooks: plugin, the same hook files are added", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockGetManifest.mockResolvedValue(INITIALIZED_MANIFEST);
+
+    await updateCommand({ dryRun: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(newFilesSection(output)).toContain(HOOK_SCRIPT.path);
+    expect(newFilesSection(output)).toContain(HOOK_SETTINGS.path);
+  });
+});

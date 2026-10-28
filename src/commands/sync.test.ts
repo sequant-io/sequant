@@ -1698,4 +1698,86 @@ describe("sync command", () => {
       logSpy.mockRestore();
     });
   });
+
+  // #1603 derived AC-6: a plugin-channel install keeps its hooks absent through
+  // `sync` too — no write, and the absent files are not reported as drift.
+  describe("hooks: plugin", () => {
+    const PLUGIN_MANIFEST = {
+      version: "1.1.0",
+      stack: "nextjs",
+      installedAt: "2024-01-01",
+      files: {},
+      hooks: "plugin" as const,
+    };
+    const HOOK_FILES = [
+      {
+        path: ".claude/hooks/pre-tool.sh",
+        templatePath: "templates/hooks/pre-tool.sh",
+        status: "new" as const,
+        rendered: "#!/bin/bash\n",
+      },
+      {
+        path: ".claude/settings.json",
+        templatePath: "templates/settings.json",
+        status: "new" as const,
+        rendered: "{}",
+      },
+    ];
+
+    beforeEach(() => {
+      mockFileExists.mockResolvedValue(true);
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue(HOOK_FILES);
+    });
+
+    it("hooks: plugin passes skipHooks to copyTemplates on a version mismatch", async () => {
+      mockGetManifest.mockResolvedValue(PLUGIN_MANIFEST);
+      mockReadFile.mockResolvedValue("1.0.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockCopyTemplates.mockResolvedValue({
+        scriptsSymlinked: false,
+        preservedCustomizable: [],
+        directoryCollisions: [],
+      });
+
+      await syncCommand({ quiet: true });
+
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        {},
+        expect.objectContaining({ skipHooks: true }),
+      );
+    });
+
+    it("hooks: plugin reports absent hook files as no drift on the version-current path", async () => {
+      mockGetManifest.mockResolvedValue(PLUGIN_MANIFEST);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      const logSpy = vi.spyOn(console, "log");
+
+      await syncCommand();
+
+      expect(mockCopyTemplates).not.toHaveBeenCalled();
+      expect(
+        logSpy.mock.calls.some((c) =>
+          String(c[0]).includes("already up to date"),
+        ),
+      ).toBe(true);
+      expect(process.exitCode ?? 0).toBe(0);
+    });
+
+    it("hooks: plugin keeps absent hook files out of the content-drift count", async () => {
+      mockGetManifest.mockResolvedValue(PLUGIN_MANIFEST);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+
+      expect((await areSkillsOutdated()).contentDrift ?? 0).toBe(0);
+
+      mockGetManifest.mockResolvedValue({
+        ...PLUGIN_MANIFEST,
+        hooks: undefined,
+      });
+      expect((await areSkillsOutdated()).contentDrift).toBe(2);
+    });
+  });
 });

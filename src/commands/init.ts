@@ -25,6 +25,7 @@ import {
 } from "../lib/templates.js";
 import { parse as parseYaml } from "yaml";
 import { createManifest, getManifest } from "../lib/manifest.js";
+import { detectHookChannels } from "../lib/hook-channels.js";
 import { buildOpencodeMcpConfig } from "../lib/mcp-config.js";
 import { saveConfig } from "../lib/config.js";
 import {
@@ -1085,14 +1086,58 @@ async function checkPrerequisitesAndSetup(
   return { warnings, suggestions, wizardRemainingIssues };
 }
 
-/** Show what init will create. */
-function printPlannedFiles(agentsMd: boolean): void {
+/**
+ * The enabled plugin that ships sequant's hooks for this checkout, or `null`
+ * when `init` should write the repo hook channel (#1603). opencode and codex
+ * run the repo's `.claude/hooks/pre-tool.sh` through their own wrappers, so
+ * they always get the repo channel.
+ */
+function pluginHookChannel(agent: string | undefined): string | null {
+  if (agent === "opencode" || agent === "codex") return null;
+  return detectHookChannels().plugins[0]?.id ?? null;
+}
+
+/**
+ * A re-init on a checkout that already carries the repo hooks while a plugin
+ * ships them (#1603): init still skips the hooks group, so say that both
+ * channels are now active and what `doctor` will report.
+ */
+async function warnBothHookChannels(hookPlugin: string | null): Promise<void> {
+  if (!hookPlugin || !(await fileExists(".claude/hooks"))) return;
+  console.log(
+    chalk.yellow(
+      `Hooks: .claude/hooks already exists while plugin ${hookPlugin} ships them - both channels are active. ` +
+        "Remove .claude/hooks and the hooks entries in .claude/settings.json, or `sequant doctor` fails its Hook channels check.",
+    ),
+  );
+}
+
+/**
+ * Show what init will create. `hookPlugin` is the plugin that ships the hooks
+ * (#1603): the tree leaves them out and one line says why.
+ */
+function printPlannedFiles(agentsMd: boolean, hookPlugin: string | null): void {
+  const skipHooks = hookPlugin !== null;
+  if (skipHooks) {
+    console.log(
+      chalk.blue(
+        `\nHooks: plugin ${hookPlugin} ships them - skipping .claude/hooks and .claude/settings.json`,
+      ),
+    );
+  }
   console.log(chalk.gray("\nWill create:"));
   console.log(chalk.gray("  .claude/"));
   console.log(chalk.gray("  ├── skills/         (workflow skills)"));
-  console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
-  console.log(chalk.gray("  ├── memory/         (constitution & context)"));
-  console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
+  if (!skipHooks) {
+    console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
+  }
+  const memoryBranch = skipHooks ? "└──" : "├──";
+  console.log(
+    chalk.gray(`  ${memoryBranch} memory/         (constitution & context)`),
+  );
+  if (!skipHooks) {
+    console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
+  }
   console.log(chalk.gray("  .sequant/"));
   console.log(chalk.gray("  ├── settings.json   (run preferences)"));
   console.log(chalk.gray("  └── logs/           (workflow run logs)"));
@@ -1325,7 +1370,12 @@ export async function initCommand(options: InitOptions): Promise<void> {
     devUrl = inputDevUrl;
   }
 
-  printPlannedFiles(options.agentsMd !== false);
+  // One hook channel per checkout (#1603): a plugin that ships the hooks
+  // makes the repo copy a second, duplicate guard on every tool call.
+  const hookPlugin = pluginHookChannel(options.agent);
+  await warnBothHookChannels(hookPlugin);
+
+  printPlannedFiles(options.agentsMd !== false, hookPlugin);
 
   if (!skipPrompts) {
     const { confirm } = await inquirer.prompt([
@@ -1346,7 +1396,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const dirSpinner = ui.spinner("Creating directories...");
   dirSpinner.start();
   await ensureDir(".claude/skills");
-  await ensureDir(".claude/hooks");
+  if (!hookPlugin) await ensureDir(".claude/hooks");
   await ensureDir(".claude/memory");
   await ensureDir(".claude/.sequant");
   await ensureDir(".sequant/logs");
@@ -1407,6 +1457,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       noSymlinks: options.noSymlinks,
       force: options.force,
       additionalStacks,
+      ...(hookPlugin && { skipHooks: true }),
     });
 
   templatesSpinner.succeed("Copied templates");
@@ -1440,7 +1491,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Create manifest
   const manifestSpinner = ui.spinner("Creating manifest...");
   manifestSpinner.start();
-  await createManifest(stack!, packageManager ?? undefined);
+  await createManifest(
+    stack!,
+    packageManager ?? undefined,
+    hookPlugin ? { hooks: "plugin" } : {},
+  );
   manifestSpinner.succeed("Created manifest");
 
   await writeAgentsMdForInit(options, stack!);
