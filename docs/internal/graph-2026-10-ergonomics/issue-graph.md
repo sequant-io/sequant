@@ -1,6 +1,6 @@
 # Issue graph: graph-2026-10-ergonomics
 
-**Status:** Planned 2026-10-26 from a session audit (`phase0-evidence.md`). Founding doc: `PROJECT-DISCUSSION.md` (cited as §N). Tracker: #1602. Issue bodies on GitHub are canonical; `issues/<N>.md` is the as-filed snapshot.
+**Status:** Planned 2026-10-26 from a session audit (`phase0-evidence.md`). W0 merged 2026-10-27: #1603 via PR #1618 (`ec15551b4`), #1604 via PR #1620 (`ba5510b53`); see `HANDOFF.md`. Founding doc: `PROJECT-DISCUSSION.md` (cited as §N). Tracker: #1602. Issue bodies on GitHub are canonical; `issues/<N>.md` is the as-filed snapshot.
 
 Four contracts, one owner each (§1). Every node but the last is CLI/TS only and lands under the plugin freeze (C-1); the last swaps skill prose for the calls the earlier nodes created.
 
@@ -37,7 +37,7 @@ graph TD
 
 | Wave | Nodes | Condition |
 |---|---|---|
-| W0 | #1602; then #1603 and #1604 in one `sequant run` (disjoint files) | docs PR merged |
+| W0 | #1602; then #1603 and #1604 in one `sequant run` (disjoint files) | **done 2026-10-27** (#1607, #1618, #1620) |
 | W0b | #1605 | #1521 merged (shared edit of `buildQaVerdictComment`) |
 | W1 | #1606 | W0 and W0b merged and the owner lifts the plugin freeze |
 

@@ -54,6 +54,8 @@ Three behaviours, one reference, one layout owner.
 
 Already in code: `cleanup-worktree.sh` deletes the remote branch only when the PR is `MERGED` and tolerates the branch being gone. The two incidents in memory were (a) a merge destroying a worktree with uncommitted edits (a human-timing problem the clean-tree discipline in §4 also addresses) and (b) `gh pr merge --delete-branch` run from inside a worktree. Neither is caused by GitHub's delete-on-merge. **Decision D-4.1:** no product change; the repo flips `delete_branch_on_merge` after one verifying PR and prunes the 149 merged branches. Repo-local issue, outside the graph label.
 
+- **D-4.2 Parallel nodes and ADR numbers (added at W0 close, 2026-10-27).** Two nodes run in one wave each minted `ADR-0022` (#1618 and #1620); git does not flag the filename collision, only the `docs/adr/README.md` row conflicts, and a "keep both" resolution ships a duplicate number silently. Rule: the ADR number is assigned at merge, not at authoring. A PR drafts its ADR as `NNNN-<slug>.md` with the next free number, and whichever PR in the wave lands second renumbers before merging (five places: file, title, README row, CHANGELOG line, any code comment). The runner checks `git diff --name-only origin/main...HEAD | grep adr/` across the wave's open PRs before the first merge.
+
 ## §7 Non-goals
 
 - Changing how phases wait under the orchestrator (#1032 stands).
@@ -64,6 +66,6 @@ Already in code: `cleanup-worktree.sh` deletes the remote branch only when the P
 
 ## §8 Open questions for the owner
 
-- **OQ-1** Should D-1.2 default to the plugin channel when both are available at `init` time, or ask? Proposed: skip hooks silently and print one line; `doctor` reports the choice.
-- **OQ-2** D-2.3 names the test by `-t <case>`; vitest's `-t` is a regex over the full title. Proposed: escape the name and require `npx vitest list <file> -t <name>` to print exactly one test, failing `check` otherwise. Filed with this as the decision; the owner may override on the tracker.
+- **OQ-1 — resolved by #1603 (PR #1618, merged `ec15551b4`).** `init` skips the hooks group and prints one line; on a re-init that already carries `.claude/hooks` it prints a second line naming both channels and the `doctor` check (QA follow-up, mutation-verified). No prompt.
+- **OQ-2 — resolved by #1604 (PR #1620).** `testNamePattern` escapes the name and anchors it; `check` runs `vitest list` first and refuses (exit 2) unless exactly one test matches, naming the matches when two do.
 - **OQ-3** D-3.1 visible part for spec: complexity line plus AC table, or AC table only? Proposed: both; the complexity line is one line.
