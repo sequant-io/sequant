@@ -6,6 +6,12 @@ import {
   latestMutationMarkerPerAc,
   classifyMutationMarker,
 } from "./mutation-marker.js";
+import {
+  recordToMarker,
+  renderMutationMarkersFromState,
+  type MutationRecord,
+  type MutationState,
+} from "./mutation-state.js";
 
 describe("mutation-marker", () => {
   describe("renderMutationMarker round-trip (#1305)", () => {
@@ -231,6 +237,60 @@ describe("mutation-marker", () => {
       const body = `<!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"m","failedTest":"f.test.ts > t"} -->`;
       const markers = parseMutationMarkers(body);
       expect(markers[0]).not.toHaveProperty("classification");
+    });
+  });
+
+  describe("round-trip from state (#1604)", () => {
+    const record = (over: Partial<MutationRecord>): MutationRecord => ({
+      ac: "AC-1",
+      test: "src/commands/mutation.test.ts",
+      name: "mutation begin > refuses a dirty tree",
+      mutation: "deleted the dirty-tree check",
+      mutatedExit: 1,
+      restoredExit: 0,
+      ranAt: "2026-10-26T12:00:00.000Z",
+      sha: "abc123",
+      ...over,
+    });
+    const state = (records: MutationRecord[]): MutationState => ({
+      issue: 1604,
+      sha: "abc123",
+      startedAt: "2026-10-26T11:00:00.000Z",
+      records,
+    });
+
+    it("parses back every record, including mutation text with braces, angle brackets and comment delimiters", () => {
+      const records = [
+        record({
+          ac: "AC-1",
+          mutation: "removed `if (dirty) { return 2; }` > the guard",
+        }),
+        record({
+          ac: "AC-2",
+          mutation: "emptied {}; then --> and <!-- in text",
+          name: "d > c}",
+        }),
+      ];
+
+      const body = renderMutationMarkersFromState(state(records)).join("\n");
+
+      expect(parseMutationMarkers(body)).toEqual(records.map(recordToMarker));
+      expect(parseMutationMarkers(body)[0].failedTest).toBe(
+        "src/commands/mutation.test.ts > mutation begin > refuses a dirty tree",
+      );
+    });
+
+    it("renders one marker per AC, the latest record winning, and nothing for no state", () => {
+      const lines = renderMutationMarkersFromState(
+        state([
+          record({ ac: "AC-3", mutation: "first" }),
+          record({ ac: "AC-3", mutation: "second > }" }),
+        ]),
+      );
+
+      expect(lines).toHaveLength(1);
+      expect(parseMutationMarkers(lines[0])[0].mutation).toBe("second > }");
+      expect(renderMutationMarkersFromState(undefined)).toEqual([]);
     });
   });
 });

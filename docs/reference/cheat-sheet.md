@@ -114,6 +114,7 @@ sequant doctor              # Verify installation health
 | `sequant resume` | Re-enter runs halted on a rate-limit window (see [halt-and-resume](halt-and-resume.md)) |
 | `sequant merge <issues...>` | Post-QA merge checks; `--watch` waits for CI first (never merges) |
 | `sequant state [init\|rebuild\|clean]` | Manage workflow state |
+| `sequant mutation [begin\|check\|render]` | Mutation-verify a gate test and render its PR-body marker (see [mutation-verification](mutation-verification.md)) |
 | `sequant stats` | View local workflow analytics |
 | `sequant dashboard` | Launch real-time workflow dashboard |
 | `sequant conventions` | View, detect, or reset codebase conventions |
