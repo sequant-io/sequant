@@ -1247,6 +1247,24 @@ describe("templates", () => {
         await fileExists(join(cwdDir, ".claude", "skills", ".sequant-version")),
       ).toBe(true);
     });
+
+    it("skipHooks leaves out only .claude/hooks and .claude/settings.json (#1603 plugin channel)", async () => {
+      await copyTemplates("generic", undefined, {
+        skipHooks: true,
+        noSymlinks: true,
+      });
+
+      expect(await fileExists(join(cwdDir, ".claude", "hooks"))).toBe(false);
+      expect(await fileExists(join(cwdDir, ".claude", "settings.json"))).toBe(
+        false,
+      );
+      expect(
+        await fileExists(join(cwdDir, ".claude", "skills", "exec", "SKILL.md")),
+      ).toBe(true);
+      expect(await fileExists(join(cwdDir, ".claude", "agents"))).toBe(true);
+      expect(await fileExists(join(cwdDir, ".claude", "memory"))).toBe(true);
+      expect(await fileExists(join(cwdDir, "scripts", "dev"))).toBe(true);
+    });
   });
 
   describe("scripts/dev symlink target routing (#990)", () => {

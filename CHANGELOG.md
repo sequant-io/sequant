@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One hook channel per checkout (#1603).** `sequant doctor` has a `Hook channels` check. It fails when `.claude/settings.json` registers `pre-tool.sh` and an enabled plugin's `hooks/hooks.json` registers it as well, because Claude Code then runs every guard twice. The message names both files and both fixes. A plugin counts only when its install path, resolved through `~/.claude/plugins/installed_plugins.json`, has that `hooks/hooks.json`; the plugin name is not used. `sequant init` skips `.claude/hooks/` and `.claude/settings.json` when such a plugin is enabled, records `"hooks": "plugin"` in `.sequant-manifest.json` and prints one line. `update` and `sync` keep those files absent for that manifest and do not count them as drift. `--agent opencode` and `--agent codex` still get the repo hooks. See ADR-0022.
+
 - **A run's cost is on the terminal, in its log and in `sequant logs` (#1527).** The summary prints `cost $6.45 (SDK estimate) · 69,641 tokens` under the tally, and `sequant logs <run>` prints the same line. The run log gains an optional run-level `cost` (`{ usd, tokens }`; `version` stays 1). All three read one total, computed once before the log is written, which `.sequant/metrics.json` also records. A run with no record prints `cost unrecorded`, never `$0.00`.
 
 ### Changed

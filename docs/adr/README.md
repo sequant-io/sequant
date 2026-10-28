@@ -77,3 +77,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | [0019](0019-gh-runner-seam-and-fixture-replay.md) | Every `gh` call goes through one runner seam; tests replay captured output through it | Proposed |
 | [0020](0020-issue-run-stage-functions.md) | `runIssueWithLogging` runs as same-file stage functions that share an explicit env/state pair | Proposed |
 | [0021](0021-review-residue-read-first.md) | The "Read first" comment is posted once per PR after the post-QA PR update, deduped by reading the PR | Proposed |
+| [0022](0022-hook-channel-manifest-field.md) | The hook channel is a manifest field, `"hooks": "plugin"`, not an install group | Proposed |
