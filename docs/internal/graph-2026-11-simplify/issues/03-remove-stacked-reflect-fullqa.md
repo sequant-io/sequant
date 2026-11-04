@@ -8,6 +8,13 @@ chore(cli)!: remove `--stacked`, `--reflect` and `--full-qa` — flags, `run.ful
 
 D-1. In 453 recorded runs `--stacked`, `--reflect` and `--full-qa` were each used 0 times. `--reflect` is read once (`run-display.ts:297`) and calls `run-reflect.ts` (291 lines). `--stacked` implies `--chain` (`run.ts:67-74`) and threads a predecessor base through `worktree-manager.ts` and `batch-executor.ts:1406`. `--full-qa` exists as a flag, the `run.fullQa` setting (#982) and a `fullQa` parameter on MCP `sequant_run` (`src/mcp/tools/run.ts:655`). D-3 keeps `--chain`, so the stacked-only paths go and the chain paths stay. Founding doc §4, OQ-1.
 
+## Decisions
+
+| ID | Decision | Rejected |
+|---|---|---|
+| X-1 | `ExecutionConfig.fullQa` (#683) stays: `sequant ready` forces it on every gate pass (`settings.ts:383-389`). Only the opt-in surfaces go: `--full-qa`, `run.fullQa`, the MCP `fullQa` parameter | removing the config field (breaks `sequant ready`) |
+| X-2 | The MCP input schema strips unknown keys (no `.strict()` in `src/mcp/tools/run.ts`), so a caller still passing `fullQa` is ignored, not refused. OQ-1's grep is the check; no new warning surface | a strict schema for one removed key |
+
 ## Prior fixes / producers
 
 - Prior removals: #503–#508. `--stacked` landed in #605; `--full-qa` in #982.

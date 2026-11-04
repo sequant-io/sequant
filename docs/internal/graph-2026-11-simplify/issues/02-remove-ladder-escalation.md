@@ -37,7 +37,7 @@ D-1. In 453 recorded runs (2026-01-21 to 2026-10-28) `--model-ladder` and `--esc
 
 ## May touch
 
-`src/lib/workflow/model-ladder.ts`, `effort-escalation.ts` and their tests (deleted), `batch-executor.ts` and `batch-executor.model-ladder.test.ts`, `phase-executor.ts` and `phase-executor.{model-ladder,effort-escalation}.test.ts`, `config-resolver.ts`, `metrics-schema.ts` and `metrics-schema.effort-escalation.test.ts`, `state-schema.ts`, `run-log-schema.ts`, `log-writer.ts`, `metrics-writer.ts`, `types.ts`, `src/lib/settings.ts`, `src/commands/run.ts`, `src/commands/ready.ts`, `src/mcp/tools/run.ts`, `bin/cli.ts` (the four `.option(` blocks only), `__fixtures__/` (one legacy run log), the named docs pages, CHANGELOG.
+`src/lib/workflow/model-ladder.ts`, `effort-escalation.ts` and their tests (deleted), `batch-executor.ts` and `batch-executor.model-ladder.test.ts`, `phase-executor.ts` and `phase-executor.{model-ladder,effort-escalation}.test.ts`, `config-resolver.ts`, `metrics-schema.ts` and `metrics-schema.effort-escalation.test.ts`, `state-schema.ts`, `run-log-schema.ts`, `log-writer.ts`, `metrics-writer.ts`, `types.ts`, `run-orchestrator.ts`, `divergence-halt.ts` and `ready-gate.ts` (comments and ladder-only branches; the `SPEC_DIVERGENCE` halt and the gate's loop unchanged), `src/lib/settings.ts`, `src/commands/run.ts`, `src/commands/ready.ts`, `src/mcp/tools/run.ts`, `bin/cli.ts` (the four `.option(` blocks only), `__fixtures__/` (one legacy run log), the named docs pages, CHANGELOG.
 
 ## Non-Goals
 

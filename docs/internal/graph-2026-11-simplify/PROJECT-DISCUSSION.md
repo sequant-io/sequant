@@ -130,7 +130,7 @@ Plan-time decisions (each with what lost):
 | P-9 | "Needs a person" = an `--env-file` flag or a `.env` path; a first word in a fixed production-CLI list (`vercel`, `supabase`, `netlify`, `fly`, `heroku`, `wrangler`, `railway`, `aws`, `gcloud`, `az`); or an `http(s)` URL whose host is not `localhost`, `127.0.0.1`, `0.0.0.0` or `[::1]` | a configurable list (new surface; add one when someone asks) |
 | P-10 | The #1068 pre-registration lives in smpl-sequant as `experiments/E8-qa-leave-one-out.md`; #1068 gets the commit hash and the cost estimate | writing it in sequant (fixture #34's ground truth must not reach a shared page, I-6) |
 | P-11 | Hook blocks are sampled stratified by rule across the three frozen logs (proportional, at least 2 for any rule with 2 or more blocks), with a fixed seed; the runner proposes labels and the owner confirms each | a plain random 50 (about 28 would be E2c's two secret rules); the owner labelling from scratch (50 rows of context reading) |
-| P-12 | The smoke runs on `admarble/notes-fixture` with two new smoke issues, from a `main` build, launched by `launchctl submit`, under E2c's `sandbox-exec` deny profile | the ad-motion testbed (#1507's) has no Evidence that reaches outside the worktree, and a needs-human AC on a real repo is the risk the node exists to remove |
+| P-12 | The smoke runs on `admarble/notes-fixture` with two new smoke issues, from a `main` build, launched by `launchctl submit` as `run <B> <A> --chain` (B first, since `--chain` halts on A's designed failure), under E2c's `sandbox-exec` deny profile as it stands: it denies the matcha-maps checkout, seed and worktrees, `~/.claude/secrets.env`, every `.env.local` under the home directory and the Vercel token directory; the smoke's `notes-fixture-worktrees` paths are outside it (read 2026-11-04) | the ad-motion testbed (#1507's) has no Evidence that reaches outside the worktree, and a needs-human AC on a real repo is the risk the node exists to remove |
 | P-13 | 3.0 goes to `next` first and `latest` on the owner's word, as the release checklist does | publishing straight to `latest` |
 
 ## §8 Issue conventions
@@ -146,7 +146,7 @@ Plan-time decisions (each with what lost):
 
 | ID | Question | Resolved by |
 |---|---|---|
-| OQ-1 | Does any MCP caller pass `fullQa`? Metrics cannot say (`source` is `run`) | #S-03: a grep of the owner's harness and graph docs at exec; the MCP schema rejects the param after removal, so a caller fails loudly |
+| OQ-1 | Does any MCP caller pass `fullQa`? Metrics cannot say (`source` is `run`) | #S-03: a grep of the owner's harness and graph docs at exec. The MCP input schema strips unknown keys (no `.strict()`), so a caller still passing `fullQa` would be ignored silently, and the grep is the only check |
 | OQ-2 | Do the 11 runs with `qaIterations` ≥ 3 contain two consecutive `AC_NOT_MET`? If none did, the halt has never been the binding stop | #S-01: count from the run logs at exec, recorded in the PR body (no AC depends on it) |
 | OQ-3 | Does the qa agent obey a prompt block telling it not to run an Evidence line, while the skill's §6h says run each one? | #S-10: the smoke's transcript grep |
 | OQ-4 | Which E6/E6b cost per `/qa` run sets #1068's estimate, and how many sections does the leave-one-out cover? | #S-08 |

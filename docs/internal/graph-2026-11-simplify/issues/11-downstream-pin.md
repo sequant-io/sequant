@@ -20,7 +20,7 @@ Owner precondition of 2026-11-03: pin downstream before publishing 3.0. `~/Proje
 
 - [ ] AC-1: The harness launches the pinned version (route A), or matcha-maps declares it exactly (route B). Evidence: `{ grep -c 'npx sequant@2.20.0 run' ~/Projects/harness/scripts/launch.sh; grep -c '"sequant": "2.20.0"' ~/Projects/matcha-maps/package.json; } | awk '{s+=$1} END{print (s>=1)}'` → `1`
 - [ ] AC-2: No unpinned launch remains in the harness scripts. Evidence: `grep -rnE 'npx sequant( |$)' ~/Projects/harness/scripts | wc -l | tr -d ' '` → `0`
-- [ ] AC-3: The pin is pushed. Evidence: `git -C ~/Projects/harness log origin/main --format=%s -1 -- scripts/launch.sh | grep -c '2.20.0'` → `1`
+- [ ] AC-3: The pin is pushed. Evidence: `git -C ~/Projects/harness show origin/main:scripts/launch.sh | grep -c 'sequant@2.20.0'` → `≥ 1`
 - [ ] AC-4: The owner named the other repos that need a pin, or none (OQ-5). Evidence: `gh issue view $(gh issue list --label graph-2026-11-simplify --search 'tracker' --state all --json number --jq '.[0].number') --json comments --jq '[.comments[].body|select(test("^PIN: "))]|length'` → `≥ 1`
 
 ## May touch

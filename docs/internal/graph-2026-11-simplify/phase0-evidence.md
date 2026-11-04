@@ -64,7 +64,7 @@ Classes: **fails-today** (ran; result differs from the expected value), **constr
 | 10-smoke | AC-6 | fails-today | `accepts 1 arg(s), received 0` | `≥ 1` |
 | 11-downstream-pin | AC-1 | fails-today | `0` | `1` |
 | 11-downstream-pin | AC-2 | fails-today | `1` | `0` |
-| 11-downstream-pin | AC-3 | fails-today | `0` | `1` |
+| 11-downstream-pin | AC-3 | fails-today | `0` | `≥ 1` |
 | 11-downstream-pin | AC-4 | fails-today | `accepts 1 arg(s), received 0` | `≥ 1` |
 | 12-release-3 | AC-1 | fails-today | `npm error A complete log of this run can be found in: ~/.npm/_logs/2026-11-04T14_30_43_574` | `3.0.0` |
 | 12-release-3 | AC-2 | fails-today | `0` | `1` |
