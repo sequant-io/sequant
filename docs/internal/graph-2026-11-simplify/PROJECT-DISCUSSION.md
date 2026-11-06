@@ -20,8 +20,8 @@ Includes: #S-00 to #S-12. #S-08 and #S-09 are off the release path by design (§
 
 | Not in this graph | Why not now |
 |---|---|
-| Any edit under `plugin/`, `.claude/skills/`, `templates/skills/` | the plugin freeze holds (D-7: "not yet"); I-1 |
-| Cutting qa, exec or fullsolve sections | waits for #1068's result, and the skill text waits for the lift (D-4, D-7) |
+| Any edit under `plugin/`, `.claude/skills/`, `templates/skills/` | the freeze lifted 2026-11-06 (D-7 amendment); the graph still keeps I-1 as a scope choice until the owner folds the §10 post-freeze items in |
+| Cutting qa, exec or fullsolve sections | waits for #1068's result (D-4) |
 | Running #1068 | D-4 says pre-register now; the run is the owner's call once the estimate exists (§10) |
 | Any hook change, including blocking needs-human Evidence in `pre-tool.sh` | D-5: no hook moves until the precision number exists |
 | Removing `/test`, `/testgen`, `/reflect` skill text, `--ready-gate`, `sequant ready`, chain or multi-issue code | D-1 keeps `/test`; `/reflect` text is skill prose (frozen); D-2 keeps the ready gate's loop; D-3 keeps the chain code |
@@ -76,7 +76,7 @@ The metrics `source` is `run` on every row, so MCP use cannot be told apart (10-
 
 ## §5 Invariants
 
-- **I-1 Plugin freeze.** No PR in this graph touches `plugin/`, `.claude/skills/` or `templates/skills/`. Each code node carries the constraint AC `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0`.
+- **I-1 Plugin scope.** No PR in this graph touches `plugin/`, `.claude/skills/` or `templates/skills/`. Written as a freeze invariant; the freeze lifted on 2026-11-06 (D-7 amendment), and the constraint stays as this graph's scope boundary until the owner moves a §10 post-freeze item into it. Each code node carries the constraint AC `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0`.
 - **I-2 Old records still read.** A 3.0 build reads every pre-3.0 run log, metrics row and state file without a validation error. Removed features stop writing their fields; the schemas keep reading them (optional, `version: 1` unchanged).
 - **I-3 Outcome ACs where the class recurs.** #S-01, #S-02, #S-04 and #S-07 each have two or more prior fixes or producers (their `## Prior fixes / producers` blocks); their ACs state what must hold on every path.
 - **I-4 Run the Evidence, don't reason it.** Every command was run on `main` `31c6f8bdc` on 2026-11-04; `phase0-evidence.md` records each as fails-today, constraint or not-runnable.
@@ -115,6 +115,8 @@ The owner's answers of 2026-11-03 (proposal, "Owner answers"), verbatim:
 - **D-7:** not yet; src/ and bin/ work and #1068 go first under the freeze, and the lift stays with the plugin directory review.
 - **D-8:** an Evidence line that names an env file, a production CLI or a live URL becomes a pending row with the command shown, run by a person (as #1630 proposes for CI).
 
+**D-7 amendment, 2026-11-06 (owner):** the plugin freeze is lifted. The directory review it protected is closed from the portal's side: on 2026-11-06 the portal re-checked `main` at 31c6f8b and refused it under a rule that accepts command hooks, local MCP servers, `allowed-tools` beyond Read/Grep/Glob/LS, and files outside Markdown/JSON/YAML/images only from Verified organizations, which sequant-io is not. No reviewer holds the plugin and no content change can pass that rule, so the freeze no longer buys anything. Skill, hook and `plugin/` merges are allowed again. The §10 post-freeze items are now eligible; which of them join this graph is a separate owner decision (OQ-7).
+
 Plan-time decisions (each with what lost):
 
 | ID | Decision | Rejected |
@@ -151,11 +153,12 @@ Plan-time decisions (each with what lost):
 | OQ-3 | Does the qa agent obey a prompt block telling it not to run an Evidence line, while the skill's §6h says run each one? | #S-10: the smoke's transcript grep |
 | OQ-4 | Which E6/E6b cost per `/qa` run sets #1068's estimate, and how many sections does the leave-one-out cover? | #S-08 |
 | OQ-5 | Do any of the fourteen `.sequant/` repos without a dependency need a pin? | #S-11: the owner names them or none |
-| OQ-6 | Does the smoke's needs-human AC end as `NEEDS_VERIFICATION` or as something else, given the frozen skill decides the verdict? | #S-10 records it; a wrong verdict is a post-lift skill fix, not a reopen |
+| OQ-6 | Does the smoke's needs-human AC end as `NEEDS_VERIFICATION` or as something else, given the unchanged qa skill decides the verdict? | #S-10 records it; a wrong verdict is a skill fix outside this graph's I-1 scope, not a reopen |
+| OQ-7 | With the freeze lifted (D-7 amendment), which §10 post-freeze items join this graph: the `/reflect` skill text (D-1), the qa skill half of D-8, #1622, #1606? | Owner's call; each one added drops I-1 for that node and needs `lint:skill-sync` on its PR |
 
 ## §10 Parked directions
 
-- **Post-freeze:** the `/reflect` skill text (D-1); §6h's handling of needs-human Evidence in the qa skill (D-8's skill half); the qa cuts #1068 chooses; #1622, #1606, #1459, #1455, #1400, #1457.
+- **Post-freeze (eligible since the 2026-11-06 lift; OQ-7 decides which join this graph):** the `/reflect` skill text (D-1); §6h's handling of needs-human Evidence in the qa skill (D-8's skill half); the qa cuts #1068 chooses; #1622, #1606, #1459, #1455, #1400, #1457.
 - **After #S-08:** running #1068 (owner's word, at the estimate); exec and fullsolve by the same method (D-4, "later").
 - **After #S-09:** any hook change, with the precision per rule as its input.
 - **After a tally:** the test-tautology detector (#940 closed; the false-positive tally the inventory asked for does not exist yet).

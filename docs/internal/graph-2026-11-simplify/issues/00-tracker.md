@@ -19,6 +19,8 @@ D-7: not yet; src/ and bin/ work and #1068 go first under the freeze, and the li
 D-8: an Evidence line that names an env file, a production CLI or a live URL becomes a pending row with the command shown, run by a person (as #1630 proposes for CI).
 ```
 
+D-7 amendment (2026-11-06): the plugin freeze is lifted; the directory refused `main` under a Verified-organizations rule, so no review holds the plugin. I-1 stays as this graph's scope boundary; OQ-7 in the founding doc decides which post-freeze items join.
+
 ## Nodes
 
 See `docs/internal/graph-2026-11-simplify/issue-graph.md` for the DAG, waves and the placeholder map. Linked, not moved (D-6): #1501's F-10 (#S-02, #S-03 and #S-04 are its D-1 clusters), #1523 (#1526, #1521, #1529, #1622), #1602 (#1605, #1606).
