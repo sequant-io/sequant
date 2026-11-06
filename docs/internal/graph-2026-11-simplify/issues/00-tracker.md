@@ -4,7 +4,7 @@ tracker: graph-2026-11-simplify — sequant 3.0 cut to the measured shape: D-1 r
 
 ## What this graph is
 
-The owner adopted the evidenced shape on 2026-11-03: across nine experiments and 172 scored runs, sequant matched a native Claude Code recipe on recall and on verified acceptance criteria, at 1.9 to 4.6 times its estimated cost; what it adds is the issue as input, spec's AC extraction and file list, an independent per-AC check, the per-AC table, a verdict that refuses, one fix pass on the gaps the verdict names, and a person at the merge. This graph moves `main` toward that shape under the plugin freeze and ships it as 3.0. Founding doc: `docs/internal/graph-2026-11-simplify/PROJECT-DISCUSSION.md` (§N below). The measured build is tagged `research-baseline-2026-11-03` (`31c6f8bdc`).
+The owner adopted the evidenced shape on 2026-11-03: across nine experiments and 172 scored runs, sequant matched a native Claude Code recipe on recall and on verified acceptance criteria, at 1.9 to 4.6 times its estimated cost; what it adds is the issue as input, spec's AC extraction and file list, an independent per-AC check, the per-AC table, a verdict that refuses, one fix pass on the gaps the verdict names, and a person at the merge. This graph moves `main` toward that shape within the I-1 scope (src/ and bin/; the plugin freeze that first set it lifted 2026-11-06, D-7 amendment) and ships it as 3.0. Founding doc: `docs/internal/graph-2026-11-simplify/PROJECT-DISCUSSION.md` (§N below). The measured build is tagged `research-baseline-2026-11-03` (`31c6f8bdc`).
 
 ## Decisions (owner, 2026-11-03; founding doc §7)
 
