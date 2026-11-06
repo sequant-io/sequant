@@ -251,22 +251,17 @@ Categorize by conventional commit prefix:
 
 ### Step 3: Update CHANGELOG.md (if exists)
 
-If `CHANGELOG.md` exists, use the **Edit tool** to:
+If `CHANGELOG.md` and a `changelog.d/` directory both exist, collate the fragments (#1351). Do not edit `CHANGELOG.md` by hand and do not stamp `[Unreleased]`:
 
-1. Replace `## [Unreleased]` with `## [{new_version}] - {YYYY-MM-DD}`
-2. Insert a fresh `## [Unreleased]` section above the newly stamped version:
-
-```markdown
-## [Unreleased]
-
-## [1.4.0] - 2026-01-10
-
-### Added
-- New feature X
-...
+```bash
+# Validate first: a malformed fragment exits non-zero and nothing is written.
+npm run changelog:collate -- {new_version} --check
+npm run changelog:collate -- {new_version} --date {YYYY-MM-DD}
 ```
 
-This ensures the next development cycle has an `[Unreleased]` section ready for contributors.
+The script inserts `## [{new_version}] - {YYYY-MM-DD}` under an empty `## [Unreleased]` heading, grouped by kind (Added, Changed, Fixed, Removed, Security), carries over any bullets still under `[Unreleased]`, and deletes the fragments. If it fails, fix the named fragment and re-run.
+
+**Without `changelog.d/`** (the repo keeps entries under `[Unreleased]`, and has no `changelog:collate` script), use the **Edit tool** instead: rename the `## [Unreleased]` heading to `## [{new_version}] - {YYYY-MM-DD}`, then insert an empty `## [Unreleased]` heading above it, so the next cycle has a section ready.
 
 ### Step 4: Bump Version
 
@@ -329,22 +324,23 @@ Edit(file_path="docs/internal/what-weve-built.md",
 
 **Auto-generate feature bullets from CHANGELOG:**
 
-Extract features from the `[Unreleased]` section of CHANGELOG.md:
+Extract features from the new `[{new_version}]` section that Step 3 collated into CHANGELOG.md:
 
 ```bash
-# Extract [Unreleased] entries from CHANGELOG.md
+# Extract the new version's entries from CHANGELOG.md (collated in Step 3)
+new_version=$(node -p "require('./package.json').version")
 if [ -f "CHANGELOG.md" ]; then
-  # Get content between [Unreleased] and next version header
-  unreleased_content=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | head -n -1)
+  # Get content between the new version header and the next one
+  unreleased_content=$(awk -v v="## [${new_version}]" 'index($(0), v)==1 {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md)
 
   # Extract Added entries (these become what-weve-built features)
-  added_entries=$(echo "$unreleased_content" | sed -n '/^### Added/,/^### /p' | grep -E '^\s*-' | head -n -1 || true)
+  added_entries=$(echo "$unreleased_content" | sed -n '/^### Added/,/^### /p' | grep -E '^\s*-' || true)
 
   if [ -n "$added_entries" ]; then
     echo "Features to add to what-weve-built.md:"
     echo "$added_entries"
   else
-    echo "No new features in [Unreleased] section"
+    echo "No new features in the ${new_version} section"
   fi
 fi
 ```
@@ -370,7 +366,7 @@ fi
    ```markdown
    # From CHANGELOG:
    - CHANGELOG update step in /exec skill (#320)
-     - Instructs /exec to add [Unreleased] entries during feature commits
+     - Instructs /exec to add changelog entries during feature commits
 
    # To what-weve-built:
    - **CHANGELOG Automation** - Automatic CHANGELOG entry requirements in /exec and /qa
@@ -389,7 +385,7 @@ fi
 
 **Fallback to commit-based detection:**
 
-If CHANGELOG.md doesn't exist or has no `[Unreleased]` section, fall back to commit-based detection:
+If CHANGELOG.md doesn't exist or has no section for the new version, fall back to commit-based detection:
 
 ```bash
 last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -535,6 +531,8 @@ passes the same checks (#1131). Do not push `main`; do not add a bypass.
 new_version=$(node -p "require('./package.json').version")
 git switch -c "chore/release-v${new_version}"
 git add package.json package-lock.json CHANGELOG.md plugin/.claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
+# Stage the fragments Step 3 deleted; a repo that never tracked changelog.d/ has nothing to stage.
+if git ls-files --error-unmatch changelog.d >/dev/null 2>&1; then git add -A changelog.d; fi
 # The shipped MCP config is gitignored-but-tracked; Step 4.7 re-pinned it to this version (#988), so force-add it into the release commit.
 git add -f .mcp.json
 git commit -m "chore: release v${new_version}"
