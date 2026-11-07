@@ -1,8 +1,8 @@
 investigation(qa): pre-register #1068's section leave-one-out for qa on fixture #34, with the cost estimated before any run — written in the research repo, hash and estimate posted on #1068
 
-**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** runner   **Blocked by:** #S-00
+**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** runner   **Blocked by:** #1645
 
-- **Blocked by**: #S-00
+- **Blocked by**: #1645
 
 ## Problem
 

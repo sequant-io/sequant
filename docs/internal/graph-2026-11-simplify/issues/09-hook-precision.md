@@ -1,8 +1,8 @@
 gate(owner): hook precision — 50 pre-tool blocks from the frozen logs, stratified by rule, labelled true or false; counts per rule published, block text kept private
 
-**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** owner   **Blocked by:** #S-00
+**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** owner   **Blocked by:** #1645
 
-- **Blocked by**: #S-00
+- **Blocked by**: #1645
 
 ## Problem
 

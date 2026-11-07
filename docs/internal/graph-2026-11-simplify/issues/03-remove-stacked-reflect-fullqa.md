@@ -1,8 +1,8 @@
 chore(cli)!: remove `--stacked`, `--reflect` and `--full-qa` — flags, `run.fullQa`, the MCP `fullQa` parameter and `run-reflect.ts`; `--chain` keeps working
 
-**Epic:** graph-2026-11-simplify (F-10 cluster of #1501)   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #S-02 (both edit `bin/cli.ts`, `KNOWN_KEYS` in `settings.ts`, `types.ts` and `src/commands/run.ts`)
+**Epic:** graph-2026-11-simplify (F-10 cluster of #1501)   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #1647 (both edit `bin/cli.ts`, `KNOWN_KEYS` in `settings.ts`, `types.ts` and `src/commands/run.ts`)
 
-- **Blocked by**: #S-02
+- **Blocked by**: #1647
 
 ## Problem
 
@@ -40,7 +40,7 @@ OQ-1 (does any MCP caller pass `fullQa`): exec greps `~/Projects/harness` and `d
 ## Non-Goals
 
 - The `/reflect` skill text (frozen; §10).
-- `--chain`, multi-issue runs (#S-06), `sequant ready`.
+- `--chain`, multi-issue runs (#1651), `sequant ready`.
 
 ## Done when
 

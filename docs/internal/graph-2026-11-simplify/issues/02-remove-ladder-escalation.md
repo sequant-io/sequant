@@ -1,8 +1,8 @@
 chore(cli)!: remove the model ladder and effort escalation — modules, `--model-ladder` and `--escalate-effort` on run and ready, their settings and docs; old logs and settings still load
 
-**Epic:** graph-2026-11-simplify (F-10 cluster of #1501)   **Tier:** judgment   **Execution:** sequant_run   **Blocked by:** #S-01 (the repeat halt must stand on its own before the ladder that feeds the divergence halt goes; both edit the quality loop in `batch-executor.ts`)
+**Epic:** graph-2026-11-simplify (F-10 cluster of #1501)   **Tier:** judgment   **Execution:** sequant_run   **Blocked by:** #1646 (the repeat halt must stand on its own before the ladder that feeds the divergence halt goes; both edit the quality loop in `batch-executor.ts`)
 
-- **Blocked by**: #S-01
+- **Blocked by**: #1646
 
 ## Problem
 
@@ -41,7 +41,7 @@ D-1. In 453 recorded runs (2026-01-21 to 2026-10-28) `--model-ladder` and `--esc
 
 ## Non-Goals
 
-- `--stacked`, `--reflect`, `--full-qa` (#S-03).
+- `--stacked`, `--reflect`, `--full-qa` (#1648).
 - The ready gate's loop and `divergence-halt.ts`.
 - Skills (I-1).
 

@@ -1,8 +1,8 @@
 fix(run)!: no label adds the `test` phase to a phase list the user or detection chose — remove the UI-label insertion in `determinePhasesForIssue` (closes #1631)
 
-**Epic:** graph-2026-11-simplify (F-10 cluster of #1501)   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #S-00
+**Epic:** graph-2026-11-simplify (F-10 cluster of #1501)   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #1645
 
-- **Blocked by**: #S-00
+- **Blocked by**: #1645
 
 ## Problem
 

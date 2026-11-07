@@ -1,20 +1,20 @@
 feat(run): the quality loop halts on a second consecutive AC_NOT_MET — its own counter, no ladder needed; maxIterations stays 3
 
-**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** split   **Blocked by:** #S-00
+**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** split   **Blocked by:** #1645
 
-- **Blocked by**: #S-00
+- **Blocked by**: #1645
 
 ## Problem
 
 D-2: keep `maxIterations` 3 and halt when `AC_NOT_MET` repeats (the #1162 rule). On matcha-maps #1162 the loop ran four exec passes into four `AC_NOT_MET` verdicts and fixed nothing; on fixture #34 (E7) one fix pass turned the verdict's named catch into a commit in 8 of 8 pairs. One pass on a refusal is supported; a second pass after a second refusal is not.
 
-Today the only stop on that pattern is the divergence-suspect halt in `batch-executor.ts` (two consecutive divergence-suspect iterations), and its own comment says it is "reachable only with a ladder configured". D-1 removes the ladder in #S-02, which deletes the halt's feed. `qa-stagnation.ts` stops a re-run at the same SHA with no diff, which is not #1162's pattern (each pass made a diff). Founding doc §4, P-1, P-2, P-3.
+Today the only stop on that pattern is the divergence-suspect halt in `batch-executor.ts` (two consecutive divergence-suspect iterations), and its own comment says it is "reachable only with a ladder configured". D-1 removes the ladder in #1647, which deletes the halt's feed. `qa-stagnation.ts` stops a re-run at the same SHA with no diff, which is not #1162's pattern (each pass made a diff). Founding doc §4, P-1, P-2, P-3.
 
 ## Decisions
 
 | ID | Decision | Rejected |
 |---|---|---|
-| H-1 | A counter on the QA verdict in the quality loop: two consecutive `AC_NOT_MET` verdicts stop the loop before the next `/loop` spawn. Any other verdict, or no parsed verdict, resets it | reusing `consecutiveDivergenceSuspect` (fed only with a ladder; #S-02 deletes the feed) |
+| H-1 | A counter on the QA verdict in the quality loop: two consecutive `AC_NOT_MET` verdicts stop the loop before the next `/loop` spawn. Any other verdict, or no parsed verdict, resets it | reusing `consecutiveDivergenceSuspect` (fed only with a ladder; #1647 deletes the feed) |
 | H-2 | The run log records the stop the way #1254 records a ladder halt: the issue's `abortReason` begins `ac_not_met_repeated`, its `evidenceBundle` carries both verdicts' SHAs and failed AC ids, and the error category enum gains `ac_not_met_repeated` beside `ladder_halt` (additive, `version: 1`) | a new bundle format or top-level field |
 | H-3 | `sequant run` and MCP `sequant_run` (same executor) only; the ready gate's loop is unchanged (D-2) | applying it to the ready gate |
 
@@ -32,7 +32,7 @@ Today the only stop on that pattern is the divergence-suspect halt in `batch-exe
 - [ ] AC-5: The changelog records the change. Evidence: `awk '/^## \[Unreleased\]/,/^## \[[0-9]/' CHANGELOG.md | grep -c 'ac_not_met_repeated'` → `≥ 1`
 - [ ] AC-6: No skill-directory edits. Evidence: `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0` (constraint)
 
-`isGateTestEvidence` classifies none of these ACs as a gate (parse-check, 2026-11-04). AC-1 is behaviour; its real-run half is #S-10 (`Execution: split`).
+`isGateTestEvidence` classifies none of these ACs as a gate (parse-check, 2026-11-04). AC-1 is behaviour; its real-run half is #1655 (`Execution: split`).
 
 ## May touch
 
@@ -41,7 +41,7 @@ Today the only stop on that pattern is the divergence-suspect halt in `batch-exe
 ## Non-Goals
 
 - Changing `maxIterations`' default, the ready gate's loop, or `qa-stagnation.ts`.
-- Removing the ladder (#S-02, which this blocks).
+- Removing the ladder (#1647, which this blocks).
 - Any skill edit (I-1).
 
 ## Done when

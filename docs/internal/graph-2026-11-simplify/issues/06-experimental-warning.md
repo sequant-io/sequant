@@ -1,8 +1,8 @@
 feat(run): `--chain` and multi-issue runs print an "experimental" warning with their measured success rates — fixed, dated counts; the code stays
 
-**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #S-03 (both edit `src/commands/run.ts`; #S-03 removes `--stacked`'s implication of `--chain`)
+**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #1648 (both edit `src/commands/run.ts`; #1648 removes `--stacked`'s implication of `--chain`)
 
-- **Blocked by**: #S-03
+- **Blocked by**: #1648
 
 ## Problem
 

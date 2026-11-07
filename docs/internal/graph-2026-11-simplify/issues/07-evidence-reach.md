@@ -1,8 +1,8 @@
 feat(qa): Evidence that names an env file, a production CLI or a live URL is handed to a person — classified in code, listed in the qa prompt as "do not run", recorded per AC in the run log, printed with its command in the run summary
 
-**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** split   **Blocked by:** #S-03 (the qa dispatch site in `batch-executor.ts` and `types.ts` are edited by #S-01 to #S-03)
+**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** split   **Blocked by:** #1648 (the qa dispatch site in `batch-executor.ts` and `types.ts` are edited by #1646 to #1648)
 
-- **Blocked by**: #S-03
+- **Blocked by**: #1648
 
 ## Problem
 
@@ -29,7 +29,7 @@ D-8: an Evidence line that names an env file, a production CLI or a live URL bec
 - [ ] AC-4: The run summary prints one `needs a person` line per needs-human AC with its command. Evidence: `npx vitest run src/commands/run-display.test.ts -t "needs a person"` → `≥ 1 passed, 0 failed`
 - [ ] AC-5: No skill-directory edits. Evidence: `git diff --name-only $(git merge-base origin/main HEAD)..HEAD | grep -cE '^(plugin/|\.claude/skills/|templates/skills/)'` → `0` (constraint)
 
-The real-run half (does the agent obey; what verdict results) is #S-10 (`Execution: split`, OQ-3, OQ-6).
+The real-run half (does the agent obey; what verdict results) is #1655 (`Execution: split`, OQ-3, OQ-6).
 
 ## May touch
 

@@ -1,14 +1,14 @@
-smoke(simplify): first real use — one detached run of a `main` build on two notes-fixture smoke issues, after #S-01 to #S-07 merge; the owner reads the report
+smoke(simplify): first real use — one detached run of a `main` build on two notes-fixture smoke issues, after #1646 to #1652 merge; the owner reads the report
 
-**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** runner   **Blocked by:** #S-01, #S-02, #S-03, #S-04, #S-05, #S-06, #S-07
+**Epic:** graph-2026-11-simplify   **Tier:** judgment   **Execution:** runner   **Blocked by:** #1646, #1647, #1648, #1649, #1650, #1651, #1652
 
-- **Blocked by**: #S-01
-- **Blocked by**: #S-02
-- **Blocked by**: #S-03
-- **Blocked by**: #S-04
-- **Blocked by**: #S-05
-- **Blocked by**: #S-06
-- **Blocked by**: #S-07
+- **Blocked by**: #1646
+- **Blocked by**: #1647
+- **Blocked by**: #1648
+- **Blocked by**: #1649
+- **Blocked by**: #1650
+- **Blocked by**: #1651
+- **Blocked by**: #1652
 
 ## Problem
 
@@ -16,7 +16,7 @@ The phases that build each node run the published 2.20.0, not the branch, so no 
 
 ## Procedure
 
-1. Build `main` at the commit after the last of #S-01 to #S-07 merges; record the SHA.
+1. Build `main` at the commit after the last of #1646 to #1652 merges; record the SHA.
 2. On `admarble/notes-fixture`, file two smoke issues from `main`'s smoke templates, written at launch: **A** with three ACs (one ordinary `npx vitest` AC; one whose Evidence is `npx tsx --env-file=.env.local scripts/smoke-check.ts` → `ok`; one whose Evidence cannot pass, so that QA refuses), **B** with one ordinary AC. Neither touches fixture #34's branch.
 3. Launch `node ~/Projects/sequant/dist/bin/cli.js run <B> <A> --chain -Q --max-iterations 3` with `launchctl submit`, under `smpl-sequant/experiments/E2c/deny.sb` as it stands (#856; sandbox per P-12). B goes first because `--chain` halts on any failed issue (`bin/cli.ts:374`) and A is built to fail.
 4. Collect the stdout, the run log and the phase transcripts; write the report as a comment on the tracker.

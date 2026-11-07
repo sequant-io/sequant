@@ -1,8 +1,8 @@
 docs(ready): the ready gate's docs drop the second-look claim — describe the qa → loop → qa mechanism and its policy, cite #1344 for what was measured
 
-**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #S-03 (both edit `docs/reference/run-command.md`)
+**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** sequant_run   **Blocked by:** #1648 (both edit `docs/reference/run-command.md`)
 
-- **Blocked by**: #S-03
+- **Blocked by**: #1648
 
 ## Problem
 

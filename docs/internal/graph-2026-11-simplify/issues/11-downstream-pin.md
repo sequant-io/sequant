@@ -1,8 +1,8 @@
 gate(owner): pin the harness and matcha-maps to sequant 2.20.0 before 3.0 is published
 
-**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** owner   **Blocked by:** #S-00
+**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** owner   **Blocked by:** #1645
 
-- **Blocked by**: #S-00
+- **Blocked by**: #1645
 
 ## Problem
 
@@ -14,7 +14,7 @@ Owner precondition of 2026-11-03: pin downstream before publishing 3.0. `~/Proje
 - **Question the owner answers:** which route, A or B, and is its diff right?
   - **A:** the harness launches `npx sequant@2.20.0 run …`, and its CLAUDE.md names the pin. matcha-maps is unchanged.
   - **B:** matcha-maps gets `"sequant": "2.20.0"` as an exact devDependency. Tried on 2026-11-03 in a scratch worktree: the lockfile change bumped es-toolkit 1.47.0 → 1.53.1, qs 6.16.0 → 6.17.1 and string-width 8.2.2 → 8.3.0, which ship to production, so the diff is reviewed then.
-- **Reject route:** a wrong diff is reverted in its own repo; 3.0 waits (#S-12).
+- **Reject route:** a wrong diff is reverted in its own repo; 3.0 waits (#1657).
 
 ## Acceptance Criteria
 

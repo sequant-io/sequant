@@ -1,17 +1,17 @@
 gate(owner): release sequant 3.0.0 — `/release` major from `main` after the smoke and the pin; `next` first, `latest` on the owner's word
 
-**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** owner   **Blocked by:** #S-10, #S-11
+**Epic:** graph-2026-11-simplify   **Tier:** mechanical   **Execution:** owner   **Blocked by:** #1655, #1656
 
-- **Blocked by**: #S-10
-- **Blocked by**: #S-11
+- **Blocked by**: #1655
+- **Blocked by**: #1656
 
 ## Problem
 
-#S-02 to #S-04 remove flags, a setting and an MCP parameter, so the release is a semver major. The owner decided on 2026-11-03 that the simplification lands on `main` as 3.0, with no fork, and that 3.0 waits for the downstream pin. Founding doc P-13.
+#1647 to #1649 remove flags, a setting and an MCP parameter, so the release is a semver major. The owner decided on 2026-11-03 that the simplification lands on `main` as 3.0, with no fork, and that 3.0 waits for the downstream pin. Founding doc P-13.
 
 ## The gate
 
-- **Artifact reviewed:** the `[Unreleased]` section of `CHANGELOG.md` on `main` and the smoke report (#S-10).
+- **Artifact reviewed:** the `[Unreleased]` section of `CHANGELOG.md` on `main` and the smoke report (#1655).
 - **Question the owner answers:** publish 3.0.0 to `next`? Then, separately: promote to `latest`?
 - **Reject route:** a changelog gap reopens the node that owns it; a smoke `reopen` already blocks this node.
 
@@ -29,7 +29,7 @@ gate(owner): release sequant 3.0.0 — `/release` major from `main` after the sm
 ## Non-Goals
 
 - Promoting to `latest` without the owner's second answer.
-- Anything not merged by #S-01 to #S-07.
+- Anything not merged by #1646 to #1652.
 
 ## Done when
 
