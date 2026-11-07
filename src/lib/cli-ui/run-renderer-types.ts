@@ -133,6 +133,8 @@ export interface SummaryRenderInput {
   totalDurationSeconds?: number;
   logPath?: string | null;
   dryRun?: boolean;
+  /** Run-level cost and tokens, handed in by the caller (#1527). */
+  cost?: { usd?: number; tokens?: number };
 }
 
 /** Public renderer interface — all modes implement this. */

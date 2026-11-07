@@ -1,0 +1,16 @@
+{
+  "command": "gh pr comment 1563 --body <*>",
+  "args": [
+    "pr",
+    "comment",
+    "1563",
+    "--body",
+    "<*>"
+  ],
+  "exitCode": 0,
+  "stdout": "https://github.com/sequant-io/sequant/pull/1563#issuecomment-3400000001\n",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

@@ -8,9 +8,9 @@
 export { normalizeCommanderOptions } from "../lib/workflow/config-resolver.js";
 export {
   parseQaVerdict,
-  formatDuration,
   executePhaseWithRetry,
 } from "../lib/workflow/phase-executor.js";
+export { formatDuration } from "../lib/cli-ui/format.js";
 export {
   detectDefaultBranch,
   checkWorktreeFreshness,

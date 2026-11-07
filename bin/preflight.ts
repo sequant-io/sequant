@@ -36,8 +36,10 @@ function readEngineFloor(): string | null {
       if (pkg.name === "sequant") {
         return pkg.engines?.node ?? null;
       }
-    } catch {
+    } catch (err) {
       // Not found at this level, keep walking up.
+      // No noteSuppressed: this file must not import beyond version-check (runs before the Node floor check).
+      void err;
     }
     dir = dirname(dir);
   }

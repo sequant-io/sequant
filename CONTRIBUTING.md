@@ -248,6 +248,7 @@ patterns:
 - Use `chalk` for colored output
 - Use async/await for asynchronous operations
 - Export types from `src/index.ts` for public API
+- A `@deprecated` tag starts with `(remove in vX.Y)` on the same line as the tag. Use v3.0 for anything users can reach: an export from `src/index.ts`, a settings key, a CLI command or flag, or an MCP tool param. Use the minor after the next one for internals (v2.22 while 2.20 is current), so a deprecation spans at least one release. `npm run lint:deprecations` enforces it in CI.
 
 ### Commit Messages
 

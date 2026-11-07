@@ -22,6 +22,7 @@ import type { Phase } from "./types.js";
 import type { IssueResult } from "./types.js";
 import { RunOrchestrator } from "./run-orchestrator.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
+import type { GhReplay } from "./platforms/gh-fixtures.js";
 
 // #933: RunOrchestrator now runs the pre-flight against each provisioned
 // worktree, not the main checkout. These mocks let the tests below drive the
@@ -30,6 +31,17 @@ import { DEFAULT_SETTINGS } from "../settings.js";
 // and fast — no `gh` calls, no phase execution, no `npm install` from the
 // worktree's dependency-install step.
 const worktreeFixture = vi.hoisted(() => ({ base: "", repo: "" }));
+// The orchestrator's dependency sort reads each issue through its own
+// GitHubProvider. With no fixtures it answers GhFixtureMissingError, which
+// parseDependencies reads as "no dependencies", instead of spawning the real
+// `gh issue view` (#1506; the #1560 leak class).
+const gh = vi.hoisted((): GhReplay => ({ fixtures: [], calls: [] }));
+vi.mock("./platforms/github.js", async (importOriginal) =>
+  (await import("./platforms/gh-fixtures.js")).replayGitHubModule(
+    importOriginal,
+    gh,
+  ),
+);
 const spies933 = vi.hoisted(() => ({
   runIssue: vi.fn(),
   preflightCwds: [] as string[],

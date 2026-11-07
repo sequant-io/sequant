@@ -256,6 +256,48 @@ describe("run-orchestrator shutdown wiring (#1222)", () => {
     }
   });
 
+  // #1527: the signal path writes the cost of the issues that had finished.
+  // The orchestrator is read lazily through the ref, the same way the phase
+  // predicate below reads it, because it exists only after registration.
+  it("#1527: the aborted finalize carries costSoFar from the lazily read orchestrator", async () => {
+    type FinalizeOptions =
+      | {
+          aborted?: { signal: string; reason: string };
+          cost?: { usd?: number; tokens?: number };
+        }
+      | undefined;
+    const received: FinalizeOptions[] = [];
+    const shutdown = new ShutdownManager({
+      output: () => {},
+      errorOutput: () => {},
+      exit: () => {},
+    });
+    const ref: {
+      instance?: { costSoFar(): { usd?: number; tokens?: number } | undefined };
+    } = {};
+    try {
+      registerRunLogFinalizer(
+        shutdown,
+        {
+          finalize: async (options) => {
+            received.push(options);
+          },
+        },
+        ref,
+      );
+      // Set after registration: a ref read eagerly would have seen nothing.
+      ref.instance = { costSoFar: () => ({ usd: 1.25, tokens: 4_321 }) };
+
+      await shutdown.gracefulShutdown("SIGTERM");
+
+      expect(received).toHaveLength(1);
+      expect(received[0]?.aborted?.signal).toBe("SIGTERM");
+      expect(received[0]?.cost).toEqual({ usd: 1.25, tokens: 4_321 });
+    } finally {
+      shutdown.dispose();
+    }
+  });
+
   it("AC-2: the phase predicate reads the orchestrator lazily, false until it exists", () => {
     const ref: { instance?: { isPhaseInProgress(n: number): boolean } } = {};
     const inProgress = phaseInProgressPredicate(ref, 7);

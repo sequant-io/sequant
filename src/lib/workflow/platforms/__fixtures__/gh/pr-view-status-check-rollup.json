@@ -1,0 +1,17 @@
+{
+  "command": "gh pr view 1563 --json statusCheckRollup -q .statusCheckRollup --repo sequant-io/sequant",
+  "args": [
+    "pr",
+    "view",
+    "1563",
+    "--json",
+    "statusCheckRollup",
+    "-q",
+    ".statusCheckRollup"
+  ],
+  "capturedAt": "2026-10-20T14:10:40.861Z",
+  "exitCode": 0,
+  "stdout": "[{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:52:14Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393300\",\"name\":\"test\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:49Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525645/job/118425393068\",\"name\":\"Gitleaks scan\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"Gitleaks\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:45:23Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393007\",\"name\":\"canary\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:51Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393312\",\"name\":\"node-floor-guard\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:49Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393271\",\"name\":\"validate-skills\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:45Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393331\",\"name\":\"typecheck\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:26Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393480\",\"name\":\"validate-plugin\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:38Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393319\",\"name\":\"tautology-advisory\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:43Z\",\"conclusion\":\"SUCCESS\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393617\",\"name\":\"health-advisory\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"},{\"__typename\":\"CheckRun\",\"completedAt\":\"2026-10-20T02:44:36Z\",\"conclusion\":\"FAILURE\",\"detailsUrl\":\"https://github.com/sequant-io/sequant/actions/runs/39360525643/job/118425393254\",\"name\":\"knip-advisory\",\"startedAt\":\"2026-10-20T02:44:17Z\",\"status\":\"COMPLETED\",\"workflowName\":\"CI\"}]\n",
+  "stderr": "",
+  "provenance": "captured"
+}

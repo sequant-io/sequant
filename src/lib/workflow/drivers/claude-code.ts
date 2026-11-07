@@ -30,6 +30,23 @@ import type {
   ResumeHandle,
 } from "./agent-driver.js";
 
+/** Mutable capture of one SDK stream, shared by executePhase's stages. */
+interface StreamState {
+  resultSessionId: string | undefined;
+  resultMessage: SDKResultMessage | undefined;
+  capturedOutput: string;
+  capturedStderr: string;
+  // Only the latest *failure-grade* rate-limit info (rejection or billing) is
+  // kept, so an informational `allowed_warning` event isn't mis-attributed to
+  // an unrelated phase failure (#732).
+  rateLimitInfo: SDKRateLimitInfo | undefined;
+  assistantError: SDKAssistantMessageError | undefined;
+  // Last api_retry signal, captured opportunistically for diagnostics.
+  apiRetryError: SDKAssistantMessageError | undefined;
+  stderrBuffer: RingBuffer;
+  stdoutBuffer: RingBuffer;
+}
+
 export class ClaudeCodeDriver implements AgentDriver {
   name = "claude-code";
 
@@ -80,23 +97,19 @@ export class ClaudeCodeDriver implements AgentDriver {
       abortController.abort();
     }, config.phaseTimeout * 1000);
 
-    let resultSessionId: string | undefined;
-    let resultMessage: SDKResultMessage | undefined;
-    let capturedOutput = "";
-    let capturedStderr = "";
-
     // Structured rate-limit / billing signals captured from the SDK stream
-    // (#732). The SDK emits these but sequant previously dropped them on the
-    // floor, falling back to regex-on-stderr classification. We keep only the
-    // latest *failure-grade* rate-limit info (rejection or billing) so an
-    // informational `allowed_warning` event isn't mis-attributed to an
-    // unrelated phase failure.
-    let rateLimitInfo: SDKRateLimitInfo | undefined;
-    let assistantError: SDKAssistantMessageError | undefined;
-    // Last api_retry signal, captured opportunistically for diagnostics.
-    let apiRetryError: SDKAssistantMessageError | undefined;
-    const stderrBuffer = new RingBuffer(50);
-    const stdoutBuffer = new RingBuffer(50);
+    // (#732) live in `state` beside the output; see StreamState.
+    const state: StreamState = {
+      resultSessionId: undefined,
+      resultMessage: undefined,
+      capturedOutput: "",
+      capturedStderr: "",
+      rateLimitInfo: undefined,
+      assistantError: undefined,
+      apiRetryError: undefined,
+      stderrBuffer: new RingBuffer(50),
+      stdoutBuffer: new RingBuffer(50),
+    };
 
     // Resolve resume token with cwd-safety check.
     //
@@ -152,11 +165,11 @@ export class ClaudeCodeDriver implements AgentDriver {
           ...(config.model ? { model: config.model } : {}),
           ...(config.effort ? { effort: config.effort } : {}),
           stderr: (data: string) => {
-            capturedStderr += data;
+            state.capturedStderr += data;
             // Split on newlines and push each line to the ring buffer
             const lines = data.split("\n").filter((l) => l.length > 0);
             for (const line of lines) {
-              stderrBuffer.push(line);
+              state.stderrBuffer.push(line);
             }
             config.onStderr?.(data);
           },
@@ -164,176 +177,190 @@ export class ClaudeCodeDriver implements AgentDriver {
       });
 
       // Stream and process messages
-      for await (const message of queryInstance) {
-        if (message.type === "system" && message.subtype === "init") {
-          resultSessionId = message.session_id;
+      await this.consumeStream(queryInstance, state, config);
+
+      clearTimeout(timeoutId);
+      this.lastSessionId = state.resultSessionId;
+
+      return this.resultFromStream(state, config);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      return this.resultFromThrow(err, state, config);
+    }
+  }
+
+  /** Drain the SDK stream into `state` (#732 signals, output, session id). */
+  private async consumeStream(
+    queryInstance: ReturnType<typeof query>,
+    state: StreamState,
+    config: AgentExecutionConfig,
+  ): Promise<void> {
+    for await (const message of queryInstance) {
+      if (message.type === "system" && message.subtype === "init") {
+        state.resultSessionId = message.session_id;
+      }
+
+      // Capture structured rate-limit info (#732). Only retain
+      // failure-grade events (rejection / billing) so a benign warning
+      // doesn't poison the failure path.
+      if (
+        message.type === "rate_limit_event" &&
+        isRateLimitFailureInfo(message.rate_limit_info)
+      ) {
+        state.rateLimitInfo = message.rate_limit_info;
+      }
+
+      // Capture api_retry diagnostics (#732, optional). These are transient
+      // retries the SDK performs internally; recorded for the structured
+      // error fallback when no rate_limit_event/assistant error is present.
+      if (message.type === "system" && message.subtype === "api_retry") {
+        state.apiRetryError = message.error;
+      }
+
+      if (message.type === "assistant") {
+        // Capture the assistant-level error field (#732) — `rate_limit`,
+        // `billing_error`, `overloaded`, etc. Previously discarded by the
+        // text-only content filter below.
+        if (message.error) {
+          state.assistantError = message.error;
         }
 
-        // Capture structured rate-limit info (#732). Only retain
-        // failure-grade events (rejection / billing) so a benign warning
-        // doesn't poison the failure path.
-        if (
-          message.type === "rate_limit_event" &&
-          isRateLimitFailureInfo(message.rate_limit_info)
-        ) {
-          rateLimitInfo = message.rate_limit_info;
-        }
-
-        // Capture api_retry diagnostics (#732, optional). These are transient
-        // retries the SDK performs internally; recorded for the structured
-        // error fallback when no rate_limit_event/assistant error is present.
-        if (message.type === "system" && message.subtype === "api_retry") {
-          apiRetryError = message.error;
-        }
-
-        if (message.type === "assistant") {
-          // Capture the assistant-level error field (#732) — `rate_limit`,
-          // `billing_error`, `overloaded`, etc. Previously discarded by the
-          // text-only content filter below.
-          if (message.error) {
-            assistantError = message.error;
-          }
-
-          const content = message.message.content as Array<{
-            type: string;
-            text?: string;
-          }>;
-          const textContent = joinAgentTexts(
-            content
-              .filter((c) => c.type === "text" && c.text)
-              .map((c) => c.text as string),
+        const content = message.message.content as Array<{
+          type: string;
+          text?: string;
+        }>;
+        const textContent = joinAgentTexts(
+          content
+            .filter((c) => c.type === "text" && c.text)
+            .map((c) => c.text as string),
+        );
+        if (textContent) {
+          // #1311: a newline between messages keeps a later `## Summary`
+          // at the start of a line.
+          state.capturedOutput = appendAgentText(
+            state.capturedOutput,
+            textContent,
           );
-          if (textContent) {
-            // #1311: a newline between messages keeps a later `## Summary`
-            // at the start of a line.
-            capturedOutput = appendAgentText(capturedOutput, textContent);
-            const lines = textContent.split("\n").filter((l) => l.length > 0);
-            for (const line of lines) {
-              stdoutBuffer.push(line);
-            }
-            config.onOutput?.(textContent);
+          const lines = textContent.split("\n").filter((l) => l.length > 0);
+          for (const line of lines) {
+            state.stdoutBuffer.push(line);
           }
-        }
-
-        if (message.type === "result") {
-          resultMessage = message;
+          config.onOutput?.(textContent);
         }
       }
 
-      clearTimeout(timeoutId);
-      this.lastSessionId = resultSessionId;
+      if (message.type === "result") {
+        state.resultMessage = message;
+      }
+    }
+  }
 
-      // Build the cwd-bound resume handle from the session created in
-      // `config.cwd`. `sessionId` is mirrored for one release (#674) so
-      // upgraded callers can still drive resume off the deprecated field.
-      const resumeHandle = this.buildResumeHandle(resultSessionId, config.cwd);
+  /** Map a fully drained stream to the phase result. */
+  private resultFromStream(
+    state: StreamState,
+    config: AgentExecutionConfig,
+  ): AgentPhaseResult {
+    const {
+      resultMessage,
+      resultSessionId,
+      capturedOutput,
+      stderrBuffer,
+      stdoutBuffer,
+    } = state;
 
-      // Build a typed error from structured SDK signals (#732). Present only
-      // when the stream surfaced a rate-limit/billing failure; otherwise
-      // undefined and the executor falls back to stderr-regex classification.
-      const structuredError = this.buildStructuredError(
-        rateLimitInfo,
-        assistantError,
-        apiRetryError,
-      );
+    // Build the cwd-bound resume handle from the session created in
+    // `config.cwd`. `sessionId` is mirrored for one release (#674) so
+    // upgraded callers can still drive resume off the deprecated field.
+    const resumeHandle = this.buildResumeHandle(resultSessionId, config.cwd);
 
-      if (resultMessage) {
-        if (resultMessage.subtype === "success") {
-          // The SDK emits subtype "success" with is_error:true when the turn
-          // ends on an API error (e.g. unrecognized model). Treat it as a
-          // phase failure so the caller gets a real error, not a zero-work
-          // success. See #973 / SDK docs §SDKResultMessage.
-          if (resultMessage.is_error) {
-            const metadata: Record<string, unknown> = {};
-            if (resultMessage.api_error_status != null) {
-              metadata.statusCode = resultMessage.api_error_status;
-              metadata.api_error_status = resultMessage.api_error_status;
-            }
-            if (resultMessage.terminal_reason != null) {
-              metadata.terminal_reason = resultMessage.terminal_reason;
-            }
-            const apiError = new ApiError(resultMessage.result, metadata);
-            return {
-              success: false,
-              output: capturedOutput,
-              sessionId: resultSessionId,
-              resumeHandle,
-              error: resultMessage.result,
-              structuredError: apiError,
-              stderrTail: stderrBuffer.getLines(),
-              stdoutTail: stdoutBuffer.getLines(),
-              // #986: a failed turn still spent its tokens. `modelUsage` is a
-              // required field on every result message, error variants
-              // included, so dropping it here silently zeroed the cost of the
-              // failures — the runs most worth seeing in the cost table.
-              modelUsage: resultMessage.modelUsage,
-            };
+    // Build a typed error from structured SDK signals (#732). Present only
+    // when the stream surfaced a rate-limit/billing failure; otherwise
+    // undefined and the executor falls back to stderr-regex classification.
+    const structuredError = this.buildStructuredError(
+      state.rateLimitInfo,
+      state.assistantError,
+      state.apiRetryError,
+    );
+
+    if (resultMessage) {
+      if (resultMessage.subtype === "success") {
+        // The SDK emits subtype "success" with is_error:true when the turn
+        // ends on an API error (e.g. unrecognized model). Treat it as a
+        // phase failure so the caller gets a real error, not a zero-work
+        // success. See #973 / SDK docs §SDKResultMessage.
+        if (resultMessage.is_error) {
+          const metadata: Record<string, unknown> = {};
+          if (resultMessage.api_error_status != null) {
+            metadata.statusCode = resultMessage.api_error_status;
+            metadata.api_error_status = resultMessage.api_error_status;
           }
-
-          return {
-            success: true,
-            output: capturedOutput,
-            sessionId: resultSessionId,
-            resumeHandle,
-            stderrTail: stderrBuffer.getLines(),
-            stdoutTail: stdoutBuffer.getLines(),
-            modelUsage: resultMessage.modelUsage,
-          };
-        }
-
-        // Turn-cap is a soft, recoverable outcome, not a hard failure: the
-        // agent produced partial work before hitting its `maxTurns` ceiling
-        // (turn caps are live on every agent since #484). Warn (not error)
-        // and return the partial output flagged `capped` so consumers — the
-        // /qa and /exec skills — can treat it as inconclusive/incomplete
-        // rather than discarding the work. See #733. Branched out of the
-        // error switch below so it never carries a hard `error` string.
-        if (resultMessage.subtype === "error_max_turns") {
-          config.onStderr?.(
-            "⚠️ Agent hit its turn cap (error_max_turns). Returning partial results.\n",
-          );
+          if (resultMessage.terminal_reason != null) {
+            metadata.terminal_reason = resultMessage.terminal_reason;
+          }
+          const apiError = new ApiError(resultMessage.result, metadata);
           return {
             success: false,
-            capped: true,
             output: capturedOutput,
             sessionId: resultSessionId,
             resumeHandle,
+            error: resultMessage.result,
+            structuredError: apiError,
             stderrTail: stderrBuffer.getLines(),
             stdoutTail: stdoutBuffer.getLines(),
-            // #986: a capped agent ran to its FULL turn ceiling, so this is
-            // the most expensive shape a phase can take. Reporting it as zero
-            // was the worst case of the bug.
+            // #986: a failed turn still spent its tokens. `modelUsage` is a
+            // required field on every result message, error variants
+            // included, so dropping it here silently zeroed the cost of the
+            // failures — the runs most worth seeing in the cost table.
             modelUsage: resultMessage.modelUsage,
           };
-        }
-
-        // Handle error subtypes
-        let error: string;
-        const errorSubtype = resultMessage.subtype;
-        if (errorSubtype === "error_during_execution") {
-          error = resultMessage.errors?.join(", ") || "Error during execution";
-        } else if (errorSubtype === "error_max_budget_usd") {
-          error = "Budget limit exceeded";
-        } else {
-          error = `Error: ${errorSubtype}`;
         }
 
         return {
-          success: false,
+          success: true,
           output: capturedOutput,
           sessionId: resultSessionId,
           resumeHandle,
-          // Prefer the structured cause (e.g. "Out of credits") over the
-          // generic subtype text when available (#732).
-          error: structuredError?.message ?? error,
-          structuredError,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
-          // #986: the remaining error subtypes, `error_max_budget_usd` among
-          // them. A budget-limit failure reporting zero cost is a
-          // contradiction in terms.
           modelUsage: resultMessage.modelUsage,
         };
+      }
+
+      // Turn-cap is a soft, recoverable outcome, not a hard failure: the
+      // agent produced partial work before hitting its `maxTurns` ceiling
+      // (turn caps are live on every agent since #484). Warn (not error)
+      // and return the partial output flagged `capped` so consumers — the
+      // /qa and /exec skills — can treat it as inconclusive/incomplete
+      // rather than discarding the work. See #733. Branched out of the
+      // error switch below so it never carries a hard `error` string.
+      if (resultMessage.subtype === "error_max_turns") {
+        config.onStderr?.(
+          "⚠️ Agent hit its turn cap (error_max_turns). Returning partial results.\n",
+        );
+        return {
+          success: false,
+          capped: true,
+          output: capturedOutput,
+          sessionId: resultSessionId,
+          resumeHandle,
+          stderrTail: stderrBuffer.getLines(),
+          stdoutTail: stdoutBuffer.getLines(),
+          // #986: a capped agent ran to its FULL turn ceiling, so this is
+          // the most expensive shape a phase can take. Reporting it as zero
+          // was the worst case of the bug.
+          modelUsage: resultMessage.modelUsage,
+        };
+      }
+
+      // Handle error subtypes
+      let error: string;
+      const errorSubtype = resultMessage.subtype;
+      if (errorSubtype === "error_during_execution") {
+        error = resultMessage.errors?.join(", ") || "Error during execution";
+      } else if (errorSubtype === "error_max_budget_usd") {
+        error = "Budget limit exceeded";
+      } else {
+        error = `Error: ${errorSubtype}`;
       }
 
       return {
@@ -341,67 +368,90 @@ export class ClaudeCodeDriver implements AgentDriver {
         output: capturedOutput,
         sessionId: resultSessionId,
         resumeHandle,
-        error: structuredError?.message ?? "No result received from Claude",
+        // Prefer the structured cause (e.g. "Out of credits") over the
+        // generic subtype text when available (#732).
+        error: structuredError?.message ?? error,
         structuredError,
         stderrTail: stderrBuffer.getLines(),
         stdoutTail: stdoutBuffer.getLines(),
-      };
-    } catch (err) {
-      clearTimeout(timeoutId);
-      const error = err instanceof Error ? err.message : String(err);
-
-      if (error.includes("abort") || error.includes("AbortError")) {
-        // A rate limit can manifest as a hang rather than a stream event
-        // reaching the result: the SDK stalls, the phase timeout fires, and
-        // the abort lands here. Only failure-grade signals are ever captured
-        // (see the stream loop), so attaching them cannot mask a genuine
-        // timeout — with no signal, `abortStructuredError` is undefined and
-        // the bare timeout message survives unchanged (#761 AC-1). Without
-        // this, the captured `rateLimitInfo` was discarded and downstream
-        // classification saw only `Timeout after Ns`, sending a closed
-        // rate-limit window into the full retry + MCP-fallback ladder.
-        const abortStructuredError = this.buildStructuredError(
-          rateLimitInfo,
-          assistantError,
-          apiRetryError,
-        );
-        return {
-          success: false,
-          output: capturedOutput,
-          error:
-            abortStructuredError?.message ??
-            `Timeout after ${config.phaseTimeout}s`,
-          structuredError: abortStructuredError,
-          stderrTail: stderrBuffer.getLines(),
-          stdoutTail: stdoutBuffer.getLines(),
-        };
-      }
-
-      // If the stream surfaced a failure-grade rate-limit/billing signal before
-      // throwing, prefer that typed cause (#732) over the raw thrown message — a
-      // mid-stream throw after a *rejected* rate_limit_event is very likely the
-      // proximate cause.
-      const structuredError = this.buildStructuredError(
-        rateLimitInfo,
-        assistantError,
-        apiRetryError,
-      );
-
-      const stderrSuffix = capturedStderr
-        ? `\nStderr: ${capturedStderr.slice(0, 500)}`
-        : "";
-
-      return {
-        success: false,
-        output: capturedOutput,
-        sessionId: resultSessionId,
-        resumeHandle: this.buildResumeHandle(resultSessionId, config.cwd),
-        error: structuredError?.message ?? error + stderrSuffix,
-        structuredError,
-        stderrTail: stderrBuffer.getLines(),
-        stdoutTail: stdoutBuffer.getLines(),
+        // #986: the remaining error subtypes, `error_max_budget_usd` among
+        // them. A budget-limit failure reporting zero cost is a
+        // contradiction in terms.
+        modelUsage: resultMessage.modelUsage,
       };
     }
+
+    return {
+      success: false,
+      output: capturedOutput,
+      sessionId: resultSessionId,
+      resumeHandle,
+      error: structuredError?.message ?? "No result received from Claude",
+      structuredError,
+      stderrTail: stderrBuffer.getLines(),
+      stdoutTail: stdoutBuffer.getLines(),
+    };
+  }
+
+  /** Map a thrown stream (abort/timeout or SDK error) to the phase result. */
+  private resultFromThrow(
+    err: unknown,
+    state: StreamState,
+    config: AgentExecutionConfig,
+  ): AgentPhaseResult {
+    const error = err instanceof Error ? err.message : String(err);
+
+    if (error.includes("abort") || error.includes("AbortError")) {
+      // A rate limit can manifest as a hang rather than a stream event
+      // reaching the result: the SDK stalls, the phase timeout fires, and
+      // the abort lands here. Only failure-grade signals are ever captured
+      // (see the stream loop), so attaching them cannot mask a genuine
+      // timeout — with no signal, `abortStructuredError` is undefined and
+      // the bare timeout message survives unchanged (#761 AC-1). Without
+      // this, the captured `rateLimitInfo` was discarded and downstream
+      // classification saw only `Timeout after Ns`, sending a closed
+      // rate-limit window into the full retry + MCP-fallback ladder.
+      const abortStructuredError = this.buildStructuredError(
+        state.rateLimitInfo,
+        state.assistantError,
+        state.apiRetryError,
+      );
+      return {
+        success: false,
+        output: state.capturedOutput,
+        error:
+          abortStructuredError?.message ??
+          `Timeout after ${config.phaseTimeout}s`,
+        structuredError: abortStructuredError,
+        stderrTail: state.stderrBuffer.getLines(),
+        stdoutTail: state.stdoutBuffer.getLines(),
+      };
+    }
+
+    // If the stream surfaced a failure-grade rate-limit/billing signal before
+    // throwing, prefer that typed cause (#732) over the raw thrown message — a
+    // mid-stream throw after a *rejected* rate_limit_event is very likely the
+    // proximate cause.
+    const structuredError = this.buildStructuredError(
+      state.rateLimitInfo,
+      state.assistantError,
+      state.apiRetryError,
+    );
+
+    const stderrSuffix = state.capturedStderr
+      ? `\nStderr: ${state.capturedStderr.slice(0, 500)}`
+      : "";
+
+    return {
+      success: false,
+      output: state.capturedOutput,
+      sessionId: state.resultSessionId,
+      resumeHandle: this.buildResumeHandle(state.resultSessionId, config.cwd),
+      error: structuredError?.message ?? error + stderrSuffix,
+      structuredError,
+      stderrTail: state.stderrBuffer.getLines(),
+      stdoutTail: state.stdoutBuffer.getLines(),
+    };
   }
 
   /**

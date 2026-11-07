@@ -1,36 +1,38 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { spawnSync } from "child_process";
+import { describe, it, expect } from "vitest";
 import { getIssueInfo, issueTitleWarning } from "./batch-executor.js";
+import { FakeGitHubProvider } from "./platforms/fake-github.js";
+import {
+  deriveGhFixture,
+  loadGhFixture,
+  type GhFixture,
+} from "./platforms/gh-fixtures.js";
 
 // #1257 AC-5: getIssueInfo used to turn every gh failure into the same silent
 // "Issue #N" placeholder, so a dry run could not tell "this issue does not
 // exist" from "gh is offline". Only gh's not-found error sets `notFound`.
+// #1506: gh's output comes from captured fixtures, not a child_process mock.
 
-vi.mock("child_process", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("child_process")>();
-  return { ...actual, spawnSync: vi.fn() };
-});
+const ISSUE = loadGhFixture("issue-view");
+const NOT_FOUND = loadGhFixture("issue-view-not-found");
+const HTTP_502 = loadGhFixture("pr-comment-http-502");
 
-function ghResult(status: number, stdout: string, stderr: string) {
-  return {
-    status,
-    stdout: Buffer.from(stdout),
-    stderr: Buffer.from(stderr),
-  } as unknown as ReturnType<typeof spawnSync>;
+/** `gh issue view <n>` answered from `base`, for any issue number. */
+function issueView(
+  n: number,
+  base: GhFixture,
+  changes: Parameters<typeof deriveGhFixture>[1] = {},
+): FakeGitHubProvider {
+  return new FakeGitHubProvider(
+    deriveGhFixture(base, {
+      args: ISSUE.args.map((a) => (a === "1475" ? String(n) : a)),
+      ...changes,
+    }),
+  );
 }
 
 describe("getIssueInfo (#1257)", () => {
-  beforeEach(() => vi.mocked(spawnSync).mockReset());
-
   it("flags an issue number gh cannot resolve", async () => {
-    vi.mocked(spawnSync).mockReturnValue(
-      ghResult(
-        1,
-        "",
-        "GraphQL: Could not resolve to an issue or pull request with the number of 404. (repository.issue)\n",
-      ),
-    );
-    expect(await getIssueInfo(404)).toEqual({
+    expect(await getIssueInfo(404, issueView(404, NOT_FOUND))).toEqual({
       title: "Issue #404",
       labels: [],
       notFound: true,
@@ -38,10 +40,10 @@ describe("getIssueInfo (#1257)", () => {
   });
 
   it("keeps the silent placeholder for any other gh failure", async () => {
-    vi.mocked(spawnSync).mockReturnValue(
-      ghResult(1, "", "error connecting to api.github.com\n"),
-    );
-    const info = await getIssueInfo(7);
+    const offline = issueView(7, NOT_FOUND, {
+      stderr: "error connecting to api.github.com\n",
+    });
+    const info = await getIssueInfo(7, offline);
     expect(info).toEqual({
       title: "Issue #7",
       labels: [],
@@ -51,16 +53,9 @@ describe("getIssueInfo (#1257)", () => {
   });
 
   it("returns the title and labels of an issue that exists", async () => {
-    vi.mocked(spawnSync).mockReturnValue(
-      ghResult(
-        0,
-        JSON.stringify({ title: "Real issue", labels: [{ name: "bug" }] }),
-        "",
-      ),
-    );
-    expect(await getIssueInfo(7)).toEqual({
-      title: "Real issue",
-      labels: ["bug"],
+    expect(await getIssueInfo(7, issueView(7, ISSUE))).toEqual({
+      title: JSON.parse(ISSUE.stdout).title,
+      labels: ["refactor", "planned", "graph-2026-10-consolidation"],
     });
   });
 });
@@ -68,42 +63,33 @@ describe("getIssueInfo (#1257)", () => {
 // #1487: the placeholder title used to be silent, so a run that then cut
 // feature/N-issue-n from main gave no sign of why.
 describe("title unreadable warning (#1487)", () => {
-  beforeEach(() => vi.mocked(spawnSync).mockReset());
-
   it("names the issue and the gh error when gh fails with HTTP 502", async () => {
-    vi.mocked(spawnSync).mockReturnValue(
-      ghResult(
-        1,
-        "",
-        "HTTP 502: Bad Gateway (https://api.github.com/graphql)\n",
-      ),
+    const warning = issueTitleWarning(
+      1305,
+      await getIssueInfo(1305, issueView(1305, HTTP_502)),
     );
-    const warning = issueTitleWarning(1305, await getIssueInfo(1305));
     expect(warning).toContain("#1305");
     expect(warning).toContain("HTTP 502");
   });
 
   it("prints nothing when gh read the title", async () => {
-    vi.mocked(spawnSync).mockReturnValue(
-      ghResult(0, JSON.stringify({ title: "Real issue", labels: [] }), ""),
-    );
-    expect(issueTitleWarning(1305, await getIssueInfo(1305))).toBeNull();
+    expect(
+      issueTitleWarning(1305, await getIssueInfo(1305, issueView(1305, ISSUE))),
+    ).toBeNull();
   });
 
   it("prints nothing for an issue gh says does not exist", async () => {
-    vi.mocked(spawnSync).mockReturnValue(
-      ghResult(
-        1,
-        "",
-        "GraphQL: Could not resolve to an issue or pull request with the number of 404.\n",
+    expect(
+      issueTitleWarning(
+        404,
+        await getIssueInfo(404, issueView(404, NOT_FOUND)),
       ),
-    );
-    expect(issueTitleWarning(404, await getIssueInfo(404))).toBeNull();
+    ).toBeNull();
   });
 
   it("names the parse error when gh prints unparseable JSON", async () => {
-    vi.mocked(spawnSync).mockReturnValue(ghResult(0, "not json", ""));
-    const warning = issueTitleWarning(9, await getIssueInfo(9));
+    const garbled = issueView(9, ISSUE, { stdout: "not json" });
+    const warning = issueTitleWarning(9, await getIssueInfo(9, garbled));
     expect(warning).toContain("#9");
     expect(warning).toMatch(/JSON/);
   });

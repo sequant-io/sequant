@@ -256,6 +256,7 @@ describe("templates", () => {
         // `merge` rule that describes it untested.
         "init.ts#writeOpencodeMcpConfig#configPath": ".opencode/opencode.json",
         "init.ts#writeCodexConfig#configPath": ".codex/config.toml",
+        "init.ts#writeIssueFormIfAbsent#formPath": ".github/ISSUE_TEMPLATE/",
         'init.ts#initCommand#".sequant/settings.reference.md"':
           ".sequant/settings.reference.md",
         // Rewrite installed skills in place — `templates/skills/` route
@@ -1245,6 +1246,24 @@ describe("templates", () => {
       expect(
         await fileExists(join(cwdDir, ".claude", "skills", ".sequant-version")),
       ).toBe(true);
+    });
+
+    it("skipHooks leaves out only .claude/hooks and .claude/settings.json (#1603 plugin channel)", async () => {
+      await copyTemplates("generic", undefined, {
+        skipHooks: true,
+        noSymlinks: true,
+      });
+
+      expect(await fileExists(join(cwdDir, ".claude", "hooks"))).toBe(false);
+      expect(await fileExists(join(cwdDir, ".claude", "settings.json"))).toBe(
+        false,
+      );
+      expect(
+        await fileExists(join(cwdDir, ".claude", "skills", "exec", "SKILL.md")),
+      ).toBe(true);
+      expect(await fileExists(join(cwdDir, ".claude", "agents"))).toBe(true);
+      expect(await fileExists(join(cwdDir, ".claude", "memory"))).toBe(true);
+      expect(await fileExists(join(cwdDir, "scripts", "dev"))).toBe(true);
     });
   });
 

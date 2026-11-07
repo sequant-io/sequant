@@ -1,79 +1,83 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { spawnSync } from "child_process";
+import { describe, it, expect, vi } from "vitest";
 
-vi.mock("child_process", () => ({
-  execSync: vi.fn(),
-  spawnSync: vi.fn(),
-}));
-
-import { GitHubProvider } from "./github.js";
+import { GhCommandError, type GitHubProvider } from "./github.js";
+import { FakeGitHubProvider } from "./fake-github.js";
+import { deriveGhFixture, loadGhFixture, ANY_ARG } from "./gh-fixtures.js";
 import { postQaVerdictComment } from "../batch-executor.js";
 
-const mockSpawn = vi.mocked(spawnSync);
-
+// #1312: each of the three ways a gh call fails, as a fixture (#1506).
 const FAILURES = {
-  "non-zero exit": { status: 1, stderr: "HTTP 502: bad gateway" },
-  timeout: {
-    status: null,
-    signal: "SIGTERM",
-    stderr: "",
-    error: Object.assign(new Error("spawnSync gh ETIMEDOUT"), {
-      code: "ETIMEDOUT",
-    }),
-  },
-  "spawn failure": {
-    status: null,
-    stderr: "",
-    error: Object.assign(new Error("spawnSync gh ENOENT"), {
-      code: "ENOENT",
-    }),
-  },
+  "non-zero exit": loadGhFixture("pr-comment-http-502"),
+  timeout: loadGhFixture("pr-comment-timeout"),
+  "spawn failure": loadGhFixture("pr-comment-gh-missing"),
 };
+const STDERR = FAILURES["non-zero exit"].stderr.trim();
+
+const calls: Array<
+  [string, string[], (p: GitHubProvider) => Promise<unknown>]
+> = [
+  [
+    "postComment",
+    ["issue", "comment", "1", "--body", ANY_ARG],
+    (p) => p.postComment("1", "body"),
+  ],
+  [
+    "addLabel",
+    ["issue", "edit", "1", "--add-label", ANY_ARG],
+    (p) => p.addLabel("1", "bug"),
+  ],
+  [
+    "removeLabel",
+    ["issue", "edit", "1", "--remove-label", ANY_ARG],
+    (p) => p.removeLabel("1", "bug"),
+  ],
+  [
+    "postPRComment",
+    ["pr", "comment", "7", "--body", ANY_ARG],
+    (p) => p.postPRComment("7", "body"),
+  ],
+  [
+    "getIssueComments",
+    loadGhFixture("issue-comments").args.map((a) => (a === "1475" ? "1" : a)),
+    (p) => p.getIssueComments("1"),
+  ],
+];
 
 describe("GitHubProvider gh failures (#1312)", () => {
-  beforeEach(() => {
-    mockSpawn.mockReset();
-  });
-
-  const calls: Array<[string, (p: GitHubProvider) => Promise<unknown>]> = [
-    ["postComment", (p) => p.postComment("1", "body")],
-    ["addLabel", (p) => p.addLabel("1", "bug")],
-    ["removeLabel", (p) => p.removeLabel("1", "bug")],
-    ["postPRComment", (p) => p.postPRComment("7", "body")],
-    ["getIssueComments", (p) => p.getIssueComments("1")],
-  ];
-
-  for (const [name, call] of calls) {
-    for (const [label, result] of Object.entries(FAILURES)) {
+  for (const [name, args, call] of calls) {
+    for (const [label, failure] of Object.entries(FAILURES)) {
       it(`${name} rejects on ${label}`, async () => {
-        mockSpawn.mockReturnValue(result as never);
-        await expect(call(new GitHubProvider())).rejects.toThrow(
-          /gh .* failed/,
-        );
+        const fake = new FakeGitHubProvider(deriveGhFixture(failure, { args }));
+        const err = await call(fake).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(GhCommandError);
+        expect(String((err as Error).message)).toMatch(/gh .* failed/);
       });
     }
 
     it(`${name} carries gh's stderr`, async () => {
-      mockSpawn.mockReturnValue(FAILURES["non-zero exit"] as never);
-      await expect(call(new GitHubProvider())).rejects.toThrow(
-        "HTTP 502: bad gateway",
+      const fake = new FakeGitHubProvider(
+        deriveGhFixture(FAILURES["non-zero exit"], { args }),
       );
+      await expect(call(fake)).rejects.toThrow(STDERR);
     });
 
     it(`${name} resolves on exit 0`, async () => {
-      mockSpawn.mockReturnValue({
-        status: 0,
-        stderr: "",
+      const ok = deriveGhFixture(loadGhFixture("issue-comment"), {
+        args,
         stdout: "[]",
-      } as never);
-      await expect(call(new GitHubProvider())).resolves.toEqual(
+      });
+      await expect(call(new FakeGitHubProvider(ok))).resolves.toEqual(
         name === "getIssueComments" ? [] : undefined,
       );
     });
   }
 
   it("postQaVerdictComment logs the warning with stderr via the real provider", async () => {
-    mockSpawn.mockReturnValue(FAILURES["non-zero exit"] as never);
+    const fake = new FakeGitHubProvider(
+      deriveGhFixture(FAILURES["non-zero exit"], {
+        args: ["issue", "comment", "1312", "--body", ANY_ARG],
+      }),
+    );
     const log = vi.fn();
     await postQaVerdictComment(
       1312,
@@ -82,11 +86,12 @@ describe("GitHubProvider gh failures (#1312)", () => {
       undefined,
       1,
       log,
+      (n, body) => fake.postComment(String(n), body),
     );
-    expect(mockSpawn).toHaveBeenCalled();
+    expect(fake.calls).toHaveLength(1);
     expect(log).toHaveBeenCalledTimes(1);
     const msg = String(log.mock.calls[0][0]);
     expect(msg).toContain("Failed to post QA verdict comment");
-    expect(msg).toContain("HTTP 502: bad gateway");
+    expect(msg).toContain(STDERR);
   });
 });

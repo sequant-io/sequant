@@ -60,6 +60,10 @@
 import { spawn, execFileSync } from "child_process";
 import { isAbsolute, resolve as resolvePath } from "path";
 import { RingBuffer } from "../ring-buffer.js";
+import {
+  DRIVER_SIGKILL_GRACE_MS,
+  killProcessGroup,
+} from "../../process-group.js";
 import { joinAgentTexts } from "./agent-text.js";
 import {
   BillingError,
@@ -285,6 +289,11 @@ export interface CodexRunOutcome {
   signal: string | null;
   /** Seconds allowed, for the timeout message. */
   phaseTimeout: number;
+  /**
+   * The driver sent this run a kill (timeout or abort). A SIGKILL close then
+   * reads as the escalation of that kill, not a foreign signal (#1472).
+   */
+  killRequested?: boolean;
   stderrTail: string[];
   stdoutTail: string[];
   /** Clock to classify usage-limit resets against; defaults to `Date.now()` when omitted. */
@@ -409,7 +418,9 @@ export function evaluateCodexRun(
   });
 
   if (outcome.signal) {
-    const isTimeout = outcome.signal === "SIGTERM";
+    const isTimeout =
+      outcome.signal === "SIGTERM" ||
+      (outcome.signal === "SIGKILL" && outcome.killRequested === true);
     return fail(
       isTimeout
         ? `Timeout after ${outcome.phaseTimeout}s`
@@ -647,8 +658,12 @@ export class CodexDriver implements AgentDriver {
       const parser = new CodexStreamParser(this.settings?.model, (message) =>
         config.onStderr?.(`codex warning: ${message}\n`),
       );
-      const stderrBuffer = new RingBuffer(TAIL_LINES);
-      const stdoutBuffer = new RingBuffer(TAIL_LINES);
+      const stderrBuffer = new RingBuffer(TAIL_LINES, {
+        maxLineChars: TAIL_LINE_CHARS,
+      });
+      const stdoutBuffer = new RingBuffer(TAIL_LINES, {
+        maxLineChars: TAIL_LINE_CHARS,
+      });
 
       const proc = spawn("codex", args, {
         cwd: config.cwd,
@@ -673,7 +688,14 @@ export class CodexDriver implements AgentDriver {
         resolve(result);
       };
 
-      const killGroup = () => killProcessGroup(proc.pid);
+      let killRequested = false;
+      const killGroup = () => {
+        if (
+          killProcessGroup(proc, { graceMs: DRIVER_SIGKILL_GRACE_MS }).requested
+        ) {
+          killRequested = true;
+        }
+      };
       const timeoutId = setTimeout(killGroup, config.phaseTimeout * 1000);
 
       if (config.abortSignal) {
@@ -687,7 +709,7 @@ export class CodexDriver implements AgentDriver {
       proc.stdout.on("data", (data: Buffer) => {
         const text = data.toString();
         parser.feed(text);
-        pushLines(stdoutBuffer, text);
+        stdoutBuffer.pushLines(text);
         if (config.verbose) {
           config.onOutput?.(text);
         }
@@ -695,7 +717,7 @@ export class CodexDriver implements AgentDriver {
 
       proc.stderr.on("data", (data: Buffer) => {
         const text = data.toString();
-        pushLines(stderrBuffer, text);
+        stderrBuffer.pushLines(text);
         config.onStderr?.(text);
       });
 
@@ -720,6 +742,7 @@ export class CodexDriver implements AgentDriver {
         const result = evaluateCodexRun(parsed, {
           exitCode: code,
           signal,
+          killRequested,
           phaseTimeout: config.phaseTimeout,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
@@ -749,41 +772,6 @@ export class CodexDriver implements AgentDriver {
     } catch {
       // No binary on PATH, or it failed to report a version at all.
       return false;
-    }
-  }
-}
-
-/** Split a chunk into lines and push a capped form of each into `buffer`. */
-function pushLines(buffer: RingBuffer, text: string): void {
-  for (const line of text.split("\n")) {
-    if (line.length === 0) continue;
-    buffer.push(
-      line.length > TAIL_LINE_CHARS
-        ? `${line.slice(0, TAIL_LINE_CHARS)}… [${line.length} chars]`
-        : line,
-    );
-  }
-}
-
-/**
- * SIGTERM the whole process group, swallowing ESRCH.
- *
- * `detached: true` makes the child a group leader, so `-pid` addresses the
- * tree. ESRCH just means it already exited between the check and the signal.
- */
-function killProcessGroup(pid: number | undefined): void {
-  if (pid === undefined) return;
-  try {
-    process.kill(-pid, "SIGTERM");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ESRCH") {
-      // Fall back to signalling the child directly — better a killed leader
-      // than a run that ignores its timeout.
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        // Already gone.
-      }
     }
   }
 }

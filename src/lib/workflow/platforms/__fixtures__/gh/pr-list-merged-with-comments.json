@@ -1,0 +1,20 @@
+{
+  "command": "gh pr list --state merged --search merged:>=2026-10-20 --json number,mergedAt,comments --limit 2 --repo sequant-io/sequant",
+  "args": [
+    "pr",
+    "list",
+    "--state",
+    "merged",
+    "--search",
+    "merged:>=2026-10-20",
+    "--json",
+    "number,mergedAt,comments",
+    "--limit",
+    "2"
+  ],
+  "capturedAt": "2026-10-24T20:28:00.129Z",
+  "exitCode": 0,
+  "stdout": "[{\"comments\":[],\"mergedAt\":\"2026-10-24T12:26:24Z\",\"number\":1585},{\"comments\":[],\"mergedAt\":\"2026-10-23T04:27:15Z\",\"number\":1578}]\n",
+  "stderr": "",
+  "provenance": "captured"
+}

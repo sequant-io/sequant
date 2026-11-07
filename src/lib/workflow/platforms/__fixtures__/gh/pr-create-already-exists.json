@@ -1,0 +1,21 @@
+{
+  "command": "gh pr create --title <*> --body <*> --head <*> --base <*>",
+  "args": [
+    "pr",
+    "create",
+    "--title",
+    "<*>",
+    "--body",
+    "<*>",
+    "--head",
+    "<*>",
+    "--base",
+    "<*>"
+  ],
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "a pull request for branch \"feature/1475-refactor-workflow-locks-worktreestatus-tri-state-r\" into branch \"main\" already exists:\nhttps://github.com/sequant-io/sequant/pull/1563\n",
+  "provenance": "hand-written",
+  "note": "Write path: gh's documented already-exists error; never captured by running it."
+}

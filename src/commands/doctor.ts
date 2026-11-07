@@ -18,6 +18,7 @@ import {
 } from "../lib/fs.js";
 import { checkSkillsInstalled } from "../lib/skills-check.js";
 import { getInstallScope, getManifest } from "../lib/manifest.js";
+import { detectHookChannels } from "../lib/hook-channels.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -159,6 +160,19 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
 }
 
 /**
+ * Info line (not a check, never counted) naming the issue form when
+ * `.github/ISSUE_TEMPLATE/sequant-task.yml` is missing (#1528).
+ */
+export function issueFormInfoLine(cwd: string = process.cwd()): string | null {
+  if (
+    existsSync(pathJoin(cwd, ".github", "ISSUE_TEMPLATE", "sequant-task.yml"))
+  ) {
+    return null;
+  }
+  return "i  Issue form: .github/ISSUE_TEMPLATE/sequant-task.yml is absent - see docs/guides/writing-issues.md (Optional: a GitHub issue form)";
+}
+
+/**
  * Warn when a `node_modules/sequant` sits in cwd's ancestor chain (npm's own
  * `npx` resolution order) or under `$HOME`, at a version that differs from
  * either comparator below. That local copy silently shadows an `npx -y
@@ -224,6 +238,39 @@ export async function checkShadowingLocalSequant(
   }
 
   return results;
+}
+
+/**
+ * One hook channel per checkout (#1603). Claude Code runs both the repo's
+ * `.claude/settings.json` hooks and an enabled plugin's `hooks/hooks.json`,
+ * so with both present every tool call runs the guard twice. `fail` names
+ * both sources and both fixes; `pass` otherwise.
+ */
+export function checkHookChannels(
+  cwd: string = process.cwd(),
+  home?: string,
+): Check {
+  const { repo, plugins } = detectHookChannels({ cwd, home });
+  const plugin = plugins[0];
+  if (repo && plugin) {
+    return {
+      name: "Hook channels",
+      status: "fail",
+      message:
+        `Hooks run twice: ${repo} registers pre-tool.sh and plugin ${plugin.id} ships ${plugin.hooksJson}. ` +
+        `Keep one: disable the plugin here ("${plugin.id}": false in .claude/settings.local.json), ` +
+        `or drop the repo copy (delete .claude/hooks/ and the hooks entries in .claude/settings.json, then add "hooks": "plugin" to .sequant-manifest.json)`,
+    };
+  }
+  return {
+    name: "Hook channels",
+    status: "pass",
+    message: plugin
+      ? `One channel: plugin ${plugin.id}`
+      : repo
+        ? "One channel: repo (.claude/settings.json)"
+        : "No sequant hooks registered",
+  };
 }
 
 // TODO: remove when anthropics/claude-code#43869 closes
@@ -576,17 +623,51 @@ export function formatSkillsDriftMessage(
   return `${status.contentDrift} file(s) differ from bundled content (version ${status.packageVersion}) - run: ${formatSkillsDriftRemedy(status.installScope, cli)}`;
 }
 
-export async function doctorCommand(
-  options: DoctorOptions = {},
-): Promise<void> {
-  console.log(ui.headerBox("SEQUANT HEALTH CHECK"));
-  console.log();
+/**
+ * Check 4: `.claude/hooks`. With `"hooks": "plugin"` in the manifest the
+ * directory is absent by design, so its absence passes (#1603).
+ */
+async function checkHooksDir(pluginHooks: boolean): Promise<Check> {
+  if (await fileExists(".claude/hooks")) {
+    return { name: "Hooks", status: "pass", message: "Hooks directory exists" };
+  }
+  return pluginHooks
+    ? {
+        name: "Hooks",
+        status: "pass",
+        message: 'Hooks come from the plugin (manifest: "hooks": "plugin")',
+      }
+    : {
+        name: "Hooks",
+        status: "warn",
+        message: "No hooks directory (optional but recommended)",
+      };
+}
 
-  const checks: Check[] = [];
-  // Track gh availability and auth for conditional checks later
-  let ghAvailable = false;
-  let ghAuthenticated = false;
+/** Check 6: `.claude/settings.json`, absent by design on a plugin-channel install (#1603). */
+async function checkSettingsFile(pluginHooks: boolean): Promise<Check> {
+  if (await fileExists(".claude/settings.json")) {
+    return {
+      name: "Settings",
+      status: "pass",
+      message: "Settings file exists",
+    };
+  }
+  return pluginHooks
+    ? {
+        name: "Settings",
+        status: "pass",
+        message: "No settings.json needed - the plugin registers the hooks",
+      }
+    : {
+        name: "Settings",
+        status: "warn",
+        message: "No settings.json (hooks won't be triggered)",
+      };
+}
 
+/** Checks 0-6: version, manifest, skills, hooks, scripts/dev and settings. */
+async function collectInstallChecks(checks: Check[]): Promise<void> {
   // Check 0: Version freshness
   const versionResult = await checkVersionThorough();
   if (versionResult.latestVersion) {
@@ -753,21 +834,9 @@ export async function doctorCommand(
     });
   }
 
-  // Check 4: Hooks directory
-  const hooksExist = await fileExists(".claude/hooks");
-  if (hooksExist) {
-    checks.push({
-      name: "Hooks",
-      status: "pass",
-      message: "Hooks directory exists",
-    });
-  } else {
-    checks.push({
-      name: "Hooks",
-      status: "warn",
-      message: "No hooks directory (optional but recommended)",
-    });
-  }
+  // Check 4: Hooks directory. A plugin-channel install has none by design (#1603).
+  const pluginHooks = manifest?.hooks === "plugin";
+  checks.push(await checkHooksDir(pluginHooks));
 
   // Check 5: Hook scripts executable
   const preToolHook = ".claude/hooks/pre-tool.sh";
@@ -788,6 +857,9 @@ export async function doctorCommand(
     }
   }
 
+  // Check 5.1: repo hooks and a hook-shipping plugin both active (#1603).
+  checks.push(checkHookChannels());
+
   // Check 5.5: scripts/dev symlink health (#990) - a link whose target is
   // missing or resolves outside both node_modules/sequant and the project
   // tree only worked on the machine that ran `sync`.
@@ -801,20 +873,18 @@ export async function doctorCommand(
   }
 
   // Check 6: Settings.json
-  const settingsExist = await fileExists(".claude/settings.json");
-  if (settingsExist) {
-    checks.push({
-      name: "Settings",
-      status: "pass",
-      message: "Settings file exists",
-    });
-  } else {
-    checks.push({
-      name: "Settings",
-      status: "warn",
-      message: "No settings.json (hooks won't be triggered)",
-    });
-  }
+  checks.push(await checkSettingsFile(pluginHooks));
+}
+
+/** Checks 7-10: git, GitHub CLI and Claude Code CLI. */
+async function collectEnvironmentChecks(checks: Check[]): Promise<{
+  gitExists: boolean;
+  ghAvailable: boolean;
+  ghAuthenticated: boolean;
+}> {
+  // Track gh availability and auth for conditional checks later
+  let ghAvailable = false;
+  let ghAuthenticated = false;
 
   // Check 7: Git repo. Every run needs one (worktrees, branches, PRs), so a
   // missing repo fails doctor instead of warning (#1257). `.git` only exists
@@ -916,8 +986,13 @@ export async function doctorCommand(
     });
   }
 
-  // Check: Aider CLI (when configured as agent)
-  const settings = await getSettings();
+  return { gitExists, ghAvailable, ghAuthenticated };
+}
+
+type DoctorSettings = Awaited<ReturnType<typeof getSettings>>;
+
+// Check: Aider CLI (when configured as agent)
+function collectAgentChecks(checks: Check[], settings: DoctorSettings): void {
   // #1150: every driver the run can dispatch to — `run.agent` plus any
   // `run.phases.<phase>.agent` — gets its checks, not only the run-level one.
   const agentConfig = {
@@ -1072,7 +1147,16 @@ export async function doctorCommand(
       });
     }
   }
+}
 
+/** Remaining checks: jq, platform, MCP servers and closed-issue verification. */
+async function collectExtraChecks(
+  checks: Check[],
+  settings: DoctorSettings,
+  options: DoctorOptions,
+  env: { gitExists: boolean; ghAvailable: boolean; ghAuthenticated: boolean },
+): Promise<void> {
+  const { gitExists, ghAvailable, ghAuthenticated } = env;
   // Check 12: jq installed (optional but recommended)
   if (commandExists("jq")) {
     checks.push({
@@ -1200,7 +1284,14 @@ export async function doctorCommand(
       }
     }
   }
+}
 
+/** Print every check and return the pass/warn/fail tallies. */
+function printChecks(checks: Check[]): {
+  passCount: number;
+  warnCount: number;
+  failCount: number;
+} {
   // Display results with status icons
   let passCount = 0;
   let warnCount = 0;
@@ -1229,6 +1320,29 @@ export async function doctorCommand(
     else failCount++;
   }
 
+  return { passCount, warnCount, failCount };
+}
+
+export async function doctorCommand(
+  options: DoctorOptions = {},
+): Promise<void> {
+  console.log(ui.headerBox("SEQUANT HEALTH CHECK"));
+  console.log();
+
+  const checks: Check[] = [];
+
+  await collectInstallChecks(checks);
+  const env = await collectEnvironmentChecks(checks);
+
+  const settings = await getSettings();
+  collectAgentChecks(checks, settings);
+  await collectExtraChecks(checks, settings, options, env);
+
+  const tally = printChecks(checks);
+  let warnCount = tally.warnCount;
+  const passCount = tally.passCount;
+  const failCount = tally.failCount;
+
   // Upstream subagent routing notice (AC-2/AC-4). It prints a `!` line, so it
   // counts as a warning in the summary (#1387).
   if (
@@ -1240,6 +1354,10 @@ export async function doctorCommand(
   ) {
     warnCount++;
   }
+
+  // #1528: informational only; counts toward no total.
+  const issueFormLine = issueFormInfoLine();
+  if (issueFormLine) console.log(chalk.blue(`  ${issueFormLine}`));
 
   // Summary with boxed output
   const summary = buildDoctorSummary({

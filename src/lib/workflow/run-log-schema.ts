@@ -22,6 +22,7 @@ import { getVersion } from "../version.js";
 
 // Import canonical Phase types from types.ts (single source of truth)
 import { PhaseSchema, type Phase } from "./types.js";
+import { ACStatusSchema } from "./state-schema.js";
 export { PhaseSchema };
 export type { Phase } from "./types.js";
 
@@ -372,6 +373,20 @@ export const IssueLogSchema = z.object({
   prUrl: z.string().optional(),
   /** How the spec→run phase recommendation was resolved (#921 AC-4) */
   specRecommendation: SpecRecommendationSchema.optional(),
+  /**
+   * Per-AC status as the last QA phase reported it (#1525), parsed by
+   * `ac-status.ts`; `unknown` where the output could not be read. Optional and
+   * additive, so the log stays at `version: 1`.
+   */
+  acs: z
+    .array(
+      z.object({
+        id: z.string(),
+        status: ACStatusSchema,
+        notes: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export type IssueLog = z.infer<typeof IssueLogSchema>;
@@ -466,9 +481,36 @@ export const RunLogSchema = z.object({
    * `"claude-code"`, `"opencode"`. Threaded from `LogWriterOptions.driver`.
    */
   driver: z.string().optional(),
+  /**
+   * Errors the run dropped on purpose, counted by scope (#1504). Written by
+   * `LogWriter.finalize()` on every run, `total: 0` included; absent only in
+   * logs from older versions. Optional, so `version` stays 1.
+   */
+  suppressed: z
+    .object({
+      total: z.number().int().nonnegative(),
+      byScope: z.record(z.string(), z.number().int().nonnegative()),
+    })
+    .optional(),
+  /**
+   * Run-level cost and tokens, the same figure `.sequant/metrics.json` records
+   * for this run (#1527). The cost is the SDK's estimate, not a billing
+   * statement. Each key is absent when the run recorded nothing for it. For a
+   * run ended by a signal (`abortedBy`), it covers the issues that had
+   * finished, not the one in flight. Optional, so `version` stays 1.
+   */
+  cost: z
+    .object({
+      usd: z.number().nonnegative().optional(),
+      tokens: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
 });
 
 export type RunLog = z.infer<typeof RunLogSchema>;
+
+/** The run-level `cost` block of a run log (#1527). */
+export type RunCost = NonNullable<RunLog["cost"]>;
 
 /**
  * Default log directory paths

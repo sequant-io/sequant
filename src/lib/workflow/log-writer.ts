@@ -23,6 +23,7 @@ import {
   type IssueLog,
   type PhaseLog,
   type Phase,
+  type RunCost,
   type IssueStatus,
   type SpecRecommendation,
   createEmptyRunLog,
@@ -37,6 +38,7 @@ import {
   DEFAULT_ROTATION_SETTINGS,
 } from "./log-rotation.js";
 import type { EvidenceBundle } from "./divergence-halt.js";
+import { resetSuppressed, suppressedCounts } from "./suppressed.js";
 
 export interface LogWriterOptions {
   /** Path to log directory (default: .sequant/logs in current directory) */
@@ -67,7 +69,7 @@ export class LogWriter {
   private runLog: Omit<RunLog, "endTime"> | null = null;
   /** Active issues being tracked concurrently, keyed by issue number */
   private activeIssues: Map<number, Partial<IssueLog>> = new Map();
-  /** @deprecated Single-issue slot for backwards compatibility — use activeIssues */
+  /** @deprecated (remove in v2.22) Single-issue slot for backwards compatibility — use activeIssues */
   private currentIssue: Partial<IssueLog> | null = null;
   /**
    * Issue slots forced to `failure` by {@link markIssueFailed} (#879). Keyed on
@@ -106,6 +108,9 @@ export class LogWriter {
       startTime: this.startTime,
       driver: this.driver,
     });
+    // A new run starts a new count of dropped errors (#1504). Debug lines go
+    // to stderr, and only when verbose; the count is kept either way.
+    resetSuppressed(this.verbose ? (line) => console.error(line) : undefined);
 
     // Ensure log directory exists
     await this.ensureLogDirectory(this.logPath);
@@ -221,6 +226,21 @@ export class LogWriter {
   }
 
   /**
+   * Record the per-AC status the QA phase reported (#1525). Same post-hoc
+   * setter shape as {@link setSpecRecommendation}; a later QA phase in the
+   * same run replaces the list.
+   */
+  setAcStatuses(acs: NonNullable<IssueLog["acs"]>, issueNumber?: number): void {
+    const issue = issueNumber
+      ? (this.activeIssues.get(issueNumber) ?? this.currentIssue)
+      : this.currentIssue;
+    if (!issue) {
+      return;
+    }
+    issue.acs = acs;
+  }
+
+  /**
    * Force the in-flight issue's status to `failure` (#879).
    *
    * `deriveIssueLogStatus` runs at phase-log time, so an issue whose phases all
@@ -326,6 +346,9 @@ export class LogWriter {
       ...(issue.specRecommendation != null && {
         specRecommendation: issue.specRecommendation,
       }),
+      ...(issue.acs != null && {
+        acs: issue.acs,
+      }),
     };
 
     this.runLog.issues.push(issueLog);
@@ -353,6 +376,7 @@ export class LogWriter {
    *
    * @param options - Optional finalization options
    * @param options.endCommit - Git commit SHA at run end (AC-2)
+   * @param options.cost - Run-level cost and tokens (#1527)
    * @param options.aborted - Set when finalizing because the run was
    *   terminated by an external signal (#856). Every still-in-flight issue is
    *   recorded as an abort naming its cause, and the run log carries
@@ -363,6 +387,8 @@ export class LogWriter {
   async finalize(options?: {
     endCommit?: string;
     aborted?: { signal: string; reason: string };
+    /** Run-level cost and tokens (#1527); omitted when nothing was recorded. */
+    cost?: RunCost;
   }): Promise<string> {
     if (!this.runLog) {
       throw new Error("LogWriter not initialized.");
@@ -383,6 +409,8 @@ export class LogWriter {
       endCommit: options?.endCommit,
       abortedBy: abort?.signal,
     });
+    finalLog.suppressed = suppressedCounts();
+    if (options?.cost) finalLog.cost = options.cost;
     const filename = generateLogFilename(
       finalLog.runId,
       new Date(finalLog.startTime),

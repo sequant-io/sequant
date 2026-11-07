@@ -5,20 +5,20 @@
  */
 
 import chalk from "chalk";
-import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import { ui, colors } from "../lib/cli-ui.js";
-import {
-  RunLogSchema,
-  type RunLog,
-  LOG_PATHS,
-} from "../lib/workflow/run-log-schema.js";
+import { type RunLog } from "../lib/workflow/run-log-schema.js";
 import {
   manualRotate,
   getLogStats,
   formatBytes,
 } from "../lib/workflow/log-rotation.js";
+import { resolveLogDir, listLogFiles, parseLogFile } from "../lib/run-logs.js";
+import {
+  COST_CAVEAT,
+  formatCostLine,
+  formatDuration,
+} from "../lib/cli-ui/format.js";
 import { getSettings } from "../lib/settings.js";
 
 interface LogsOptions {
@@ -30,70 +30,6 @@ interface LogsOptions {
   rotate?: boolean;
   dryRun?: boolean;
   verbose?: boolean;
-}
-
-/**
- * Resolve the log directory path
- */
-function resolveLogPath(customPath?: string): string {
-  if (customPath) {
-    return customPath.replace("~", os.homedir());
-  }
-
-  // Check project-level logs first
-  const projectPath = LOG_PATHS.project;
-  if (fs.existsSync(projectPath)) {
-    return projectPath;
-  }
-
-  // Fall back to user-level logs
-  const userPath = LOG_PATHS.user.replace("~", os.homedir());
-  if (fs.existsSync(userPath)) {
-    return userPath;
-  }
-
-  // Default to project path (even if it doesn't exist yet)
-  return projectPath;
-}
-
-/**
- * List all log files in a directory
- */
-function listLogFiles(logDir: string): string[] {
-  if (!fs.existsSync(logDir)) {
-    return [];
-  }
-
-  return fs
-    .readdirSync(logDir)
-    .filter((f) => f.startsWith("run-") && f.endsWith(".json"))
-    .sort()
-    .reverse(); // Most recent first
-}
-
-/**
- * Parse a log file
- */
-function parseLogFile(filePath: string): RunLog | null {
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const data = JSON.parse(content);
-    return RunLogSchema.parse(data);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Format duration in human-readable format
- */
-function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  }
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs.toFixed(0)}s`;
 }
 
 /**
@@ -154,6 +90,19 @@ function displayLogSummary(
       ),
     );
   }
+
+  if (log.suppressed && log.suppressed.total > 0) {
+    const scopes = Object.entries(log.suppressed.byScope)
+      .filter(([, n]) => n > 0)
+      .map(([scope, n]) => `${scope} ${n}`)
+      .join(", ");
+    console.log(
+      chalk.gray(`  Suppressed errors: ${log.suppressed.total} (${scopes})`),
+    );
+  }
+
+  console.log(chalk.gray(`  ${formatCostLine(log.cost)}`));
+  if (log.cost) console.log(chalk.gray(`  ${COST_CAVEAT}`));
 
   // Show issues
   for (const issue of log.issues) {
@@ -338,7 +287,7 @@ async function handleRotation(logDir: string, dryRun: boolean): Promise<void> {
  * Main logs command
  */
 export async function logsCommand(options: LogsOptions): Promise<void> {
-  const logDir = resolveLogPath(options.path);
+  const logDir = resolveLogDir(options.path);
 
   // Handle rotation mode
   if (options.rotate) {

@@ -1,0 +1,15 @@
+{
+  "command": "gh issue view 999999 --json number,title,body,labels,state --repo sequant-io/sequant",
+  "args": [
+    "issue",
+    "view",
+    "999999",
+    "--json",
+    "number,title,body,labels,state"
+  ],
+  "capturedAt": "2026-10-20T14:10:32.915Z",
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "GraphQL: Could not resolve to an issue or pull request with the number of 999999. (repository.issue)\n",
+  "provenance": "captured"
+}

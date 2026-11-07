@@ -1,0 +1,16 @@
+{
+  "command": "gh issue edit 1475 --add-label <*>",
+  "args": [
+    "issue",
+    "edit",
+    "1475",
+    "--add-label",
+    "<*>"
+  ],
+  "exitCode": 0,
+  "stdout": "https://github.com/sequant-io/sequant/issues/1475\n",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

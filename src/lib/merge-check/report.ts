@@ -5,8 +5,11 @@
  * batch-level verdict. Optionally posts to GitHub as PR comment.
  */
 
-import { spawnSync } from "child_process";
-import { resolveFailureReason, toCommandResult } from "./command-result.js";
+import {
+  GhCommandError,
+  GitHubProvider,
+} from "../workflow/platforms/github.js";
+import type { PlatformProvider } from "../workflow/platforms/platform-provider.js";
 import type {
   MergeReport,
   CheckResult,
@@ -304,24 +307,28 @@ function severityIcon(severity: string): string {
 /**
  * Post report to GitHub as PR comments (AC-5 --post flag)
  */
-export function postReportToGitHub(report: MergeReport): void {
+export async function postReportToGitHub(
+  report: MergeReport,
+  provider: PlatformProvider = new GitHubProvider(),
+): Promise<void> {
   for (const branch of report.branches) {
     if (!branch.prNumber) continue;
 
     const markdown = formatBranchReportMarkdown(report, branch.issueNumber);
 
-    const result = spawnSync(
-      "gh",
-      ["pr", "comment", String(branch.prNumber), "--body", markdown],
-      { stdio: "pipe", encoding: "utf-8" },
-    );
-
-    if (result.status !== 0) {
-      // Same never-empty reason resolution as the combined-branch test (#803):
-      // `gh` usually writes to stderr, but a killed or unspawnable process
-      // leaves it empty, which would print a message with nothing after it.
+    try {
+      await provider.postPRComment(String(branch.prNumber), markdown);
+    } catch (err) {
+      // Never-empty reason (#803): gh's stderr when it wrote one, else the
+      // error's own message, which names the exit code, signal or spawn error.
+      const reason =
+        err instanceof GhCommandError && err.stderr
+          ? err.stderr
+          : err instanceof Error
+            ? err.message
+            : String(err);
       console.error(
-        `Failed to post comment on PR #${branch.prNumber}: ${resolveFailureReason(toCommandResult(result))}`,
+        `Failed to post comment on PR #${branch.prNumber}: ${reason}`,
       );
     }
   }

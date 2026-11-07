@@ -1,0 +1,15 @@
+{
+  "command": "gh pr view feature/0-no-such-branch --json number,url,body --repo sequant-io/sequant",
+  "args": [
+    "pr",
+    "view",
+    "feature/0-no-such-branch",
+    "--json",
+    "number,url,body"
+  ],
+  "capturedAt": "2026-10-20T14:19:51.085Z",
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "no pull requests found for branch \"feature/0-no-such-branch\"\n",
+  "provenance": "captured"
+}

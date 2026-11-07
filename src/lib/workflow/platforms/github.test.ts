@@ -1,29 +1,36 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { execSync, spawnSync } from "child_process";
-
-vi.mock("child_process", () => ({
-  execSync: vi.fn(),
-  spawnSync: vi.fn(),
-}));
-
-const mockExecSync = vi.mocked(execSync);
-const mockSpawnSync = vi.mocked(spawnSync);
+import { describe, it, expect } from "vitest";
 
 import { GitHubProvider } from "./github.js";
+import { FakeGitHubProvider } from "./fake-github.js";
+import {
+  deriveGhFixture,
+  loadGhFixture,
+  type GhFixture,
+} from "./gh-fixtures.js";
+
+// #1506: every case replays captured gh output through the provider's runner
+// seam; no case fakes gh through child_process.
+
+const REPO = "sequant-io/sequant";
+const NOT_FOUND = loadGhFixture("issue-view-not-found");
+
+/** The captured fixture, failing the way gh fails for a missing issue. */
+function failing(base: GhFixture, args: string[] = base.args): GhFixture {
+  return deriveGhFixture(base, {
+    args,
+    exitCode: NOT_FOUND.exitCode,
+    stdout: "",
+    stderr: NOT_FOUND.stderr,
+  });
+}
 
 describe("GitHubProvider", () => {
-  let provider: GitHubProvider;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    provider = new GitHubProvider();
-  });
-
   it("has name 'github'", () => {
-    expect(provider.name).toBe("github");
+    expect(new GitHubProvider().name).toBe("github");
   });
 
   it("implements PlatformProvider interface", () => {
+    const provider = new GitHubProvider();
     expect(typeof provider.fetchIssue).toBe("function");
     expect(typeof provider.postComment).toBe("function");
     expect(typeof provider.addLabel).toBe("function");
@@ -36,367 +43,210 @@ describe("GitHubProvider", () => {
   });
 
   describe("checkAuth", () => {
-    it("returns true when gh auth status succeeds", async () => {
-      mockExecSync.mockReturnValue("" as never);
-      const result = await provider.checkAuth();
-      expect(result).toBe(true);
-      expect(mockExecSync).toHaveBeenCalledWith("gh auth status", {
-        stdio: "ignore",
-        timeout: 10_000,
+    it("returns true when gh auth status succeeds, under the 10s probe bound", async () => {
+      const fake = new FakeGitHubProvider(loadGhFixture("auth-status"));
+      expect(await fake.checkAuth()).toBe(true);
+      expect(fake.calls[0]).toEqual({
+        args: ["auth", "status"],
+        opts: { timeout: 10_000 },
       });
     });
 
     it("returns false when gh auth status fails", async () => {
-      mockExecSync.mockImplementation(() => {
-        throw new Error("not authenticated");
-      });
-      const result = await provider.checkAuth();
-      expect(result).toBe(false);
+      const fake = new FakeGitHubProvider(
+        loadGhFixture("auth-status-logged-out"),
+      );
+      expect(await fake.checkAuth()).toBe(false);
     });
   });
 
   describe("getIssueComments", () => {
     it("returns comments on success", async () => {
-      const mockComments = [
-        { body: "comment 1", createdAt: "2026-01-01T00:00:00Z" },
-        { body: "comment 2", createdAt: "2026-01-02T00:00:00Z" },
-      ];
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify(mockComments),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      const result = await provider.getIssueComments("123");
-      expect(result).toEqual(mockComments);
+      const fixture = loadGhFixture("issue-comments");
+      const fake = new FakeGitHubProvider(fixture);
+      expect(await fake.getIssueComments("1475")).toEqual(
+        JSON.parse(fixture.stdout),
+      );
     });
 
     it("rejects on failure instead of resolving [] (#1315)", async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      await expect(provider.getIssueComments("123")).rejects.toThrow(
-        /gh issue view failed \(exit 1\): error/,
+      const fake = new FakeGitHubProvider(
+        failing(loadGhFixture("issue-comments")),
+      );
+      await expect(fake.getIssueComments("1475")).rejects.toThrow(
+        /gh issue view failed \(exit 1\): GraphQL: Could not resolve/,
       );
     });
   });
 
   describe("fetchIssueTitleSync", () => {
+    const title = loadGhFixture("issue-view-title");
+
     it("returns title on success", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "My issue title\n",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.fetchIssueTitleSync("42")).toBe("My issue title");
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        ["issue", "view", "42", "--json", "title", "--jq", ".title"],
-        expect.objectContaining({ encoding: "utf-8", timeout: 10000 }),
-      );
+      const fake = new FakeGitHubProvider(title);
+      expect(fake.fetchIssueTitleSync("1475")).toBe(title.stdout.trim());
+      expect(fake.calls[0].opts).toEqual({ timeout: 10000 });
     });
 
     it("returns null on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.fetchIssueTitleSync("999")).toBeNull();
+      expect(
+        new FakeGitHubProvider(failing(title)).fetchIssueTitleSync("1475"),
+      ).toBeNull();
     });
 
     it("returns null on empty output", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "  \n",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.fetchIssueTitleSync("1")).toBeNull();
+      const blank = deriveGhFixture(title, { stdout: "  \n" });
+      expect(
+        new FakeGitHubProvider(blank).fetchIssueTitleSync("1475"),
+      ).toBeNull();
     });
   });
 
   describe("checkGhInstalledSync", () => {
     it("returns true when gh --version succeeds", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "gh version 2.40.0",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.checkGhInstalledSync()).toBe(true);
+      expect(
+        new FakeGitHubProvider(
+          loadGhFixture("gh-version"),
+        ).checkGhInstalledSync(),
+      ).toBe(true);
     });
 
-    it("returns false when gh --version fails", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.checkGhInstalledSync()).toBe(false);
+    it("returns false when gh is not installed", () => {
+      const missing = deriveGhFixture(loadGhFixture("pr-comment-gh-missing"), {
+        args: ["--version"],
+      });
+      expect(new FakeGitHubProvider(missing).checkGhInstalledSync()).toBe(
+        false,
+      );
     });
   });
 
   describe("fetchReleaseSync", () => {
-    it("returns parsed release data on success", () => {
-      const release = {
-        tagName: "v1.0.0",
-        name: "v1.0.0",
-        body: "notes",
-        publishedAt: "2026-01-01",
-      };
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify(release),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.fetchReleaseSync("owner/repo", "v1.0.0")).toEqual(
-        release,
-      );
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        [
-          "release",
-          "view",
-          "v1.0.0",
-          "--repo",
-          "owner/repo",
-          "--json",
-          "tagName,name,body,publishedAt",
-        ],
-        expect.objectContaining({ encoding: "utf-8" }),
-      );
+    const latest = loadGhFixture("release-view-latest");
+
+    it("returns the latest release when no version is given", () => {
+      const release = new FakeGitHubProvider(latest).fetchReleaseSync(REPO);
+      expect(release).toEqual(JSON.parse(latest.stdout));
+      expect(release?.tagName).toMatch(/^v\d+\.\d+\.\d+$/);
     });
 
-    it("fetches latest when no version given", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify({ tagName: "v2.0.0" }),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      provider.fetchReleaseSync("owner/repo");
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        [
+    it("passes the version before --repo", () => {
+      const tagged = deriveGhFixture(latest, {
+        args: [
           "release",
           "view",
+          "v2.20.0",
           "--repo",
-          "owner/repo",
+          REPO,
           "--json",
           "tagName,name,body,publishedAt",
         ],
-        expect.objectContaining({ encoding: "utf-8" }),
-      );
+      });
+      expect(
+        new FakeGitHubProvider(tagged).fetchReleaseSync(REPO, "v2.20.0"),
+      ).not.toBeNull();
     });
 
     it("returns null on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "not found",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.fetchReleaseSync("owner/repo", "v0.0.0")).toBeNull();
+      expect(
+        new FakeGitHubProvider(failing(latest)).fetchReleaseSync(REPO),
+      ).toBeNull();
     });
   });
 
   describe("listReleasesSync", () => {
+    const list = loadGhFixture("release-list");
+
     it("returns parsed releases on success", () => {
-      const releases = [
-        { tagName: "v2.0.0", publishedAt: "2026-02-01" },
-        { tagName: "v1.0.0", publishedAt: "2026-01-01" },
-      ];
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify(releases),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.listReleasesSync("owner/repo", 10)).toEqual(releases);
+      expect(new FakeGitHubProvider(list).listReleasesSync(REPO, 3)).toEqual(
+        JSON.parse(list.stdout),
+      );
     });
 
     it("returns empty array on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.listReleasesSync("owner/repo")).toEqual([]);
+      expect(
+        new FakeGitHubProvider(failing(list)).listReleasesSync(REPO, 3),
+      ).toEqual([]);
     });
   });
 
   describe("searchIssuesSync", () => {
+    const search = loadGhFixture("issue-search");
+
     it("returns matching issues on success", () => {
-      const issues = [{ number: 1, title: "Test issue" }];
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify(issues),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
       expect(
-        provider.searchIssuesSync("owner/repo", ["upstream"], "test", 5),
-      ).toEqual(issues);
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        [
-          "issue",
-          "list",
-          "--repo",
-          "owner/repo",
-          "--label",
-          "upstream",
-          "--search",
-          "test",
-          "--json",
-          "number,title",
-          "--limit",
-          "5",
-        ],
-        expect.objectContaining({ encoding: "utf-8" }),
-      );
+        new FakeGitHubProvider(search).searchIssuesSync(
+          REPO,
+          ["planned"],
+          "PlatformProvider",
+          5,
+        ),
+      ).toEqual(JSON.parse(search.stdout));
     });
 
     it("returns empty array on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.searchIssuesSync("owner/repo", [], "q")).toEqual([]);
+      expect(
+        new FakeGitHubProvider(failing(search)).searchIssuesSync(
+          REPO,
+          ["planned"],
+          "PlatformProvider",
+          5,
+        ),
+      ).toEqual([]);
     });
 
     it("searchIssuesOrNullSync returns null on failure (#1179)", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.searchIssuesOrNullSync("owner/repo", [], "q")).toBeNull();
+      expect(
+        new FakeGitHubProvider(failing(search)).searchIssuesOrNullSync(
+          REPO,
+          ["planned"],
+          "PlatformProvider",
+          5,
+        ),
+      ).toBeNull();
     });
   });
 
   describe("listLabelsSync", () => {
+    const labels = loadGhFixture("label-list");
+
     it("returns label names on success", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify([
-          { name: "upstream" },
-          { name: "needs-triage" },
-        ]),
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.listLabelsSync("owner/repo")).toEqual([
-        "upstream",
-        "needs-triage",
-      ]);
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        [
-          "label",
-          "list",
-          "--repo",
-          "owner/repo",
-          "--json",
-          "name",
-          "--limit",
-          "200",
-        ],
-        expect.objectContaining({ encoding: "utf-8" }),
-      );
+      const names = new FakeGitHubProvider(labels).listLabelsSync(REPO);
+      expect(names).toContain("bug");
+      expect(names).toContain("refactor");
     });
 
     it("returns null on failure, not an empty list", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.listLabelsSync("owner/repo")).toBeNull();
+      expect(
+        new FakeGitHubProvider(failing(labels)).listLabelsSync(REPO),
+      ).toBeNull();
     });
   });
 
   describe("createIssueWithBodyFileSync", () => {
+    const created = loadGhFixture("issue-create-body-file");
+
     it("returns issue info on success", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "https://github.com/owner/repo/issues/42\n",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      const result = provider.createIssueWithBodyFileSync(
-        "owner/repo",
-        "title",
-        "/tmp/body.md",
-        ["bug"],
-      );
-      expect(result).toEqual({
-        number: 42,
-        url: "https://github.com/owner/repo/issues/42",
+      const withLabel = deriveGhFixture(created, {
+        args: [...created.args, "--label", "bug"],
+      });
+      expect(
+        new FakeGitHubProvider(withLabel).createIssueWithBodyFileSync(
+          REPO,
+          "title",
+          "/tmp/body.md",
+          ["bug"],
+        ),
+      ).toEqual({
+        number: 1600,
+        url: "https://github.com/sequant-io/sequant/issues/1600",
       });
     });
 
     it("returns null on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
       expect(
-        provider.createIssueWithBodyFileSync(
-          "owner/repo",
+        new FakeGitHubProvider(failing(created)).createIssueWithBodyFileSync(
+          REPO,
           "title",
           "/tmp/body.md",
           [],
@@ -406,37 +256,23 @@ describe("GitHubProvider", () => {
   });
 
   describe("commentOnIssueWithBodyFileSync", () => {
+    const comment = loadGhFixture("issue-comment-body-file");
+
     it("returns true on success", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
       expect(
-        provider.commentOnIssueWithBodyFileSync(
-          "owner/repo",
-          42,
+        new FakeGitHubProvider(comment).commentOnIssueWithBodyFileSync(
+          REPO,
+          1475,
           "/tmp/comment.md",
         ),
       ).toBe(true);
     });
 
     it("returns false on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
       expect(
-        provider.commentOnIssueWithBodyFileSync(
-          "owner/repo",
-          42,
+        new FakeGitHubProvider(failing(comment)).commentOnIssueWithBodyFileSync(
+          REPO,
+          1475,
           "/tmp/comment.md",
         ),
       ).toBe(false);
@@ -444,61 +280,35 @@ describe("GitHubProvider", () => {
   });
 
   describe("getPRHeadBranchSync", () => {
+    const head = loadGhFixture("pr-view-head-branch");
+
     it("returns branch name on success", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "feature/123-my-feature\n",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      const result = provider.getPRHeadBranchSync(123);
-      expect(result).toBe("feature/123-my-feature");
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        ["pr", "view", "123", "--json", "headRefName", "--jq", ".headRefName"],
-        expect.objectContaining({ stdio: "pipe", timeout: 10000 }),
-      );
+      const fake = new FakeGitHubProvider(head);
+      expect(fake.getPRHeadBranchSync(1563)).toBe(head.stdout.trim());
+      expect(fake.calls[0].opts).toEqual({ timeout: 10000 });
     });
 
     it("returns null on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "error",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.getPRHeadBranchSync(999)).toBeNull();
+      expect(
+        new FakeGitHubProvider(failing(head)).getPRHeadBranchSync(1563),
+      ).toBeNull();
     });
 
     it("returns null on empty output", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-      expect(provider.getPRHeadBranchSync(456)).toBeNull();
+      const blank = deriveGhFixture(head, { stdout: "" });
+      expect(
+        new FakeGitHubProvider(blank).getPRHeadBranchSync(1563),
+      ).toBeNull();
     });
   });
 
-  // #605: async createPR(opts) must forward opts.base to the underlying
-  // `gh pr create` call. Previously dropped silently.
   describe("updatePRSync (#1247)", () => {
-    it("PATCHes the pull via gh api with the fields as JSON on stdin", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: Buffer.from("{}"),
-        stderr: Buffer.from(""),
-      } as never);
+    const update = loadGhFixture("pr-update");
 
-      const result = provider.updatePRSync(
-        7,
+    it("PATCHes the pull via gh api with the fields as JSON on stdin", () => {
+      const fake = new FakeGitHubProvider(update);
+      const result = fake.updatePRSync(
+        1563,
         {
           title: "fix(#1): t",
           body: "line `x`\n$(not run)",
@@ -508,20 +318,7 @@ describe("GitHubProvider", () => {
       );
 
       expect(result).toEqual({ success: true });
-      const [cmd, args, opts] = mockSpawnSync.mock.calls[0] as [
-        string,
-        string[],
-        { cwd?: string; input?: string },
-      ];
-      expect(cmd).toBe("gh");
-      expect(args).toEqual([
-        "api",
-        "-X",
-        "PATCH",
-        "repos/{owner}/{repo}/pulls/7",
-        "--input",
-        "-",
-      ]);
+      const [{ args, opts }] = fake.calls;
       expect(args).not.toContain("edit");
       expect(opts.cwd).toBe("/wt");
       expect(JSON.parse(opts.input ?? "")).toEqual({
@@ -532,16 +329,16 @@ describe("GitHubProvider", () => {
     });
 
     it("omits unset fields and reports gh's stderr on failure", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: Buffer.from(""),
-        stderr: Buffer.from("HTTP 422: Validation Failed\n"),
-      } as never);
-
-      const result = provider.updatePRSync(7, { base: "main" });
-
-      const opts = mockSpawnSync.mock.calls[0][2] as { input?: string };
-      expect(JSON.parse(opts.input ?? "")).toEqual({ base: "main" });
+      const rejected = deriveGhFixture(update, {
+        exitCode: 1,
+        stdout: "",
+        stderr: "HTTP 422: Validation Failed\n",
+      });
+      const fake = new FakeGitHubProvider(rejected);
+      const result = fake.updatePRSync(1563, { base: "main" });
+      expect(JSON.parse(fake.calls[0].opts.input ?? "")).toEqual({
+        base: "main",
+      });
       expect(result).toEqual({
         success: false,
         error: "HTTP 422: Validation Failed",
@@ -549,23 +346,18 @@ describe("GitHubProvider", () => {
     });
 
     it("makes no call when there is nothing to update", () => {
-      expect(provider.updatePRSync(7, {})).toEqual({ success: true });
-      expect(mockSpawnSync).not.toHaveBeenCalled();
+      const fake = new FakeGitHubProvider();
+      expect(fake.updatePRSync(1563, {})).toEqual({ success: true });
+      expect(fake.calls).toHaveLength(0);
     });
   });
 
+  // #605: async createPR(opts) must forward opts.base to the underlying
+  // `gh pr create` call. Previously dropped silently.
   describe("createPR (async) forwards opts.base", () => {
     it("passes --base <opts.base> to gh pr create", async () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "https://github.com/owner/repo/pull/42\n",
-        stderr: "",
-        pid: 0,
-        output: [],
-        signal: null,
-      } as never);
-
-      const result = await provider.createPR({
+      const fake = new FakeGitHubProvider(loadGhFixture("pr-create"));
+      const result = await fake.createPR({
         title: "feat(#605): test",
         body: "body",
         head: "feature/605",
@@ -573,12 +365,11 @@ describe("GitHubProvider", () => {
       });
 
       expect(result).toEqual({
-        number: 42,
-        url: "https://github.com/owner/repo/pull/42",
+        number: 1563,
+        url: "https://github.com/sequant-io/sequant/pull/1563",
       });
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        [
+      expect(fake.calls[0]).toEqual({
+        args: [
           "pr",
           "create",
           "--title",
@@ -590,63 +381,49 @@ describe("GitHubProvider", () => {
           "--base",
           "feature/predecessor",
         ],
-        expect.objectContaining({ stdio: "pipe", timeout: 30000 }),
-      );
+        opts: { timeout: 30000, cwd: undefined },
+      });
     });
   });
 
   describe("listOpenPRFilesSync (#1454)", () => {
+    const prList = loadGhFixture("pr-list-open-files");
+
     it("parses gh pr list into number, head and file paths", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: JSON.stringify([
-          {
-            number: 5,
-            headRefName: "peer",
-            files: [{ path: "src/a.ts", additions: 1 }, { path: "b.md" }],
-          },
-          { number: 6, headRefName: "empty", files: [] },
-        ]),
-        stderr: "",
-      } as never);
-      expect(provider.listOpenPRFilesSync()).toEqual([
-        { number: 5, headRefName: "peer", files: ["src/a.ts", "b.md"] },
-        { number: 6, headRefName: "empty", files: [] },
-      ]);
-      expect(mockSpawnSync).toHaveBeenCalledWith(
-        "gh",
-        [
-          "pr",
-          "list",
-          "--state",
-          "open",
-          "--limit",
-          "100",
-          "--json",
-          "number,headRefName,files",
-        ],
-        expect.anything(),
+      const raw = JSON.parse(prList.stdout) as Array<{
+        number: number;
+        headRefName: string;
+        files: Array<{ path: string }>;
+      }>;
+      expect(raw.length).toBeGreaterThan(0);
+      expect(new FakeGitHubProvider(prList).listOpenPRFilesSync()).toEqual(
+        raw.map((pr) => ({
+          number: pr.number,
+          headRefName: pr.headRefName,
+          files: pr.files.map((f) => f.path),
+        })),
       );
     });
 
     it("throws instead of returning [] when gh fails", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: "",
-        stderr: "gh auth login required",
-      } as never);
-      expect(() => provider.listOpenPRFilesSync()).toThrow(
-        /gh pr list failed .*gh auth login required/,
+      const loggedOut = loadGhFixture("auth-status-logged-out");
+      const fake = new FakeGitHubProvider(
+        deriveGhFixture(prList, {
+          exitCode: 1,
+          stdout: "",
+          stderr: loggedOut.stderr,
+        }),
+      );
+      expect(() => fake.listOpenPRFilesSync()).toThrow(
+        /gh pr list failed .*gh auth login/,
       );
     });
 
     it("throws on output that is not JSON", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: "not json",
-        stderr: "",
-      } as never);
-      expect(() => provider.listOpenPRFilesSync()).toThrow(/not JSON/);
+      const fake = new FakeGitHubProvider(
+        deriveGhFixture(prList, { stdout: "not json" }),
+      );
+      expect(() => fake.listOpenPRFilesSync()).toThrow(/not JSON/);
     });
   });
 });

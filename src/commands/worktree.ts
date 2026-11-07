@@ -8,6 +8,7 @@
  */
 
 import chalk from "chalk";
+import { parseIssueNumber } from "../lib/cli-flags.js";
 import {
   resolveIssueWorktree,
   verifyWorktreePath,
@@ -22,16 +23,6 @@ export interface WorktreeVerifyOptions {
   json?: boolean;
 }
 
-function parseIssue(arg: string): number | null {
-  const issue = Number.parseInt(arg, 10);
-  if (!Number.isInteger(issue) || issue <= 0) {
-    console.error(chalk.red(`Invalid issue number: ${arg}`));
-    process.exitCode = 2;
-    return null;
-  }
-  return issue;
-}
-
 /**
  * `sequant worktree resolve <issue>` — print the absolute path of this
  * repository's worktree for an issue.
@@ -44,8 +35,12 @@ export async function worktreeResolveCommand(
   issueArg: string,
   options: WorktreeResolveOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 2;
+    return;
+  }
 
   const result = resolveIssueWorktree(issue);
 
@@ -95,8 +90,12 @@ export async function worktreeVerifyCommand(
 ): Promise<void> {
   let issue: number | undefined;
   if (options.issue !== undefined) {
-    const parsed = parseIssue(options.issue);
-    if (parsed === null) return;
+    const parsed = parseIssueNumber(options.issue);
+    if (parsed === null) {
+      console.error(chalk.red(`Invalid issue number: ${options.issue}`));
+      process.exitCode = 2;
+      return;
+    }
     issue = parsed;
   }
 

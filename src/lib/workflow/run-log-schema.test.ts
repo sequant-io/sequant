@@ -448,6 +448,25 @@ describe("Zod Schemas", () => {
       expect(parsed.config).not.toHaveProperty("driver");
       expect(parsed.config).not.toHaveProperty("sequantVersion");
     });
+
+    it("accepts an optional suppressed count, and logs without it still parse (#1504 AC-2)", () => {
+      const parsed = RunLogSchema.parse({
+        ...validRunLog,
+        suppressed: { total: 3, byScope: { state: 2, progress: 1 } },
+      });
+      expect(parsed.version).toBe(1);
+      expect(parsed.suppressed).toEqual({
+        total: 3,
+        byScope: { state: 2, progress: 1 },
+      });
+      expect(RunLogSchema.parse(validRunLog).suppressed).toBeUndefined();
+      expect(() =>
+        RunLogSchema.parse({
+          ...validRunLog,
+          suppressed: { total: -1, byScope: {} },
+        }),
+      ).toThrow();
+    });
   });
 
   describe("ErrorContextSchema", () => {

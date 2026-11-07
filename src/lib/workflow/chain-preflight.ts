@@ -20,11 +20,10 @@
  *
  * Overlap prediction is delegated to `assess-collision-detect` (AC-3) rather
  * than reimplemented. The pure `computePreflightWarnings` function is the unit
- * surface (AC-1/AC-5); `runChainPreflight` adds the `gh` fetch and warn-degrades
+ * surface (AC-1/AC-5); `runChainPreflight` adds the provider fetch and warn-degrades
  * if a fetch fails — the pre-flight must never be the thing that breaks a run.
  */
 
-import { spawnSync } from "child_process";
 import chalk from "chalk";
 import { hasAcceptanceCriteria } from "../ac-parser.js";
 import {
@@ -32,6 +31,8 @@ import {
   detectFileCollisions,
 } from "../assess-collision-detect.js";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
+import { GitHubProvider } from "./platforms/github.js";
+import type { PlatformProvider } from "./platforms/platform-provider.js";
 
 /** The class of content problem a warning describes. */
 export type PreflightWarningKind =
@@ -52,7 +53,7 @@ export interface PreflightIssue {
   number: number;
   /** Raw issue body markdown. */
   body: string;
-  /** GitHub issue state, e.g. `"OPEN"` / `"CLOSED"`. */
+  /** Issue state, e.g. `"open"` / `"closed"`; compared case-insensitively. */
   state: string;
   /** Issue title (for message context). */
   title: string;
@@ -197,25 +198,21 @@ export function computePreflightWarnings(
 }
 
 /**
- * Fetch a single issue's pre-flight content via `gh`. Returns `null` on any
- * failure so the caller can warn-degrade (skip that issue's checks) rather than
- * abort the run.
+ * Fetch a single issue's pre-flight content through the provider. Returns
+ * `null` on any failure so the caller can warn-degrade (skip that issue's
+ * checks) rather than abort the run.
  */
-function fetchPreflightIssue(issueNumber: number): PreflightIssue | null {
+async function fetchPreflightIssue(
+  issueNumber: number,
+  provider: PlatformProvider,
+): Promise<PreflightIssue | null> {
   try {
-    const result = spawnSync(
-      "gh",
-      ["issue", "view", String(issueNumber), "--json", "body,state,title"],
-      { stdio: "pipe" },
-    );
-    if (result.status !== 0) return null;
-    const data = JSON.parse(result.stdout.toString());
+    const issue = await provider.fetchIssue(String(issueNumber));
     return {
       number: issueNumber,
-      body: typeof data.body === "string" ? data.body : "",
-      state: typeof data.state === "string" ? data.state : "",
-      title:
-        typeof data.title === "string" ? data.title : `Issue #${issueNumber}`,
+      body: issue.body ?? "",
+      state: issue.state,
+      title: issue.title || `Issue #${issueNumber}`,
     };
   } catch {
     return null;
@@ -228,14 +225,16 @@ function fetchPreflightIssue(issueNumber: number): PreflightIssue | null {
  * issue's checks are skipped) — the pre-flight never aborts a run on its own.
  *
  * @param cliOrder Raw CLI issue order (NOT dep-sorted).
+ * @param provider Where issues are read from; a real `GitHubProvider` by default.
  * @returns The list of content warnings (empty when everything looks consistent).
  */
 export async function runChainPreflight(
   cliOrder: number[],
+  provider: PlatformProvider = new GitHubProvider(),
 ): Promise<PreflightWarning[]> {
   const issues = new Map<number, PreflightIssue>();
   for (const num of cliOrder) {
-    const fetched = fetchPreflightIssue(num);
+    const fetched = await fetchPreflightIssue(num, provider);
     if (fetched) {
       issues.set(num, fetched);
     } else {

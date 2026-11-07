@@ -7,13 +7,16 @@
  * marker into one body (feedback_synthetic_test_fixture_trap).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   computePreflightWarnings,
   parseDeclaredBlockers,
   hasNonEmptyAcSection,
+  runChainPreflight,
   type PreflightIssue,
 } from "./chain-preflight.js";
+import { FakeGitHubProvider } from "./platforms/fake-github.js";
+import { deriveGhFixture, loadGhFixture } from "./platforms/gh-fixtures.js";
 
 /** Build a fetched-issue map from a list of issues. */
 function toMap(issues: PreflightIssue[]): Map<number, PreflightIssue> {
@@ -275,5 +278,34 @@ describe("computePreflightWarnings — robustness (AC-2 warn-only, warn-degrade)
       toMap([{ number: 10, body: clean, state: "OPEN", title: "A" }]),
     );
     expect(warnings).toEqual([]);
+  });
+});
+
+// #1506: the fetch goes through the provider; gh's output is a captured fixture.
+describe("runChainPreflight — fetches through the provider", () => {
+  const captured = loadGhFixture("issue-view");
+  const viewOf = (n: number) =>
+    captured.args.map((a) => (a === "1475" ? String(n) : a));
+
+  it("warns on a closed issue and skips one gh cannot fetch", async () => {
+    const fake = new FakeGitHubProvider(
+      deriveGhFixture(captured, { args: viewOf(1) }),
+      deriveGhFixture(loadGhFixture("issue-view-not-found"), {
+        args: viewOf(2),
+      }),
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const warnings = await runChainPreflight([1, 2], fake);
+      expect(
+        warnings.filter((w) => w.kind === "closed-issue").map((w) => w.issue),
+      ).toEqual([1]);
+      expect(warnings.every((w) => w.issue !== 2)).toBe(true);
+      expect(String(log.mock.calls.flat().join("\n"))).toContain(
+        "could not fetch #2",
+      );
+    } finally {
+      log.mockRestore();
+    }
   });
 });

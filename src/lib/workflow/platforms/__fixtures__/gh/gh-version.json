@@ -1,0 +1,11 @@
+{
+  "command": "gh --version",
+  "args": [
+    "--version"
+  ],
+  "capturedAt": "2026-10-20T14:10:43.671Z",
+  "exitCode": 0,
+  "stdout": "gh version 2.66.1 (2025-01-31)\nhttps://github.com/cli/cli/releases/tag/v2.66.1\n",
+  "stderr": "",
+  "provenance": "captured"
+}

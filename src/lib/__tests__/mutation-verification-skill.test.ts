@@ -5,8 +5,7 @@
  * `mutation-marker.test.ts` and the gate-test classifier by
  * `ac-parser.test.ts`. The skill half (§6i itself, and its §7 wiring) is
  * prose-only, so these tests assert the *presence and wiring* of the skill
- * text, mirroring `evidence-clause-skill.test.ts`'s pattern for §6h — the
- * immediate precedent this section replicates.
+ * text.
  *
  * - AC-1: `/qa` §6i exists and declares the four statuses; §7 step 2 declares
  *   `mutation_verification_status` attributed to Section 6i.

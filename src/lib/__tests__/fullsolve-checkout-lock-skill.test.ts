@@ -3,8 +3,10 @@
  *
  * AC-6 asks that the Phase 0.3 text "states precisely what the per-issue lock
  * does and does not cover, so it no longer reads as a general concurrency
- * guarantee." That is prose with no runtime twin, so these tests assert the
- * text itself.
+ * guarantee." That part is prose, so those tests assert the text itself. The
+ * lock fences are not prose: the acquire fences and every release site run
+ * against the built CLI and a temp lock dir (#1512), so a release that lost
+ * `--issue` or its per-issue twin leaves a lock file behind and fails.
  *
  * Per CLAUDE.md, file-reading gate tests are scoped to the delimited region
  * they mean to check — matching the whole SKILL.md would let an unrelated
@@ -17,11 +19,20 @@
  * partial edit fails here too.
  */
 
+import { spawnSync, type SpawnSyncReturns } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
+import {
+  fill,
+  skillEnv,
+  skillFence,
+  skillFences,
+  withBuiltCli,
+} from "../../../__tests__/helpers/skill-fence.js";
 
 /**
  * Anchor to this file's own location, not `process.cwd()`. Under CI the two
@@ -113,8 +124,6 @@ describe("AC-6: Phase 0.3 states what the per-issue lock does NOT cover", () => 
     "%s — points at the checkout lock as the cover",
     (root) => {
       const section = phase03(root);
-      expect(section).toContain("locks checkout acquire");
-      expect(section).toContain("--issue=");
       expect(section).toMatch(/pre-tool\.sh/);
     },
   );
@@ -151,81 +160,71 @@ function bashBlocks(full: string): string[] {
  */
 const EXPECTED_RELEASE_SITES = 7;
 
-describe("AC-6/#906: every checkout release proves ownership with --issue", () => {
-  it.each(SKILL_ROOTS)(
-    "%s — no `locks checkout release` anywhere lacks --issue",
-    (root) => {
-      const full = skillText(root);
+/** The fullsolve fences that release the checkout lock, in document order. */
+const releaseFences = skillFences("fullsolve", {
+  contains: "locks checkout release",
+});
 
-      // Negative over executable content only. Deliberately NOT anchored on
-      // `npx `: a site written as bare `sequant locks checkout release` is
-      // just as broken, and anchoring on the runner would wave it through.
-      // Scoping to bash fences is what makes dropping the anchor safe — it
-      // keeps prose that merely *names* the command (the debugging note in
-      // §5.5) from reading as an unflagged invocation.
-      const missing = bashBlocks(full).flatMap((block) => [
-        ...block.matchAll(/\bsequant locks checkout release(?! --issue=)/g),
-      ]);
-      expect(
-        missing,
-        `${missing.length} release site(s) without --issue`,
-      ).toHaveLength(0);
+let locksDir: string;
+beforeEach(() => {
+  locksDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-fullsolve-lock-"));
+});
+afterEach(() => fs.rmSync(locksDir, { recursive: true, force: true }));
 
-      // And the command must actually appear — a rename would otherwise make
-      // the negative above vacuously true.
-      expect(
-        full.match(
-          /npx sequant locks checkout release --issue=<issue-number> \|\| true/g,
-        ),
-      ).not.toBeNull();
+/** Run a skill fragment with `<issue-number>` filled and the built CLI. */
+function runSkill(script: string): SpawnSyncReturns<string> {
+  return spawnSync(
+    "bash",
+    ["-c", withBuiltCli(fill(script, { "<issue-number>": ISSUE }))],
+    {
+      cwd: locksDir,
+      encoding: "utf-8",
+      env: skillEnv({ SEQUANT_LOCKS_DIR: locksDir }),
     },
   );
+}
 
-  it.each(SKILL_ROOTS)(
-    "%s — each release bash block releases BOTH locks",
-    (root) => {
-      const blocks = bashBlocks(skillText(root));
+const ISSUE = "4242";
 
-      // Deliberately keeps `|| true` in both patterns: a release that aborts
-      // the block on a non-zero exit is a different (and worse) contract, and
-      // a laxer regex would stop gating it.
-      const checkoutRelease =
-        /npx sequant locks checkout release --issue=<issue-number> \|\| true/;
-      const issueRelease = /npx sequant locks release <issue-number> \|\| true/;
+describe("AC-6/#906: the Phase 0.3 fences take both locks and every release site frees both", () => {
+  it("there are exactly the expected release sites", () => {
+    expect(releaseFences).toHaveLength(EXPECTED_RELEASE_SITES);
+  });
 
-      const releaseBlocks = blocks.filter((b) => checkoutRelease.test(b));
-      expect(releaseBlocks).toHaveLength(EXPECTED_RELEASE_SITES);
-
-      // Pairing is per-block, not per-file: a whole-file count cannot tell a
-      // block that releases both locks from two blocks that each release one.
-      for (const block of releaseBlocks) {
-        expect(
-          issueRelease.test(block),
-          `checkout released without the per-issue lock in:\n${block}`,
-        ).toBe(true);
+  it.each(releaseFences.map((fence, i) => [i + 1, fence]))(
+    "release site %i frees both locks taken by the Phase 0.3 acquire fences",
+    (_n, fence) => {
+      const scope = { section: "### 0.3 Acquire Concurrency Lock" };
+      for (const contains of [
+        "locks acquire <issue-number>",
+        "locks checkout acquire",
+      ]) {
+        const acquire = runSkill(
+          skillFence("fullsolve", { ...scope, contains }),
+        );
+        expect(acquire.status, acquire.stderr).toBe(0);
       }
-    },
-  );
+      // The acquiring shell exits at once, so both locks must be taken with
+      // --skip-pid-check or their dead PID makes them stale on the next check.
+      for (const file of [`${ISSUE}.lock`, "checkout.lock"]) {
+        const lock = JSON.parse(
+          fs.readFileSync(path.join(locksDir, file), "utf-8"),
+        );
+        expect(lock.skipPidCheck, file).toBe(true);
+      }
 
-  it.each(SKILL_ROOTS)(
-    "%s — the Phase 5.0 branch gate releases before it exits",
-    (root) => {
-      // The latest-firing halt path, and the one that had no release at all
-      // (#906) — post-fix a leak here wedges the tree for the longest.
-      const gate = bashBlocks(skillText(root)).find((b) =>
-        b.includes("commits must NOT land on main"),
-      );
-      expect(
-        gate,
-        "Phase 5.0 branch verification block not found",
-      ).toBeDefined();
-      expect(gate).toMatch(
-        /npx sequant locks checkout release --issue=<issue-number> \|\| true/,
-      );
-      expect(gate).toMatch(
-        /npx sequant locks release <issue-number> \|\| true/,
-      );
+      // Only the release lines: the rest of a site (halt messages, merges)
+      // is the surrounding workflow, not the lock contract.
+      const releases = String(fence)
+        .split("\n")
+        .filter((line) => /locks (checkout )?release/.test(line))
+        .join("\n");
+      const release = runSkill(releases);
+      expect(release.status, release.stderr).toBe(0);
+      expect(fs.existsSync(path.join(locksDir, `${ISSUE}.lock`))).toBe(false);
+      expect(fs.existsSync(path.join(locksDir, "checkout.lock"))).toBe(false);
     },
+    20_000,
   );
 });
 
@@ -239,21 +238,6 @@ describe("#906: Phase 0.3 acquires once, unconditionally, with an issue in scope
     );
     expect(acquires).toHaveLength(1);
   });
-
-  it.each(SKILL_ROOTS)(
-    "%s — the acquire fence itself carries --issue",
-    (root) => {
-      // Scoped to the acquire fence, not the whole §0.3 section: a section-wide
-      // `toContain("--issue=")` is satisfied by any release site and so could
-      // never gate the acquire it is named for.
-      const fence = bashBlocks(skillText(root)).find((b) =>
-        b.includes("locks checkout acquire"),
-      );
-      expect(fence, "checkout acquire fence not found").toBeDefined();
-      expect(fence).toMatch(/--issue=<issue-number>/);
-      expect(fence).toMatch(/--skip-pid-check/);
-    },
-  );
 
   it.each(SKILL_ROOTS)("%s — Phase 0 is declared unconditional", (root) => {
     // Two reviewers read the Smart Resumption table in opposite directions.

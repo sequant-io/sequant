@@ -18,19 +18,15 @@
  *     #223 "- Depends on: #219 ..."     → [219]
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
-// Mock `gh` so parseDependencies can be exercised without the network. Only the
-// parseDependencies suite relies on this; the pure-parser suite ignores it.
-vi.mock("child_process", () => ({ spawnSync: vi.fn() }));
-import { spawnSync } from "child_process";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import { parseDependencies } from "./batch-executor.js";
-
-const mockSpawnSync = vi.mocked(spawnSync);
+import { FakeGitHubProvider } from "./platforms/fake-github.js";
+import { deriveGhFixture, loadGhFixture } from "./platforms/gh-fixtures.js";
 
 const FIXTURE_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -135,60 +131,59 @@ describe("parseBodyDependencyMarkers — per-caller marker set (Open Q #1)", () 
 });
 
 describe("parseDependencies — label parsing unchanged (AC-3)", () => {
-  beforeEach(() => {
-    mockSpawnSync.mockReset();
-  });
-
-  /** Build a `gh issue view --json body,labels` stdout payload. */
-  function ghIssue(payload: { body?: string; labels?: { name: string }[] }) {
-    return {
-      status: 0,
-      stdout: Buffer.from(JSON.stringify(payload)),
-      stderr: Buffer.from(""),
-      pid: 0,
-      output: [],
-      signal: null,
-    } as unknown as ReturnType<typeof spawnSync>;
+  /**
+   * The captured `gh issue view` of #1475 with its body and label names
+   * swapped, for issue #1 (#1506: no child_process mock). Each label keeps
+   * the captured label's shape.
+   */
+  function ghIssue(payload: { body: string; labels: string[] }) {
+    const captured = loadGhFixture("issue-view");
+    return new FakeGitHubProvider(
+      deriveGhFixture(captured, {
+        args: captured.args.map((a) => (a === "1475" ? "1" : a)),
+        json: (data) => {
+          const issue = data as { labels: Array<{ name: string }> };
+          return {
+            ...issue,
+            body: payload.body,
+            labels: payload.labels.map((name) => ({
+              ...issue.labels[0],
+              name,
+            })),
+          };
+        },
+      }),
+    );
   }
 
   it("still parses a 'depends-on/123' label", () => {
-    mockSpawnSync.mockReturnValue(
-      ghIssue({ body: "", labels: [{ name: "depends-on/123" }] }),
-    );
-    expect(parseDependencies(1)).toEqual([123]);
+    const gh = ghIssue({ body: "", labels: ["depends-on/123"] });
+    expect(parseDependencies(1, gh)).toEqual([123]);
   });
 
   it("still parses a 'depends-on-123' label", () => {
-    mockSpawnSync.mockReturnValue(
-      ghIssue({ body: "", labels: [{ name: "depends-on-123" }] }),
-    );
-    expect(parseDependencies(1)).toEqual([123]);
+    const gh = ghIssue({ body: "", labels: ["depends-on-123"] });
+    expect(parseDependencies(1, gh)).toEqual([123]);
   });
 
   it("combines a line-leading body marker with a label, deduped", () => {
-    mockSpawnSync.mockReturnValue(
-      ghIssue({
-        body: "- Depends on #187\n",
-        labels: [{ name: "depends-on/187" }, { name: "bug" }],
-      }),
-    );
-    expect(parseDependencies(1)).toEqual([187]);
+    const gh = ghIssue({
+      body: "- Depends on #187\n",
+      labels: ["depends-on/187", "bug"],
+    });
+    expect(parseDependencies(1, gh)).toEqual([187]);
   });
 
   it("hardened body parsing flows through: prose mention is ignored", () => {
-    mockSpawnSync.mockReturnValue(
-      ghIssue({
-        body: "Use case: Issue 14 depends on 12+13 being merged first.\n",
-        labels: [],
-      }),
-    );
-    expect(parseDependencies(1)).toEqual([]);
+    const gh = ghIssue({
+      body: "Use case: Issue 14 depends on 12+13 being merged first.\n",
+      labels: [],
+    });
+    expect(parseDependencies(1, gh)).toEqual([]);
   });
 
   it("the sorter does NOT reorder on a 'blocked by' body marker", () => {
-    mockSpawnSync.mockReturnValue(
-      ghIssue({ body: "- Blocked by #36\n", labels: [] }),
-    );
-    expect(parseDependencies(1)).toEqual([]);
+    const gh = ghIssue({ body: "- Blocked by #36\n", labels: [] });
+    expect(parseDependencies(1, gh)).toEqual([]);
   });
 });

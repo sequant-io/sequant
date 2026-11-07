@@ -8,6 +8,7 @@ import type { PackageManager } from "./stacks.js";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 const MANIFEST_PATH = ".sequant-manifest.json";
 
@@ -24,8 +25,9 @@ function findPackageJson(): string {
       if (pkg.name === "sequant") {
         return content;
       }
-    } catch {
+    } catch (err) {
       // Not found, continue searching
+      noteSuppressed("other", err, "manifest:findPackageJson");
     }
     dir = dirname(dir);
   }
@@ -60,6 +62,13 @@ export interface Manifest {
    * `init --manifest-only` writes `[]`; `sync --only skills` adds `"skills"`.
    */
   groups?: InstallGroup[];
+  /**
+   * Where the guard hooks come from (#1603). `"plugin"`: an enabled Claude
+   * Code plugin ships them, so this install holds no `.claude/hooks/**` and
+   * no `.claude/settings.json`, and `update`/`sync` leave both absent.
+   * Absent means the repo channel (`sequant init` wrote them).
+   */
+  hooks?: "plugin";
 }
 
 /**
@@ -109,11 +118,13 @@ function serializeManifest(manifest: Manifest): string {
 /**
  * @param options.groups - Record a partial install scope. Omit for a full
  *   install; `init --manifest-only` passes `[]` (nothing installed yet).
+ * @param options.hooks - `"plugin"` when `init` skipped the hooks because a
+ *   plugin ships them (#1603).
  */
 export async function createManifest(
   stack: string,
   packageManager?: PackageManager,
-  options: { groups?: InstallGroup[] } = {},
+  options: { groups?: InstallGroup[]; hooks?: "plugin" } = {},
 ): Promise<void> {
   const manifest: Manifest = {
     version: getPackageVersion(),
@@ -122,6 +133,7 @@ export async function createManifest(
     installedAt: new Date().toISOString(),
     files: {},
     ...(options.groups && { groups: [...options.groups] }),
+    ...(options.hooks && { hooks: options.hooks }),
   };
 
   await writeFile(MANIFEST_PATH, serializeManifest(manifest));

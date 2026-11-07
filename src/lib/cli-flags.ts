@@ -113,3 +113,14 @@ export function parsePhaseSpecFlag(
     return value;
   };
 }
+
+/**
+ * Parse a positional issue-number argument. Returns `null` for anything that
+ * is not a positive integer. Pure: callers print the error and pick their own
+ * `process.exitCode`.
+ */
+export function parseIssueNumber(arg: string): number | null {
+  const issue = Number.parseInt(arg, 10);
+  if (!Number.isInteger(issue) || issue <= 0) return null;
+  return issue;
+}

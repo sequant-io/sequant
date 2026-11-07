@@ -55,7 +55,7 @@ export interface AgentExecutionConfig {
   /**
    * Resume a previous session (driver-specific; ignored if unsupported).
    *
-   * @deprecated Use {@link resumeHandle}. The opaque `sessionId` field is
+   * @deprecated (remove in v3.0) Use {@link resumeHandle}. The opaque `sessionId` field is
    * retained for one release to keep in-flight `.sequant/state.json` records
    * resumable across upgrade. Drivers MUST prefer `resumeHandle` when both
    * are set. See #674.
@@ -93,7 +93,7 @@ export interface AgentPhaseResult {
   success: boolean;
   output: string;
   /**
-   * @deprecated Use {@link resumeHandle}. Retained as a mirror of
+   * @deprecated (remove in v3.0) Use {@link resumeHandle}. Retained as a mirror of
    * `resumeHandle.token` for one release to ease state-file migration. See
    * #674.
    */

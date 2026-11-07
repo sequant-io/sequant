@@ -10,9 +10,13 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { execFileSync } from "child_process";
-import { readFileSync } from "fs";
+import { execFileSync, spawnSync } from "child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
+import { skillEnv, skillFence } from "../../__tests__/helpers/skill-fence.js";
+import { detectPackageManagerSync } from "./stacks.js";
 
 // Extended-regex, assembled from parts: `packageManager` followed by a
 // coalescing operator (`??` or `||`) OR a direct `:` assignment, and then the
@@ -87,32 +91,49 @@ describe("#932: packageManager literal npm fallback gate", () => {
   });
 });
 
-describe("#932: setup skill lockfile precedence mirrors LOCKFILE_PRIORITY (drift guard)", () => {
-  // Source-inspection guard (the #871 TS→markdown mirror class): the skill now
-  // records a declared `packageManager` that outranks live detection, so its
-  // detection order must be the resolver's own. Neither side is imported —
-  // both are read as text so a reorder on either side fails here.
-  function lockfileOrderFromResolver(): string[] {
-    const src = readFileSync("src/lib/stacks.ts", "utf-8");
-    const block = src.match(
-      /const LOCKFILE_PRIORITY[\s\S]*?=\s*\[([\s\S]*?)\];/,
-    )?.[1];
-    expect(block, "LOCKFILE_PRIORITY block in src/lib/stacks.ts").toBeDefined();
-    return [...(block ?? "").matchAll(/file:\s*"([^"]+)"/g)].map((m) => m[1]);
-  }
-  function lockfileOrderFromSkill(path: string): string[] {
-    const text = readFileSync(path, "utf-8");
-    const block = text.match(
-      /### 5\. Detect Package Manager[\s\S]*?```bash\n([\s\S]*?)```/,
-    )?.[1];
-    expect(block, `${path} package-manager detection block`).toBeDefined();
-    return [...(block ?? "").matchAll(/-f\s+"([^"]+)"/g)].map((m) => m[1]);
-  }
+describe("#932: setup skill's lockfile detection picks what the resolver picks", () => {
+  // Runs the skill's own "### 5. Detect Package Manager" fence (#1512) in a
+  // temp dir seeded with every combination of JS lockfiles, and compares its
+  // $PM to detectPackageManagerSync on the same dir. A reorder on either side
+  // disagrees on some combination.
+  const LOCKFILES = [
+    "bun.lockb",
+    "bun.lock",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "package-lock.json",
+  ];
+  const combos = Array.from({ length: 2 ** LOCKFILES.length }, (_, mask) =>
+    LOCKFILES.filter((_f, i) => mask & (1 << i)),
+  );
+  const fence = skillFence("setup", {
+    section: "### 5. Detect Package Manager",
+    contains: "lock",
+  });
 
-  it.each(SETUP_SKILL_MIRRORS)(
-    "%s checks lockfiles in exactly the resolver's order",
-    (path) => {
-      expect(lockfileOrderFromSkill(path)).toEqual(lockfileOrderFromResolver());
+  it.each(combos.map((files) => [files.join(" + ") || "(none)", files]))(
+    "%s",
+    (_label, files) => {
+      const dir = mkdtempSync(join(tmpdir(), "sequant-pm-"));
+      try {
+        for (const f of files as string[]) writeFileSync(join(dir, f), "");
+        const result = spawnSync(
+          "bash",
+          ["-c", `${fence}\nprintf '\\n%s' "$PM"`],
+          {
+            cwd: dir,
+            encoding: "utf-8",
+            env: skillEnv(),
+          },
+        );
+        expect(result.status, result.stderr).toBe(0);
+        // No lockfile: the skill leaves PM undeclared (#932), where the
+        // resolver's own last resort is npm.
+        const expected = files.length ? detectPackageManagerSync(dir) : "";
+        expect(result.stdout.split("\n").pop()).toBe(expected);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     },
   );
 });

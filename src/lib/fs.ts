@@ -14,8 +14,14 @@ import {
   unlink,
   readlink,
 } from "fs/promises";
-import { lstatSync, unlinkSync, writeFileSync as fsWriteFileSync } from "fs";
+import {
+  lstatSync,
+  mkdirSync,
+  unlinkSync,
+  writeFileSync as fsWriteFileSync,
+} from "fs";
 import { dirname } from "path";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 export async function fileExists(path: string): Promise<boolean> {
   try {
@@ -33,6 +39,14 @@ export async function isExecutable(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Synchronously create the parent directory of `filePath` (recursive).
+ * The sync, file-path counterpart of {@link ensureDir}.
+ */
+export function ensureParentDirSync(filePath: string): void {
+  mkdirSync(dirname(filePath), { recursive: true });
 }
 
 export async function ensureDir(path: string): Promise<void> {
@@ -79,8 +93,9 @@ export function writeFileSync(path: string, content: string): void {
   let isLink = false;
   try {
     isLink = lstatSync(path).isSymbolicLink();
-  } catch {
+  } catch (err) {
     // missing path: nothing to replace
+    noteSuppressed("other", err, "fs:writeFileSync");
   }
   if (isLink) {
     unlinkSync(path);

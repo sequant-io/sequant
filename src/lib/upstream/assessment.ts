@@ -3,8 +3,9 @@
  * Coordinates release fetching, analysis, and output generation
  */
 
-import { readFile, writeFile, access, mkdir } from "node:fs/promises";
+import { readFile, writeFile, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { ensureDir } from "../fs.js";
 import { GitHubProvider } from "../workflow/platforms/github.js";
 import type {
   AssessmentOptions,
@@ -464,15 +465,4 @@ function getDefaultBaseline(): Baseline {
       "OpenTelemetry - sequant emits and consumes no OpenTelemetry output",
     ],
   };
-}
-
-/**
- * Ensure directory exists
- */
-async function ensureDir(dir: string): Promise<void> {
-  try {
-    await mkdir(dir, { recursive: true });
-  } catch {
-    // Directory may already exist
-  }
 }

@@ -26,10 +26,27 @@ export default tseslint.config(
           message: "Use ES module imports instead of require() in ESM modules",
         },
       ],
-      // Temporarily relaxed rules for gradual adoption
-      "@typescript-eslint/no-unused-vars": "warn",
-      "@typescript-eslint/no-empty-object-type": "warn",
-      "prefer-const": "warn",
+    },
+  },
+  // #1505: forbid empty catch clauses in the code `npm run build` emits.
+  // A later block that sets `no-restricted-syntax` REPLACES every earlier
+  // selector for the files it matches (flat config), so this block repeats
+  // the require() ban and the phase-executor.ts block below repeats both.
+  {
+    files: ["src/**/*.ts", "bin/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='require']",
+          message: "Use ES module imports instead of require() in ESM modules",
+        },
+        {
+          selector: "CatchClause > BlockStatement[body.length=0]",
+          message:
+            "Empty catch swallows the error silently (#1505). Call noteSuppressed(scope, err, context) from src/lib/workflow/suppressed.ts, or handle it.",
+        },
+      ],
     },
   },
   // #647 AC-3: forbid raw stdout writes in `phase-executor.ts`. Every
@@ -57,6 +74,11 @@ export default tseslint.config(
         {
           selector: "CallExpression[callee.name='require']",
           message: "Use ES module imports instead of require() in ESM modules",
+        },
+        {
+          selector: "CatchClause > BlockStatement[body.length=0]",
+          message:
+            "Empty catch swallows the error silently (#1505). Call noteSuppressed(scope, err, context) from src/lib/workflow/suppressed.ts, or handle it.",
         },
         {
           selector:
@@ -100,6 +122,31 @@ export default tseslint.config(
       parserOptions: {
         project: null,
       },
+    },
+  },
+  // #1509: command entry points are linear sequences of steps; past 200
+  // counted lines the steps belong in their own functions (same file, or a
+  // sibling module under `src/commands/<name>/` when the file itself grows
+  // too large). Tests are excluded by the global ignores below.
+  {
+    files: ["src/commands/**/*.ts"],
+    rules: {
+      "max-lines-per-function": [
+        "error",
+        { max: 200, skipBlankLines: true, skipComments: true },
+      ],
+    },
+  },
+  // #1508: the same 200-counted-line ceiling for the orchestration layer.
+  // Long functions split into private stage functions in the same file
+  // (ADR-0020). Tests are excluded by the global ignores below.
+  {
+    files: ["src/lib/workflow/**/*.ts"],
+    rules: {
+      "max-lines-per-function": [
+        "error",
+        { max: 200, skipBlankLines: true, skipComments: true },
+      ],
     },
   },
   {

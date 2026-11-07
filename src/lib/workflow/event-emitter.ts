@@ -24,6 +24,7 @@
 
 import { EventEmitter } from "node:events";
 import type { QaVerdict } from "./run-log-schema.js";
+import { noteSuppressed } from "./suppressed.js";
 
 /** Issue lifecycle status surfaced through `issue_status_changed`. */
 export type IssueEventStatus = "queued" | "running" | "passed" | "failed";
@@ -234,8 +235,13 @@ export class WorkflowEventEmitter {
         if (r.status === "rejected") {
           try {
             this.onListenerError(event as string, r.reason);
-          } catch {
+          } catch (err) {
             /* swallow — error handler must not propagate */
+            noteSuppressed(
+              "other",
+              err,
+              "event-emitter:WorkflowEventEmitter.emit",
+            );
           }
         }
       }

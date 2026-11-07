@@ -8,7 +8,10 @@ import {
   composeExecSummary,
   sanitizeImportedClosingKeywords,
 } from "./worktree-manager.js";
-import { parseMutationMarkers } from "./mutation-marker.js";
+import {
+  parseMutationMarkers,
+  renderMutationMarker,
+} from "./mutation-marker.js";
 import type { GapFinding } from "./run-log-schema.js";
 
 describe("buildAutomatedPRBody (#749)", () => {
@@ -586,5 +589,34 @@ describe("composeExecSummary / buildAutomatedPRBody with no Summary section (#12
   it("returns undefined when there is nothing to carry", () => {
     expect(composeExecSummary("just prose")).toBeUndefined();
     expect(composeExecSummary(undefined)).toBeUndefined();
+  });
+});
+
+describe("buildAutomatedPRBody with mutation-state markers (#1604)", () => {
+  const fromState = {
+    ac: "AC-2",
+    mutation: "deleted the restore step",
+    failedTest: "src/commands/mutation.test.ts > check restores > case",
+  };
+
+  it("adds the markers to the exec summary once, even when exec pasted the same one", () => {
+    const pasted = `## Summary\nDone.\n\n${renderMutationMarker(fromState)}`;
+
+    const body = buildAutomatedPRBody(1604, {
+      execOutput: pasted,
+      mutationMarkers: [fromState, { ...fromState, ac: "AC-3" }],
+    });
+
+    expect(parseMutationMarkers(body)).toEqual([
+      fromState,
+      { ...fromState, ac: "AC-3" },
+    ]);
+  });
+
+  it("adds them on a run with no exec summary instead of the placeholder", () => {
+    const body = buildAutomatedPRBody(1604, { mutationMarkers: [fromState] });
+
+    expect(parseMutationMarkers(body)).toEqual([fromState]);
+    expect(body).not.toContain("Automated PR for issue #1604.");
   });
 });

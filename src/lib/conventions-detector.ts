@@ -8,6 +8,7 @@
 import { readdir, stat } from "fs/promises";
 import { join, extname } from "path";
 import { fileExists, readFile, writeFile, ensureDir } from "./fs.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /** Path to conventions file */
 export const CONVENTIONS_PATH = ".sequant/conventions.json";
@@ -112,8 +113,9 @@ async function countPattern(
       const content = await readFile(file);
       const matches = content.match(pattern);
       if (matches) count += matches.length;
-    } catch {
+    } catch (err) {
       // Skip unreadable files
+      noteSuppressed("other", err, "conventions-detector:countPattern");
     }
   }
   return count;
@@ -296,8 +298,13 @@ async function detectSourceStructure(root: string): Promise<Convention | null> {
     try {
       const s = await stat(fullPath);
       if (s.isDirectory()) found.push(c.label);
-    } catch {
+    } catch (err) {
       // doesn't exist
+      noteSuppressed(
+        "other",
+        err,
+        "conventions-detector:detectSourceStructure",
+      );
     }
   }
 
@@ -368,8 +375,9 @@ async function detectIndentation(root: string): Promise<Convention | null> {
         else if (/^ {2}[^ ]/.test(line)) twoSpace++;
         else if (/^ {4}[^ ]/.test(line)) fourSpace++;
       }
-    } catch {
+    } catch (err) {
       // skip
+      noteSuppressed("other", err, "conventions-detector:detectIndentation");
     }
   }
 
@@ -439,8 +447,9 @@ async function detectSemicolons(root: string): Promise<Convention | null> {
         )
           withoutSemicolon++;
       }
-    } catch {
+    } catch (err) {
       // skip
+      noteSuppressed("other", err, "conventions-detector:detectSemicolons");
     }
   }
 
@@ -488,8 +497,13 @@ async function detectComponentStructure(
           evidence: `Directory exists: ${candidate}/`,
         };
       }
-    } catch {
+    } catch (err) {
       // doesn't exist
+      noteSuppressed(
+        "other",
+        err,
+        "conventions-detector:detectComponentStructure",
+      );
     }
   }
 
@@ -519,8 +533,9 @@ export async function detectConventions(
     try {
       const result = await detector(projectRoot);
       if (result) results.push(result);
-    } catch {
+    } catch (err) {
       // Skip failed detectors
+      noteSuppressed("other", err, "conventions-detector:detectConventions");
     }
   }
 

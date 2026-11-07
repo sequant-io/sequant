@@ -1,0 +1,18 @@
+{
+  "command": "gh label list --repo sequant-io/sequant --json name --limit 200",
+  "args": [
+    "label",
+    "list",
+    "--repo",
+    "sequant-io/sequant",
+    "--json",
+    "name",
+    "--limit",
+    "200"
+  ],
+  "capturedAt": "2026-10-20T14:10:42.291Z",
+  "exitCode": 0,
+  "stdout": "[{\"name\":\"bug\"},{\"name\":\"documentation\"},{\"name\":\"duplicate\"},{\"name\":\"enhancement\"},{\"name\":\"good first issue\"},{\"name\":\"help wanted\"},{\"name\":\"invalid\"},{\"name\":\"question\"},{\"name\":\"wontfix\"},{\"name\":\"ready-for-review\"},{\"name\":\"refactor\"},{\"name\":\"planned\"},{\"name\":\"roadmap\"},{\"name\":\"cli\"},{\"name\":\"state\"},{\"name\":\"ui\"},{\"name\":\"qa\"},{\"name\":\"spec\"},{\"name\":\"upstream\"},{\"name\":\"auto-ready\"},{\"name\":\"ai-generated\"},{\"name\":\"ai-in-progress\"},{\"name\":\"human-required\"},{\"name\":\"needs-work\"},{\"name\":\"dependencies\"},{\"name\":\"javascript\"},{\"name\":\"multi-agent\"},{\"name\":\"needs-improvement\"},{\"name\":\"github_actions\"},{\"name\":\"complex\"},{\"name\":\"backlog\"},{\"name\":\"needs-verification\"},{\"name\":\"no-browser-test\"},{\"name\":\"graph-2026-09\"},{\"name\":\"graph-2026-09-w2\"},{\"name\":\"assessment\"},{\"name\":\"needs-triage\"},{\"name\":\"priority:high\"},{\"name\":\"graph-2026-09-field\"},{\"name\":\"graph-2026-09-prerelease\"},{\"name\":\"graph-2026-10-freeze\"},{\"name\":\"graph-2026-10-freeze-b\"},{\"name\":\"graph-2026-10-consolidation\"},{\"name\":\"graph-2026-10-freeze-c\"},{\"name\":\"graph-2026-10-fundamentals\"},{\"name\":\"graph-2026-10-review-surface\"}]\n",
+  "stderr": "",
+  "provenance": "captured"
+}

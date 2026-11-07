@@ -1,0 +1,18 @@
+{
+  "command": "gh issue list --state closed --json number,title,closedAt,labels --limit 3 --repo sequant-io/sequant",
+  "args": [
+    "issue",
+    "list",
+    "--state",
+    "closed",
+    "--json",
+    "number,title,closedAt,labels",
+    "--limit",
+    "3"
+  ],
+  "capturedAt": "2026-10-20T14:10:37.652Z",
+  "exitCode": 0,
+  "stdout": "[{\"closedAt\":\"2026-10-20T14:08:40Z\",\"labels\":[{\"id\":\"LA_kwDOQzPeLM8AAAACT-M2Rw\",\"name\":\"bug\",\"description\":\"Something isn't working\",\"color\":\"d73a4a\"},{\"id\":\"LA_kwDOQzPeLM8AAAACUl1BaQ\",\"name\":\"planned\",\"description\":\"Implementation plan approved\",\"color\":\"0E8A16\"}],\"number\":1560,\"title\":\"test(workflow): the #533 label-shortcut tests take ~850 ms with every phase mocked — one hit 5785 ms on CI and turned main red at da9c4fd49\"},{\"closedAt\":\"2026-10-19T02:12:06Z\",\"labels\":[{\"id\":\"LA_kwDOQzPeLM8AAAACUhtErA\",\"name\":\"refactor\",\"description\":\"Code refactoring\",\"color\":\"fbca04\"}],\"number\":1531,\"title\":\"chore(qa): land the graph-plan checkers — parse-check.ts and run-evidence.ts under scripts/qa/graph-plan/\"},{\"closedAt\":\"2026-10-19T21:36:27Z\",\"labels\":[{\"id\":\"LA_kwDOQzPeLM8AAAACUl1BaQ\",\"name\":\"planned\",\"description\":\"Implementation plan approved\",\"color\":\"0E8A16\"},{\"id\":\"LA_kwDOQzPeLM8AAAACcQsxlw\",\"name\":\"needs-improvement\",\"description\":\"AC met but improvements recommended\",\"color\":\"FBCA04\"},{\"id\":\"LA_kwDOQzPeLM8AAAAC97SgEA\",\"name\":\"graph-2026-10-review-surface\",\"description\":\"review-surface graph: the acceptance criterion as the unit every surface shows\",\"color\":\"0E8A16\"}],\"number\":1528,\"title\":\"feat(init): the issue form from the writing-issues guide becomes one template file that init writes to .github/ISSUE_TEMPLATE when the directory is absent; doctor reports its absence\"}]\n",
+  "stderr": "",
+  "provenance": "captured"
+}

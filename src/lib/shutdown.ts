@@ -203,7 +203,7 @@ export class ShutdownManager {
   }
 
   /**
-   * @deprecated Use addAbortController/removeAbortController for concurrent safety.
+   * @deprecated (remove in v2.22) Use addAbortController/removeAbortController for concurrent safety
    */
   setAbortController(controller: AbortController): void {
     this.abortControllers.clear();
@@ -211,7 +211,7 @@ export class ShutdownManager {
   }
 
   /**
-   * @deprecated Use removeAbortController(controller) instead.
+   * @deprecated (remove in v2.22) Use removeAbortController(controller) instead
    */
   clearAbortController(): void {
     this.abortControllers.clear();

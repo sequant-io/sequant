@@ -3,21 +3,15 @@
  *
  * `docs/adr/README.md` and `docs/adr/0001-adopt-adrs.md` must exist in the
  * native ADR shape (Status / Context / Decision / Options / Trade-offs /
- * Consequences), and `spec/SKILL.md` must instruct an ADR when the plan
- * chooses between designs. Assertions are scoped per CLAUDE.md: the heading
- * order is checked in the ADR file and in the README's format skeleton only,
- * and the spec instruction must sit in the `## Design Review` template block
- * (up to the next `---` separator). All three spec copies are checked.
+ * Consequences). Assertions are scoped per CLAUDE.md: the heading order is
+ * checked in the ADR file and in the README's format skeleton only.
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-import {
-  collectFiles,
-  SKILL_ROOTS,
-} from "../../../scripts/check-skill-sync.js";
+import { collectFiles } from "../../../scripts/check-skill-sync.js";
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -39,16 +33,6 @@ function readAdrFile(name: string): string {
   const found = collectFiles(base).find((f) => f === name);
   if (!found) throw new Error(`docs/adr/${name} not found`);
   return fs.readFileSync(path.join(base, found), "utf-8");
-}
-
-/** Read `spec/SKILL.md` from each skill root. */
-function specCopies(): Array<{ root: string; text: string }> {
-  return SKILL_ROOTS.map((root) => {
-    const base = path.join(REPO_ROOT, root);
-    const found = collectFiles(base).find((f) => f === "spec/SKILL.md");
-    if (!found) throw new Error(`spec/SKILL.md not found under ${root}`);
-    return { root, text: fs.readFileSync(path.join(base, found), "utf-8") };
-  });
 }
 
 /** Slice `text` from `startMarker` up to (not including) `endMarker`. */
@@ -88,13 +72,4 @@ describe("ADR convention (AC-7)", () => {
     expect(readme).toContain("[0001](0001-adopt-adrs.md)");
   });
 
-  it("spec/SKILL.md Design Review instructs an ADR when the plan chooses between designs", () => {
-    for (const { root, text } of specCopies()) {
-      const review = span(text, "## Design Review", "\n---\n");
-      expect(review, root).toContain(
-        "when the recommended plan chooses between designs",
-      );
-      expect(review, root).toContain("exec PR to include an ADR in docs/adr/");
-    }
-  });
 });

@@ -1,0 +1,19 @@
+{
+  "command": "gh issue create --repo sequant-io/sequant --title <*> --body-file <*>",
+  "args": [
+    "issue",
+    "create",
+    "--repo",
+    "sequant-io/sequant",
+    "--title",
+    "<*>",
+    "--body-file",
+    "<*>"
+  ],
+  "exitCode": 0,
+  "stdout": "https://github.com/sequant-io/sequant/issues/1600\n",
+  "stderr": "",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written",
+  "note": "Write path: shape from gh's documented output; never captured by running it."
+}

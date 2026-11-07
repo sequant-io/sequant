@@ -31,6 +31,7 @@ import * as crypto from "crypto";
 import { execFileSync } from "child_process";
 import { z } from "zod";
 import { resolveDiffBase } from "./git-diff-utils.js";
+import { noteSuppressed } from "./suppressed.js";
 
 /**
  * Check types that can be cached
@@ -252,8 +253,9 @@ export class QACache {
       if (fs.existsSync(file)) {
         try {
           contents.push(fs.readFileSync(file, "utf-8"));
-        } catch {
+        } catch (err) {
           // Ignore read errors
+          noteSuppressed("state", err, "qa-cache:QACache.computeConfigHash");
         }
       }
     }

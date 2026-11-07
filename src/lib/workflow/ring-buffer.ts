@@ -10,10 +10,28 @@ export class RingBuffer {
   private head = 0;
   private count = 0;
   private readonly capacity: number;
+  private readonly maxLineChars: number | undefined;
 
-  constructor(capacity: number) {
+  constructor(capacity: number, opts: { maxLineChars?: number } = {}) {
     this.capacity = capacity;
     this.buffer = new Array<string>(capacity);
+    this.maxLineChars = opts.maxLineChars;
+  }
+
+  /**
+   * Split a chunk into lines and push each non-empty one, capping any line
+   * longer than `maxLineChars` as `<first N chars>… [<length> chars]`.
+   */
+  pushLines(text: string): void {
+    const max = this.maxLineChars;
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      this.push(
+        max !== undefined && line.length > max
+          ? `${line.slice(0, max)}… [${line.length} chars]`
+          : line,
+      );
+    }
   }
 
   /** Push a line into the buffer, evicting the oldest if at capacity. */

@@ -12,6 +12,7 @@ import { writeFileSync } from "./fs.js";
 import { getVersion } from "./version.js";
 import { getMcpServersConfig, type McpServerConfig } from "./system.js";
 import { MCP_LAUNCHER_INLINE_SOURCE } from "./mcp-launch-inline.generated.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /** Path to the project-level MCP config file used by Claude Code */
 export const PROJECT_MCP_JSON = ".mcp.json";
@@ -128,8 +129,9 @@ export function getPhaseMcpServersConfig(
     ) {
       servers = config.mcpServers as Record<string, McpServerConfig>;
     }
-  } catch {
+  } catch (err) {
     // .mcp.json doesn't exist or is invalid — sequant entry still applies
+    noteSuppressed("other", err, "mcp-config:getPhaseMcpServersConfig");
   }
 
   const allowedDesktopServers: Record<string, McpServerConfig> = {};
@@ -221,8 +223,9 @@ export function addSequantToMcpConfig(
   if (fs.existsSync(configPath)) {
     try {
       config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    } catch {
+    } catch (err) {
       // Corrupt or empty file — start fresh
+      noteSuppressed("other", err, "mcp-config:addSequantToMcpConfig");
     }
   }
 

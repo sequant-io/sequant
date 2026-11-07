@@ -16,6 +16,7 @@ import {
   type DiscoverOptions,
 } from "../lib/workflow/state-utils.js";
 import { createIssueState } from "../lib/workflow/state-schema.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface StateInitOptions {
   /** Output as JSON */
@@ -239,8 +240,9 @@ export async function stateRebuildCommand(
             await stateManager.saveState(state);
           }
         }
-      } catch {
+      } catch (err) {
         // Continue with other worktrees
+        noteSuppressed("state", err, "state:stateRebuildCommand");
       }
     }
   }

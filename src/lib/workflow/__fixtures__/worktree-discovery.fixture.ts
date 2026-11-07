@@ -9,11 +9,19 @@
  * assertions never ran at all.
  *
  * Install with `installWorktreeDiscoveryFixture(mockSpawnSync, actualSpawnSync)`.
- * The mock answers by command + args (not call order), so extra spawns in the
- * code under test do not shift it; any other command goes to `passthrough`.
+ * The mock answers git by command + args (not call order), so extra spawns in
+ * the code under test do not shift it; any other command goes to `passthrough`.
+ * The titles come from `discoveryTitleFixtures()`, replayed through the
+ * provider's runner seam rather than a child_process mock (#1506).
  */
 import type { spawnSync as SpawnSync } from "child_process";
 import type { Mock } from "vitest";
+
+import {
+  deriveGhFixture,
+  loadGhFixture,
+  type GhFixture,
+} from "../platforms/gh-fixtures.js";
 
 export const FIXTURE_ROOT = "/fixture/repo";
 
@@ -87,15 +95,20 @@ export function installWorktreeDiscoveryFixture(
     if (cmd === "git" && a[0] === "worktree" && a[1] === "list") {
       return ok(FIXTURE_PORCELAIN, !opts?.encoding);
     }
-    // GitHubProvider.fetchIssueTitleSync: `gh issue view <N> --json title ...`.
-    if (
-      cmd === "gh" &&
-      a[0] === "issue" &&
-      a[1] === "view" &&
-      a.includes("title")
-    ) {
-      return ok(`${fixtureIssueTitle(Number(a[2]))}\n`, !opts?.encoding);
-    }
     return (passthrough as (...p: unknown[]) => unknown)(cmd, args, opts);
   }) as unknown as typeof SpawnSync);
+}
+
+/**
+ * gh's captured `issue view --json title` answer for each fixture worktree's
+ * issue, titled {@link fixtureIssueTitle}.
+ */
+export function discoveryTitleFixtures(): GhFixture[] {
+  const captured = loadGhFixture("issue-view-title");
+  return FIXTURE_ISSUE_WORKTREES.map((wt) =>
+    deriveGhFixture(captured, {
+      number: wt.issueNumber,
+      stdout: `${fixtureIssueTitle(wt.issueNumber)}\n`,
+    }),
+  );
 }

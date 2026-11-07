@@ -1,0 +1,17 @@
+{
+  "command": "gh issue view 1475 --json title --jq .title --repo sequant-io/sequant",
+  "args": [
+    "issue",
+    "view",
+    "1475",
+    "--json",
+    "title",
+    "--jq",
+    ".title"
+  ],
+  "capturedAt": "2026-10-20T14:10:36.519Z",
+  "exitCode": 0,
+  "stdout": "refactor(workflow,locks): worktreeStatus tri-state replaces both isWorktreeDirty copies; one formatSignalLine\n",
+  "stderr": "",
+  "provenance": "captured"
+}

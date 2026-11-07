@@ -1,39 +1,32 @@
-// Integration test for Issue #569 — verify the bash snippet documented in
-// `.claude/skills/qa/SKILL.md` (Markdown-Only Diff Relaxation subsection)
-// actually executes correctly when the model invokes it as a `/qa` reviewer.
+// Integration test for Issue #569 — runs the Markdown-Only Diff Relaxation
+// procedure fence from `.claude/skills/qa/SKILL.md` itself (#1512), the way a
+// `/qa` reviewer does: in a repo whose `git diff origin/main...HEAD` is the
+// changed-file list, with the pending check names in `$pending_check_names`.
 //
 // The unit tests in src/lib/qa/markdown-only-ci.test.ts cover the helper
 // functions in isolation. This test covers the prompt-shell boundary: that the
 // `npx tsx -e` invocation, env-var construction, JSON shape, and fallback path
-// all behave as the SKILL.md documents. Without this test, SKILL.md edits that
-// break shell quoting, change env-var names, or drift the JSON schema would
-// only surface post-merge in production /qa runs.
+// all behave as the SKILL.md documents. A broken snippet takes the fence's own
+// `|| echo` fallback, which reports `enabled: false` and fails the md-only
+// cases below.
 //
 // Run with: npx vitest run __tests__/integration/qa-markdown-only-ci-snippet.integration.test.ts
 
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
-import { resolve } from "node:path";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import {
+  makeDiffRepo,
+  REPO_ROOT,
+  skillEnv,
+  skillFence,
+} from "../helpers/skill-fence.js";
 
-// The bash invocation copy-pasted verbatim from `.claude/skills/qa/SKILL.md`
-// (under "Markdown-Only Diff Relaxation > Procedure"). Keep this string in
-// lockstep with the SKILL.md prose. If you edit one, edit the other; the
-// `documents the same env-var names` assertion below catches missed pairs.
-const SKILL_SNIPPET = `npx tsx -e '
-  (async () => {
-    const m = await import("./src/lib/qa/markdown-only-ci.ts");
-    const { getSettings } = await import("./src/lib/settings.ts");
-    const files = (process.env.SEQUANT_QA_RELAX_FILES || "").split("\\n").filter(Boolean);
-    const pending = (process.env.SEQUANT_QA_RELAX_PENDING || "").split("\\n").filter(Boolean);
-    const settings = await getSettings();
-    const isMdOnly = m.detectMarkdownOnlyDiff(files);
-    const enabled = settings.qa.markdownOnlyCiRelaxed && isMdOnly;
-    const buckets = enabled
-      ? m.filterRelaxablePending(pending, settings.qa.markdownOnlySafeCiPatterns)
-      : { relaxed: [], gating: pending };
-    console.log(JSON.stringify({ isMdOnly, enabled, ...buckets }));
-  })();
-'`;
+const repos: string[] = [];
+afterAll(() => {
+  for (const dir of repos) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 interface SnippetOutput {
   isMdOnly: boolean;
@@ -43,15 +36,20 @@ interface SnippetOutput {
 }
 
 function runSnippet(files: string[], pending: string[]): SnippetOutput {
-  const stdout = execSync(SKILL_SNIPPET, {
-    cwd: resolve(__dirname, "..", ".."),
-    env: {
-      ...process.env,
-      SEQUANT_QA_RELAX_FILES: files.join("\n"),
-      SEQUANT_QA_RELAX_PENDING: pending.join("\n"),
-    },
+  const dir = makeDiffRepo(Object.fromEntries(files.map((f) => [f, "x\n"])));
+  repos.push(dir);
+  // The fence imports ./src/lib/... from its cwd; link this checkout's src
+  // in, untracked so it stays out of the diff.
+  fs.symlinkSync(path.join(REPO_ROOT, "src"), path.join(dir, "src"));
+  const fence = skillFence("qa", {
+    section: "#### Markdown-Only Diff Relaxation",
+    contains: "SEQUANT_QA_RELAX_FILES",
+  });
+  const stdout = execSync(`${fence}\nprintf '%s' "$result"`, {
+    cwd: dir,
+    env: skillEnv({ pending_check_names: pending.join("\n") }),
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+    shell: "/bin/bash",
   });
   return JSON.parse(stdout.trim());
 }
@@ -85,7 +83,7 @@ describe("SKILL.md /qa markdown-only relaxation snippet (integration)", () => {
 
   it("mixed diff (.ts file present): relaxation disabled, all pending gates", () => {
     const out = runSnippet(
-      ["docs/foo.md", "src/lib/foo.ts"],
+      ["docs/foo.md", "lib/foo.ts"],
       ["build (20.x)", "validate-skills"],
     );
 
@@ -102,22 +100,5 @@ describe("SKILL.md /qa markdown-only relaxation snippet (integration)", () => {
     expect(out.enabled).toBe(true);
     expect(out.relaxed).toEqual([]);
     expect(out.gating).toEqual([]);
-  });
-
-  it("documents the same env-var names that SKILL.md prose references", async () => {
-    // Drift guard: the env-var names used by runSnippet() above must match
-    // the ones documented in the SKILL.md procedure block. If a future edit
-    // renames either side without the other, this assertion fails loudly.
-    const fs = await import("node:fs/promises");
-    const skillMd = await fs.readFile(
-      resolve(__dirname, "..", "..", ".claude/skills/qa/SKILL.md"),
-      "utf8",
-    );
-    expect(skillMd).toContain("SEQUANT_QA_RELAX_FILES");
-    expect(skillMd).toContain("SEQUANT_QA_RELAX_PENDING");
-    expect(skillMd).toContain("detectMarkdownOnlyDiff");
-    expect(skillMd).toContain("filterRelaxablePending");
-    expect(skillMd).toContain("markdownOnlyCiRelaxed");
-    expect(skillMd).toContain("markdownOnlySafeCiPatterns");
   });
 });

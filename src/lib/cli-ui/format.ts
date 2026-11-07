@@ -27,9 +27,53 @@ export function formatElapsedTime(seconds: number): string {
 }
 
 /**
- * Format a wall-clock timestamp as `HH:MM:SS`. Used by the non-TTY renderer.
+ * Format a wall-clock timestamp as `HH:MM:SS`. Accepts a `Date` or an ISO
+ * string; an unparsable string is returned unchanged.
  */
-export function formatTimestamp(date: Date): string {
+export function formatTimestamp(input: Date | string): string {
+  const date = typeof input === "string" ? new Date(input) : input;
+  if (Number.isNaN(date.getTime())) return String(input);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+/**
+ * Format duration in human-readable format
+ */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs.toFixed(0)}s`;
+}
+
+/** The caveat every cost display carries (same words as `sequant stats`). */
+export const COST_CAVEAT = "SDK estimate, not a billing statement";
+
+/**
+ * One line for a run's cost. A missing figure reads `cost unrecorded`, never
+ * `$0.00`: "absent" and "free" are different claims.
+ *
+ * @example
+ *   formatCostLine({ usd: 6.45, tokens: 69641 })
+ *   // "cost $6.45 (SDK estimate) · 69,641 tokens"
+ *   formatCostLine({ tokens: 120 })  // "120 tokens · cost unrecorded"
+ *   formatCostLine(undefined)        // "cost unrecorded"
+ */
+export function formatCostLine(cost?: {
+  usd?: number;
+  tokens?: number;
+}): string {
+  const hasUsd = cost?.usd !== undefined && cost.usd > 0;
+  const hasTokens = cost?.tokens !== undefined && cost.tokens > 0;
+  const usd = hasUsd ? `cost $${cost.usd!.toFixed(2)} (SDK estimate)` : null;
+  const tokens = hasTokens
+    ? `${cost.tokens!.toLocaleString("en-US")} tokens`
+    : null;
+  if (usd && tokens) return `${usd} · ${tokens}`;
+  if (usd) return usd;
+  if (tokens) return `${tokens} · cost unrecorded`;
+  return "cost unrecorded";
 }

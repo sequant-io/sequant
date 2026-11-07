@@ -8,33 +8,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
-import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
+import { resolveLogDir, parseLogFile } from "../../lib/run-logs.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
-
-function resolveLogPath(): string {
-  const projectPath = LOG_PATHS.project;
-  if (fs.existsSync(projectPath)) {
-    return projectPath;
-  }
-
-  const userPath = LOG_PATHS.user.replace("~", os.homedir());
-  if (fs.existsSync(userPath)) {
-    return userPath;
-  }
-
-  return projectPath;
-}
-
-function parseLogFile(filePath: string): RunLog | null {
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const data = JSON.parse(content);
-    return RunLogSchema.parse(data);
-  } catch {
-    return null;
-  }
-}
 
 export function registerLogsTool(server: McpServer): void {
   server.registerTool(
@@ -45,6 +20,8 @@ export function registerLogsTool(server: McpServer): void {
         "Get structured run logs for recent workflow executions. " +
         "Each log contains per-issue phase results (duration, status, errors) and QA verdicts. " +
         "Use after a sequant_run completes or fails to understand what happened. " +
+        "A log's optional cost ({ usd, tokens }) is the SDK's estimate, not a billing statement; " +
+        "absent means unrecorded, not free. " +
         "Logs are stored as run-<ISO-timestamp>-<uuid>.json files.",
       annotations: {
         readOnlyHint: true,
@@ -68,7 +45,7 @@ export function registerLogsTool(server: McpServer): void {
     },
     async ({ runId, limit }) => {
       try {
-        const logDir = resolveLogPath();
+        const logDir = resolveLogDir();
 
         if (!fs.existsSync(logDir)) {
           return {
@@ -133,6 +110,10 @@ export function registerLogsTool(server: McpServer): void {
                   startTime: log.startTime,
                   config: log.config,
                   summary: log.summary,
+                  // #1527: the run's cost, when the log carries one. The CLI's
+                  // `sequant logs` prints the same figure; absent means
+                  // unrecorded, never free.
+                  ...(log.cost && { cost: log.cost }),
                   issues: log.issues.map((issue) => ({
                     issueNumber: issue.issueNumber,
                     title: issue.title,

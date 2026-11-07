@@ -71,13 +71,22 @@ sequant_logs       # Review past run results
 | Capability | Plugin | npm |
 |-----------|--------|-----|
 | Skills (17 slash commands) | Yes | Yes (via `sequant init`) |
-| Hooks (guardrails, timing) | Yes | Yes (via `sequant init`) |
+| Hooks (guardrails, timing) | Yes | Yes (via `sequant init`, unless the plugin ships them — see below) |
 | MCP tools | Yes (auto) | Yes (via `.mcp.json`) |
 | CLI (`sequant run`, `sequant doctor`) | No | Yes |
 | CI/headless mode | No | Yes |
 | TypeScript library exports | No | Yes |
 
 **Plugin** is for interactive Claude Code users. **npm** is for power users, CI pipelines, and programmatic access.
+
+### One hook channel per checkout
+
+A checkout gets sequant's hooks from one channel: the repo (`.claude/hooks/*.sh`, registered in `.claude/settings.json`) or the plugin (`hooks/hooks.json`). Claude Code runs both when both are present, so every tool call runs the guard twice.
+
+- **`sequant init`** checks the enabled plugins first. If one ships a `hooks/hooks.json` that registers `pre-tool.sh`, `init` writes no `.claude/hooks/` and no `.claude/settings.json`, records `"hooks": "plugin"` in `.sequant-manifest.json`, and prints one line saying so. `sequant update` and `sequant sync` then leave the hooks absent, and do not report them as drift. `init --agent opencode` and `init --agent codex` always write the repo hooks, because their wrappers run `.claude/hooks/pre-tool.sh`.
+- **`sequant doctor`** runs a `Hook channels` check. It reads the project's `.claude/settings.json` and the `enabledPlugins` maps in `~/.claude/settings.json`, `.claude/settings.json` and `.claude/settings.local.json`. It resolves each enabled plugin through `~/.claude/plugins/installed_plugins.json` and checks whether its install path has a `hooks/hooks.json` that registers `pre-tool.sh`. It does not go by the plugin's name. The check fails when both channels are active, names both files, and gives the two fixes:
+  - Disable the plugin in this checkout: set `"sequant@sequant": false` (or your plugin's id) under `enabledPlugins` in `.claude/settings.local.json`.
+  - Or remove the repo copy: delete `.claude/hooks/` and the `hooks` entries in `.claude/settings.json`, then add `"hooks": "plugin"` to `.sequant-manifest.json`.
 
 ## Keeping the plugin up to date
 

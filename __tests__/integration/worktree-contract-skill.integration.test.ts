@@ -1,8 +1,9 @@
 /**
  * Skill-text gates for the worktree contract (#899).
  *
- * These lock down three claims that live only in prose, and were each wrong
- * for seven months:
+ * These lock down three claims, each wrong for seven months. The existence
+ * guard is a command, so the last block runs each skill's own guard fence;
+ * the rest is prose:
  *
  *   - `/fullsolve` creates the worktree itself and exports a resolved path.
  *   - `/exec` verifies `SEQUANT_WORKTREE` before using it.
@@ -15,10 +16,18 @@
  * the SKILL.md files themselves.
  */
 
-import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync, readdirSync } from "fs";
+import { afterAll, beforeAll, describe, it, expect } from "vitest";
+import { execFileSync, spawnSync, type SpawnSyncReturns } from "child_process";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import path from "path";
 import { SKILL_ROOTS } from "../../scripts/check-skill-sync.js";
+import {
+  fill,
+  skillEnv,
+  skillFence,
+  withBuiltCli,
+} from "../helpers/skill-fence.js";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
 
@@ -126,72 +135,9 @@ describe.each(SKILL_ROOTS)("worktree contract in %s", (root) => {
     });
   });
 
-  describe("exec", () => {
-    it("guards SEQUANT_WORKTREE existence before use (AC-3)", () => {
-      const body = region(
-        readSkill(root, "exec"),
-        "worktree-existence-guard (#899)",
-      );
-
-      expect(body).toContain("sequant worktree verify");
-      expect(body).toContain("SEQUANT_WORKTREE_NOT_FOUND");
-      // The guard must halt, not fall through to the current directory.
-      expect(body).toContain("exit 1");
-    });
-
-    it("names the foreign-worktree failure mode (AC-4)", () => {
-      const body = region(
-        readSkill(root, "exec"),
-        "worktree-existence-guard (#899)",
-      );
-
-      expect(body).toContain("SEQUANT_WORKTREE_FOREIGN");
-    });
-
-    it("resolves the standalone lookup through git, not a filesystem glob (AC-5, AC-6)", () => {
-      const body = region(
-        readSkill(root, "exec"),
-        "worktree-standalone-lookup (#899)",
-      );
-
-      expect(body).toContain("sequant worktree resolve");
-      expect(body).toContain("git worktree list");
-
-      // The old instruction — "check if `../worktrees/` contains a directory
-      // for this issue" — must not survive as a directive. The region does
-      // mention the glob, but only inside a "Do not" prohibition.
-      const globMentions = body
-        .split("\n")
-        .filter((line) => line.includes("../worktrees/"));
-      expect(globMentions.length).toBeGreaterThan(0);
-      for (const line of globMentions) {
-        expect(line).toMatch(/Do not glob|shared by every sibling repository/);
-      }
-    });
-  });
-
   // The same two defects existed in every skill the orchestrator hands
   // SEQUANT_WORKTREE to, not only /exec. `/qa` reviewed the wrong tree,
   // `/loop` and `/testgen` *wrote* into it. #904.
-  describe.each(EXISTENCE_GUARD_SKILLS)("%s existence guard", (skill) => {
-    it("verifies SEQUANT_WORKTREE before use and halts on failure", () => {
-      const body = region(
-        readSkill(root, skill),
-        "worktree-existence-guard (#899)",
-      );
-
-      expect(body).toContain("sequant worktree verify");
-      expect(body).toContain("exit 1");
-      for (const code of [
-        "SEQUANT_WORKTREE_NOT_FOUND",
-        "SEQUANT_WORKTREE_FOREIGN",
-        "SEQUANT_WORKTREE_ISSUE_MISMATCH",
-      ]) {
-        expect(body).toContain(code);
-      }
-    });
-  });
-
   describe.each(STANDALONE_LOOKUP_SKILLS)("%s standalone lookup", (skill) => {
     it("resolves through git rather than globbing the shared directory", () => {
       const body = region(
@@ -286,3 +232,100 @@ describe.each(SKILL_ROOTS)("worktree contract in %s", (root) => {
     });
   });
 });
+
+// The guard is a command, so it is run, not read (#1512): each skill's fence
+// against a real worktree of a scratch repo, then against each failure the
+// orchestrator can hand over. A fence that stops halting, or stops calling
+// verify, changes the exit status or loses the named error.
+describe.each(EXISTENCE_GUARD_SKILLS)(
+  "%s existence guard, executed",
+  (skill) => {
+    let repo: string;
+    let worktree: string;
+    let foreign: string;
+
+    beforeAll(() => {
+      repo = mkdtempSync(path.join(tmpdir(), "sequant-guard-repo-"));
+      foreign = mkdtempSync(path.join(tmpdir(), "sequant-guard-foreign-"));
+      worktree = path.join(repo, "wt-77");
+      const git = (...args: string[]) =>
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            ...args,
+          ],
+          {
+            cwd: repo,
+            stdio: "ignore",
+          },
+        );
+      git("init", "-q");
+      git("commit", "-q", "--allow-empty", "-m", "base");
+      git("worktree", "add", "-q", "-b", "feature/77-guard", worktree);
+    });
+
+    afterAll(() => {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(foreign, { recursive: true, force: true });
+    });
+
+    function runGuard(target: string, issue: string): SpawnSyncReturns<string> {
+      const fence = skillFence(skill, {
+        region: "worktree-existence-guard (#899)",
+        contains: "worktree verify",
+      });
+      return spawnSync(
+        "bash",
+        ["-c", withBuiltCli(fill(fence, { "<issue-number>": issue }))],
+        {
+          cwd: repo,
+          encoding: "utf-8",
+          env: skillEnv({ SEQUANT_WORKTREE: target }),
+        },
+      );
+    }
+
+    it("passes a worktree of this repo on the issue's branch", () => {
+      const result = runGuard(worktree, "77");
+      expect(result.status, result.stderr).toBe(0);
+    });
+
+    it.each([
+      [
+        "a path that does not exist",
+        "missing",
+        "77",
+        "SEQUANT_WORKTREE_NOT_FOUND",
+      ],
+      [
+        "a directory outside this repo",
+        "foreign",
+        "77",
+        "SEQUANT_WORKTREE_FOREIGN",
+      ],
+      [
+        "a worktree on another issue's branch",
+        "worktree",
+        "78",
+        "SEQUANT_WORKTREE_ISSUE_MISMATCH",
+      ],
+    ])("halts on %s", (_label, which, issue, code) => {
+      const target =
+        which === "missing"
+          ? path.join(repo, "no-such-dir")
+          : which === "foreign"
+            ? foreign
+            : worktree;
+      const result = runGuard(target, issue);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(code);
+      expect(result.stdout).toContain("HALT");
+    });
+  },
+);

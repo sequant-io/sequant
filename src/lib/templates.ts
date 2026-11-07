@@ -24,6 +24,7 @@ const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 import { getStackConfig, getStackNotes, getMultiStackNotes } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
+import { noteSuppressed } from "./workflow/suppressed.js";
 
 /**
  * Offsets from this module's directory to the bundled `templates/` root, in
@@ -102,9 +103,10 @@ function rankTemplatesCandidate(candidate: string): TemplatesCandidateRank {
     if (pkg.name === "sequant") {
       return "package-root";
     }
-  } catch {
+  } catch (err) {
     // No readable/parseable package.json beside it — still a usable directory,
     // just not a positively identified package root.
+    noteSuppressed("other", err, "templates:rankTemplatesCandidate");
   }
   return "exists";
 }
@@ -208,8 +210,9 @@ export async function listTemplateFiles(): Promise<string[]> {
           files.push(join("templates", relativePath));
         }
       }
-    } catch {
+    } catch (err) {
       // Directory doesn't exist
+      noteSuppressed("other", err, "templates:walk");
     }
   }
 
@@ -339,6 +342,15 @@ const OWNERSHIP_RULES: readonly OwnershipRule[] = [
       "`writeCodexConfig` and refreshed wholesale (#1059).",
   },
   {
+    match: ".github/ISSUE_TEMPLATE/",
+    kind: "prefix",
+    policy: "user-owned",
+    reason:
+      "The issue form is written once, by `writeIssueFormIfAbsent`, and only " +
+      "when `.github/ISSUE_TEMPLATE/` does not exist. The project may edit it; " +
+      "sequant never rewrites it (#1528).",
+  },
+  {
     match: ".sequant/settings.reference.md",
     kind: "exact",
     policy: "sequant-owned",
@@ -407,6 +419,7 @@ export const NON_TEMPLATE_DESTINATIONS: readonly string[] = [
   ".opencode/opencode.json",
   ".opencode/",
   ".codex/config.toml",
+  ".github/ISSUE_TEMPLATE/",
 ];
 
 /**
@@ -537,6 +550,15 @@ const TEMPLATE_ROUTES: readonly TemplateRoute[] = [
       "Same reasoning as opencode above. `config.toml` renders to " +
       "`.codex/config.toml`, not `.claude/` — `init.ts`'s " +
       "`writeCodexProvisioning` is the one renderer (#1059).",
+  },
+  {
+    match: "templates/github/",
+    kind: "prefix",
+    destination: null,
+    reason:
+      "Renders to `.github/ISSUE_TEMPLATE/`, not `.claude/`, and only when " +
+      "that directory is absent — `init.ts`'s `writeIssueFormIfAbsent` is the " +
+      "one writer (#1528).",
   },
   {
     match: "templates/scripts/",
@@ -935,6 +957,12 @@ export interface CopyTemplatesOptions {
    * `"skills"`.
    */
   only?: "skills";
+  /**
+   * Leave out the repo hook channel: no `.claude/hooks/**` and no
+   * `.claude/settings.json` (the template holds only hook registrations).
+   * Set when a plugin ships the hooks (#1603).
+   */
+  skipHooks?: boolean;
 }
 
 /**
@@ -1313,8 +1341,10 @@ export async function copyTemplates(
     // Copy agent definitions
     await copyDir(join(templatesDir, "agents"), ".claude/agents");
 
-    // Copy hooks
-    await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
+    // Copy hooks, unless a plugin ships them (#1603)
+    if (!options.skipHooks) {
+      await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
+    }
 
     // Copy memory (constitution, etc.)
     await copyDir(join(templatesDir, "memory"), ".claude/memory");
@@ -1371,7 +1401,7 @@ export async function copyTemplates(
 
     // Copy settings.json
     const settingsPath = join(templatesDir, "settings.json");
-    if (await fileExists(settingsPath)) {
+    if (!options.skipHooks && (await fileExists(settingsPath))) {
       // Written here rather than through `copyDir`, so it needs the same
       // directory guard `copyDir` has (#1122).
       if (await isDirectory(".claude/settings.json")) {

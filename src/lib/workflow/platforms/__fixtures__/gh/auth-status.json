@@ -1,0 +1,13 @@
+{
+  "command": "gh auth status",
+  "args": [
+    "auth",
+    "status"
+  ],
+  "capturedAt": "2026-10-20T14:10:44.117Z",
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": "",
+  "provenance": "captured",
+  "note": "stdout and stderr scrubbed"
+}

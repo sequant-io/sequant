@@ -24,7 +24,7 @@ import type {
   ScopeAssessmentConfig,
 } from "./types.js";
 import { DEFAULT_SCOPE_CONFIG } from "./types.js";
-import { stripFencedLines } from "../markdown-fence.js";
+import { scanNonGoals } from "../non-goals.js";
 
 /**
  * Keywords for clustering AC items by functional area
@@ -288,45 +288,24 @@ export function detectFeatures(
 }
 
 /**
- * Parse non-goals section from issue body
+ * Assess the issue body's Non-Goals sections for scope assessment.
  *
- * Looks for a "Non-Goals" or "Out of Scope" section with checkbox items.
- *
- * Fenced code blocks are excluded before matching (#947 sibling) — a
- * Non-Goals example shown inside a fence (e.g. illustrating checkbox
- * syntax) must not itself be read as a real non-goal item.
+ * Wraps the shared scanner in `../non-goals.ts` (#1474) — the same heading
+ * rules and fence stripping the ready gate uses — and adds the warnings
+ * `verdict.ts` and `formatter.ts` report.
  *
  * @param issueBody - Full issue body markdown
  * @returns Non-goals extraction result
  */
-export function parseNonGoals(issueBody: string): NonGoals {
-  const items: string[] = [];
-  const strippedBody = stripFencedLines(issueBody);
+export function assessNonGoals(issueBody: string): NonGoals {
+  const { items, found } = scanNonGoals(issueBody);
 
-  // Find Non-Goals section (case-insensitive)
-  const sectionPattern =
-    /##\s*(?:Non[- ]?Goals|Out\s+of\s+Scope|Scope\s+Boundaries)\s*\n([\s\S]*?)(?=\n##|\n---|$)/i;
-  const sectionMatch = strippedBody.match(sectionPattern);
-
-  if (!sectionMatch) {
+  if (!found) {
     return {
       items: [],
       found: false,
       warning: "Non-Goals section not found. Consider adding scope boundaries.",
     };
-  }
-
-  const sectionContent = sectionMatch[1];
-
-  // Extract checkbox items or list items
-  const itemPattern = /^[-*]\s*(?:\[[ x]\]\s*)?(.+)$/gim;
-  let match;
-
-  while ((match = itemPattern.exec(sectionContent)) !== null) {
-    const item = match[1].trim();
-    if (item && !item.startsWith("#")) {
-      items.push(item);
-    }
   }
 
   if (items.length === 0) {

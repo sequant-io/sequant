@@ -1,0 +1,13 @@
+{
+  "command": "gh auth status",
+  "args": [
+    "auth",
+    "status"
+  ],
+  "exitCode": 1,
+  "stdout": "",
+  "stderr": "You are not logged into any GitHub hosts. To log in, run: gh auth login\n",
+  "note": "Logged-out output, from gh's documented message; capturing it would need a logged-out gh.",
+  "capturedAt": "2026-10-20T14:20:00.000Z",
+  "provenance": "hand-written"
+}

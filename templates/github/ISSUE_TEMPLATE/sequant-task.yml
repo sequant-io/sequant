@@ -1,0 +1,27 @@
+name: Task for Sequant
+description: A change Sequant can plan, build and check
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing, with a concrete example.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: One checkbox per requirement, each on a single line, ending with Evidence.
+      value: |
+        - [ ] AC-1: <observable result>. Evidence: <test, file or command>
+        - [ ] AC-2: <observable result>. Evidence: <test, file or command>
+    validations:
+      required: true
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-Goals
+      description: What this change should not do.
+      value: |
+        - <out of scope>

@@ -14,17 +14,26 @@
  * `--label=release` alternative would require changing the schema, CLI, and hook
  * and is out of scope for this skill-only fix. These tests pin that decision.
  *
- * Prose with no runtime twin — asserted against the prompt text, scoped per
- * CLAUDE.md to the delimited region. The real contention assertion (session A
+ * The Step 0 fence and every release site run against the built CLI and a
+ * temp lock dir (#1512); the placement and the OQ #1 reasoning stay text
+ * checks, scoped per CLAUDE.md to the delimited region. The real contention assertion (session A
  * holds, session B's first guarded command is refused) drives the hook and lives
  * in `merger-release-checkout-lock.integration.test.ts`.
  */
 
+import { spawnSync, type SpawnSyncReturns } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SKILL_ROOTS } from "../../../scripts/check-skill-sync.js";
+import {
+  skillEnv,
+  skillFence,
+  skillFences,
+  withBuiltCli,
+} from "../../../__tests__/helpers/skill-fence.js";
 
 /** src/lib/__tests__ -> repo root (anchor to this file, not process.cwd()). */
 const REPO_ROOT = path.resolve(
@@ -83,18 +92,6 @@ describe("#911/AC-4: /release acquires the checkout lock once, on the sentinel",
   });
 
   it.each(SKILL_ROOTS)(
-    "%s — the acquire fence uses the sentinel id and --skip-pid-check",
-    (root) => {
-      const fence = bashBlocks(skillText(root)).find((b) =>
-        b.includes("locks checkout acquire"),
-      );
-      expect(fence, "checkout acquire fence not found").toBeDefined();
-      expect(fence).toContain(`--issue=${SENTINEL}`);
-      expect(fence).toMatch(/--skip-pid-check/);
-    },
-  );
-
-  it.each(SKILL_ROOTS)(
     "%s — acquire lands after read-only pre-flight, before the first mutation",
     (root) => {
       const full = skillText(root);
@@ -129,63 +126,60 @@ describe("#911: OQ #1 resolution (sentinel, not --label) is documented", () => {
   );
 });
 
-describe("#911/AC-5: every checkout release proves ownership with --issue", () => {
-  it.each(SKILL_ROOTS)(
-    "%s — no `locks checkout release` in a bash block lacks --issue",
-    (root) => {
-      const missing = bashBlocks(skillText(root)).flatMap((block) => [
-        ...block.matchAll(/\bsequant locks checkout release(?! --issue=)/g),
-      ]);
-      expect(
-        missing,
-        `${missing.length} release site(s) without --issue`,
-      ).toHaveLength(0);
-    },
-  );
+/** The release fences that release the checkout lock, in document order. */
+const releaseFences = skillFences("release", {
+  contains: "locks checkout release",
+});
 
-  it.each(SKILL_ROOTS)(
-    "%s — exactly the expected number of release sites, each on the sentinel",
-    (root) => {
-      const release = new RegExp(
-        `npx sequant locks checkout release --issue=${SENTINEL} \\|\\| true`,
-      );
-      const releaseBlocks = bashBlocks(skillText(root)).filter((b) =>
-        release.test(b),
-      );
-      expect(releaseBlocks).toHaveLength(EXPECTED_RELEASE_SITES);
-    },
-  );
+let locksDir: string;
+beforeEach(() => {
+  locksDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-release-lock-"));
+});
+afterEach(() => fs.rmSync(locksDir, { recursive: true, force: true }));
 
-  it.each(SKILL_ROOTS)(
-    "%s — the rollback procedure releases after its guarded git reset",
-    (root) => {
-      // `git reset --soft` is the one guarded verb in /release; it runs unrefused
-      // only while /release holds the lock, so the rollback must hand it back.
-      const rollback = bashBlocks(skillText(root)).find(
-        (b) => b.includes("git reset --soft") && b.includes("git tag -d"),
-      );
-      expect(rollback, "rollback procedure block not found").toBeDefined();
-      expect(rollback).toContain(
-        `npx sequant locks checkout release --issue=${SENTINEL} || true`,
-      );
-    },
-  );
+function runSkill(script: string): SpawnSyncReturns<string> {
+  return spawnSync("bash", ["-c", withBuiltCli(script)], {
+    cwd: locksDir,
+    encoding: "utf-8",
+    env: skillEnv({ SEQUANT_LOCKS_DIR: locksDir }),
+  });
+}
 
-  it.each(SKILL_ROOTS)(
-    "%s — the after-push rollback releases before it stops",
-    (root) => {
-      // The after-push rollback is a terminal exit too: it reverts the release
-      // commit and ends the attempt. The Error Handling blanket below it also
-      // instructs a release, but the inline site keeps the handoff explicit at
-      // the point the agent actually stops.
-      const rollback = bashBlocks(skillText(root)).find(
-        (b) => b.includes("git revert HEAD") && b.includes(":refs/tags/"),
+describe("#911/AC-5: every release site frees the lock the Step 0 fence took", () => {
+  it("there are exactly the expected release sites", () => {
+    expect(releaseFences).toHaveLength(EXPECTED_RELEASE_SITES);
+  });
+
+  it.each(releaseFences.map((fence, i) => [i + 1, fence]))(
+    "release site %i releases the checkout lock held on the sentinel",
+    (_n, fence) => {
+      const acquire = runSkill(
+        skillFence("release", {
+          section: "### Step 0: Acquire the Checkout Lock",
+          contains: "locks checkout acquire",
+        }),
       );
-      expect(rollback, "after-push rollback block not found").toBeDefined();
-      expect(rollback).toContain(
-        `npx sequant locks checkout release --issue=${SENTINEL} || true`,
+      expect(acquire.status, acquire.stderr).toBe(0);
+      const lock = JSON.parse(
+        fs.readFileSync(path.join(locksDir, "checkout.lock"), "utf-8"),
       );
+      expect(lock).toMatchObject({
+        issue: Number(SENTINEL),
+        skipPidCheck: true,
+      });
+
+      // Only the release line: the rest of a site (git reset, git revert,
+      // tag deletion) must never run against this checkout.
+      const release = runSkill(
+        String(fence)
+          .split("\n")
+          .filter((line) => line.includes("locks checkout release"))
+          .join("\n"),
+      );
+      expect(release.status, release.stderr).toBe(0);
+      expect(fs.existsSync(path.join(locksDir, "checkout.lock"))).toBe(false);
     },
+    20_000,
   );
 });
 

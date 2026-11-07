@@ -21,7 +21,7 @@ import type { ScopeAssessment, ScopeAssessmentConfig } from "./types.js";
 import { DEFAULT_SCOPE_CONFIG } from "./types.js";
 import {
   detectFeatures,
-  parseNonGoals,
+  assessNonGoals,
   shouldSkipAssessment,
 } from "./analyzer.js";
 import {
@@ -52,7 +52,7 @@ export {
   estimateDirectorySpread,
   calculateFeatureCount,
   detectFeatures,
-  parseNonGoals,
+  assessNonGoals,
   shouldSkipAssessment,
 } from "./analyzer.js";
 
@@ -97,7 +97,7 @@ export function performScopeAssessment(
   config: ScopeAssessmentConfig = DEFAULT_SCOPE_CONFIG,
 ): ScopeAssessment {
   // Parse non-goals first
-  const nonGoals = parseNonGoals(issueBody);
+  const nonGoals = assessNonGoals(issueBody);
 
   // Detect features
   const featureDetection = detectFeatures(criteria, title);

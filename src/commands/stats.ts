@@ -7,13 +7,16 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
 import { ui, colors } from "../lib/cli-ui.js";
 import {
-  RunLogSchema,
+  resolveLogDir,
+  listLogFiles,
+  parseLogFile,
+} from "../lib/run-logs.js";
+import { formatDuration } from "../lib/cli-ui/format.js";
+import {
   type RunLog,
   type Phase,
-  LOG_PATHS,
 } from "../lib/workflow/run-log-schema.js";
 import {
   MetricsSchema,
@@ -80,57 +83,6 @@ interface CsvRow {
   passed: number;
   failed: number;
   phases: string;
-}
-
-/**
- * Resolve the log directory path
- */
-function resolveLogPath(customPath?: string): string {
-  if (customPath) {
-    return customPath.replace("~", os.homedir());
-  }
-
-  // Check project-level logs first
-  const projectPath = LOG_PATHS.project;
-  if (fs.existsSync(projectPath)) {
-    return projectPath;
-  }
-
-  // Fall back to user-level logs
-  const userPath = LOG_PATHS.user.replace("~", os.homedir());
-  if (fs.existsSync(userPath)) {
-    return userPath;
-  }
-
-  return projectPath;
-}
-
-/**
- * List all log files in a directory
- */
-function listLogFiles(logDir: string): string[] {
-  if (!fs.existsSync(logDir)) {
-    return [];
-  }
-
-  return fs
-    .readdirSync(logDir)
-    .filter((f) => f.startsWith("run-") && f.endsWith(".json"))
-    .sort()
-    .reverse();
-}
-
-/**
- * Parse a log file
- */
-function parseLogFile(filePath: string): RunLog | null {
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const data = JSON.parse(content);
-    return RunLogSchema.parse(data);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -242,18 +194,6 @@ function calculateStats(logs: RunLog[]): AggregateStats {
     phaseDurations,
     commonFailures,
   };
-}
-
-/**
- * Format duration in human-readable format
- */
-function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds.toFixed(1)}s`;
-  }
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs.toFixed(0)}s`;
 }
 
 /**
@@ -1189,7 +1129,7 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
     }
 
     // Fall back to run logs for JSON
-    const logDir = resolveLogPath(options.path);
+    const logDir = resolveLogDir(options.path);
     const logFiles = listLogFiles(logDir);
 
     if (logFiles.length === 0) {
@@ -1235,7 +1175,7 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
 
   // CSV output - use run logs
   if (options.csv) {
-    const logDir = resolveLogPath(options.path);
+    const logDir = resolveLogDir(options.path);
     const logFiles = listLogFiles(logDir);
 
     if (logFiles.length === 0) {
@@ -1266,7 +1206,7 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
     displayMetricsAnalytics(analytics);
   } else {
     // Fall back to run logs display
-    const logDir = resolveLogPath(options.path);
+    const logDir = resolveLogDir(options.path);
     const logFiles = listLogFiles(logDir);
 
     if (logFiles.length === 0) {
@@ -1304,7 +1244,7 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
 
   // Detailed analytics from run logs (--detailed flag)
   if (options.detailed) {
-    const logDir = resolveLogPath(options.path);
+    const logDir = resolveLogDir(options.path);
     const logFiles = listLogFiles(logDir);
     const allLogs = logFiles
       .map((filename) => {

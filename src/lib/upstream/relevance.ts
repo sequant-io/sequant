@@ -6,6 +6,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { getTemplatesDir } from "../templates.js";
+import { escapeRegex } from "../regex.js";
 import type {
   Baseline,
   DetectionPatterns,
@@ -13,6 +14,7 @@ import type {
   FindingCategory,
   ImpactLevel,
 } from "./types.js";
+import { noteSuppressed } from "../workflow/suppressed.js";
 
 /**
  * Default detection patterns for categorizing changes
@@ -248,8 +250,9 @@ export function listShippedSkillNames(
           e.isDirectory() && !e.name.startsWith("_") && e.name !== "references",
       )
       .map((e) => e.name);
-  } catch {
+  } catch (err) {
     // reported below
+    noteSuppressed("other", err, "relevance:listShippedSkillNames");
   }
   if (names.length === 0) {
     console.warn(
@@ -425,11 +428,4 @@ export function selectIssueWorthy(
         f.category !== "opportunity" &&
         isRelevant(f, baseline, exists)),
   );
-}
-
-/**
- * Escape special regex characters in a string
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

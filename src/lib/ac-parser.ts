@@ -89,8 +89,8 @@ const AC_HEADING_RE = /^#{1,6}\s+acceptance\s+criteria\b/i;
 
 /**
  * Matches any markdown ATX heading. Used to detect when the AC section ends —
- * the next heading of any level closes it, mirroring `parseNonGoals` in
- * `ready-gate.ts`.
+ * the next heading of any level closes it, mirroring the Non-Goals
+ * scanner in `non-goals.ts`.
  */
 const HEADING_RE = /^#{1,6}\s+/;
 
@@ -422,7 +422,7 @@ export function parseAcceptanceCriteria(
   // Split into lines and process each. `inAcSection` tracks whether the
   // current line falls under an `## Acceptance Criteria` heading; it toggles on
   // every heading and closes at the next heading of any level (same boundary
-  // rule as `parseNonGoals` in ready-gate.ts). `bareCount` numbers synthesized
+  // rule as the Non-Goals scanner in non-goals.ts). `bareCount` numbers synthesized
   // IDs for bare checkboxes in appearance order.
   const lines = issueBody.split("\n");
   // Lines inside a fenced code block (#947) — an AC-authoring example shown

@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-10-23T05:03:23.522Z",
+  "commit": "c86b23fe1a52fe8da17e605f7767f84c84386719",
+  "functions": {
+    "over400": 0,
+    "over200": 0,
+    "longest": {
+      "file": "src/commands/doctor.ts",
+      "name": "collectInstallChecks",
+      "lines": 197
+    }
+  },
+  "emptyCatch": {
+    "total": 0,
+    "byFile": {}
+  },
+  "childProcessMockFiles": 26,
+  "ghCallFilesOutsideProvider": 0,
+  "proseGate": {
+    "files": 30,
+    "lines": 7374
+  },
+  "testRatio28d": {
+    "sum": 1.59,
+    "median": 1.91,
+    "commits": 186
+  },
+  "deprecatedWithoutRemoval": 0,
+  "harness": {
+    "claudeMdLines": 25,
+    "skillLines": 15542,
+    "skillFiles": 19,
+    "memoryFiles": null
+  },
+  "adrWithoutActor": 11,
+  "unusedExports": 339
+}

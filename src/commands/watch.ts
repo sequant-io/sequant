@@ -10,8 +10,10 @@ import chalk from "chalk";
 import { outboxPathFor } from "../lib/relay/paths.js";
 import { listArchives } from "../lib/relay/archive.js";
 import { readPidFile } from "../lib/relay/pid.js";
+import { formatTimestamp } from "../lib/cli-ui/format.js";
 import { StateManager } from "../lib/workflow/state-manager.js";
 import { RelayResponseSchema, type RelayResponse } from "../lib/relay/types.js";
+import { noteSuppressed } from "../lib/workflow/suppressed.js";
 
 export interface WatchCommandOptions {
   json?: boolean;
@@ -21,18 +23,6 @@ export interface WatchCommandOptions {
   signal?: AbortSignal;
   /** Override cwd for resolving the pid file + archive root (test seam). */
   cwd?: string;
-}
-
-function formatTimestamp(iso: string): string {
-  try {
-    const date = new Date(iso);
-    const hh = String(date.getHours()).padStart(2, "0");
-    const mm = String(date.getMinutes()).padStart(2, "0");
-    const ss = String(date.getSeconds()).padStart(2, "0");
-    return `${hh}:${mm}:${ss}`;
-  } catch {
-    return iso;
-  }
 }
 
 function formatLine(reply: RelayResponse, json: boolean): string {
@@ -81,8 +71,9 @@ function readNewLines(
         try {
           const parsed = RelayResponseSchema.safeParse(JSON.parse(line));
           if (parsed.success) replies.push(parsed.data);
-        } catch {
+        } catch (err) {
           /* skip malformed */
+          noteSuppressed("other", err, "watch:readNewLines");
         }
       }
       resolve(replies);
@@ -189,8 +180,9 @@ export async function watchCommand(argsAndOptions: {
     try {
       const replies = await readNewLines(outboxPath, tail);
       emit(replies);
-    } catch {
+    } catch (err) {
       /* transient — try again next tick */
+      noteSuppressed("other", err, "watch:watchCommand");
     }
 
     // Dead-relay detection (#645, Gap 3). Once we've seen a live pidfile, its
@@ -201,8 +193,9 @@ export async function watchCommand(argsAndOptions: {
       try {
         const finalReplies = await readNewLines(outboxPath, tail);
         emit(finalReplies);
-      } catch {
+      } catch (err) {
         /* swallow */
+        noteSuppressed("other", err, "watch:watchCommand#2");
       }
       stop("relay-ended");
       break;
@@ -215,8 +208,9 @@ export async function watchCommand(argsAndOptions: {
   if (watcher) {
     try {
       watcher.close();
-    } catch {
+    } catch (err) {
       /* swallow */
+      noteSuppressed("other", err, "watch:watchCommand#3");
     }
   }
   void useWatcher; // currently unused beyond best-effort init

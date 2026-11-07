@@ -21,6 +21,7 @@
 
 import { StateManager } from "./state-manager.js";
 import type { Phase, PhaseStatus, IssueStatus } from "./state-schema.js";
+import { noteSuppressed } from "./suppressed.js";
 
 /**
  * Check if running in orchestrated mode
@@ -161,8 +162,9 @@ function createActiveHook(
       try {
         await ensureInitialized();
         await manager.updatePhaseStatus(issueNumber, phase, "in_progress");
-      } catch {
+      } catch (err) {
         // State errors shouldn't stop skill execution
+        noteSuppressed("state", err, "state-hook:startPhase");
       }
     },
 
@@ -175,8 +177,9 @@ function createActiveHook(
         await ensureInitialized();
         const status: PhaseStatus = success ? "completed" : "failed";
         await manager.updatePhaseStatus(issueNumber, phase, status, { error });
-      } catch {
+      } catch (err) {
         // State errors shouldn't stop skill execution
+        noteSuppressed("state", err, "state-hook:completePhase");
       }
     },
 
@@ -184,8 +187,9 @@ function createActiveHook(
       try {
         await ensureInitialized();
         await manager.updatePhaseStatus(issueNumber, phase, "skipped");
-      } catch {
+      } catch (err) {
         // State errors shouldn't stop skill execution
+        noteSuppressed("state", err, "state-hook:skipPhase");
       }
     },
 
@@ -193,8 +197,9 @@ function createActiveHook(
       try {
         await ensureInitialized();
         await manager.updateIssueStatus(issueNumber, status);
-      } catch {
+      } catch (err) {
         // State errors shouldn't stop skill execution
+        noteSuppressed("state", err, "state-hook:updateIssueStatus");
       }
     },
 
@@ -202,8 +207,9 @@ function createActiveHook(
       try {
         await ensureInitialized();
         await manager.updateSessionId(issueNumber, sessionId);
-      } catch {
+      } catch (err) {
         // State errors shouldn't stop skill execution
+        noteSuppressed("state", err, "state-hook:updateSessionId");
       }
     },
 
@@ -214,8 +220,9 @@ function createActiveHook(
           number: prNumber,
           url: prUrl,
         });
-      } catch {
+      } catch (err) {
         // State errors shouldn't stop skill execution
+        noteSuppressed("state", err, "state-hook:updatePRInfo");
       }
     },
   };

@@ -7,6 +7,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { noteSuppressed } from "./suppressed.js";
 
 /**
  * Token usage data from a single session file
@@ -261,11 +262,13 @@ export function cleanupTokenFiles(directory: string = TOKEN_USAGE_DIR): void {
       const filePath = path.join(directory, filename);
       try {
         fs.unlinkSync(filePath);
-      } catch {
+      } catch (err) {
         // Ignore individual file deletion errors
+        noteSuppressed("other", err, "token-utils:cleanupTokenFiles");
       }
     }
-  } catch {
+  } catch (err) {
     // Directory read error - ignore
+    noteSuppressed("other", err, "token-utils:cleanupTokenFiles#2");
   }
 }

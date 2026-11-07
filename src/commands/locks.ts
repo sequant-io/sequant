@@ -4,39 +4,16 @@
  */
 
 import chalk from "chalk";
+import { parseIssueNumber } from "../lib/cli-flags.js";
 import {
   CheckoutLock,
   LockManager,
   describeCheckoutHolderIssue,
   formatCheckoutLockedMessage,
   formatLockedMessage,
+  formatSignalLine,
   type LockFile,
-  type SignalOtherResult,
 } from "../lib/locks/index.js";
-
-/** Human-readable line for the `--signal-other` log output (#637). */
-function formatSignalLine(
-  issue: number,
-  pid: number,
-  result: SignalOtherResult,
-): string {
-  switch (result.reason) {
-    case "sent":
-      return `Signaled PID ${pid} (SIGTERM) for #${issue}`;
-    case "cross-host":
-      return `Could not signal PID ${pid} for #${issue} (cross-host holder)`;
-    case "self-or-parent":
-      return `Refused to signal PID ${pid} for #${issue} (matches this process or its parent)`;
-    case "pid-dead":
-      return `Could not signal PID ${pid} for #${issue} (already exited)`;
-    case "stale-pid-untrusted":
-      return `Refused to signal PID ${pid} for #${issue} (lock is past the age ceiling; that PID has likely been recycled onto an unrelated process)`;
-    case "kill-failed":
-      return `Could not signal PID ${pid} for #${issue} (kill syscall failed)`;
-    case "orchestrator":
-      return `Skipped signal for #${issue} (orchestrator mode)`;
-  }
-}
 
 export interface LocksListOptions {
   json?: boolean;
@@ -65,16 +42,6 @@ export interface LocksCheckOptions {
 
 export interface LocksCheckBatchOptions {
   json?: boolean;
-}
-
-function parseIssue(arg: string): number | null {
-  const issue = Number.parseInt(arg, 10);
-  if (!Number.isInteger(issue) || issue <= 0) {
-    console.error(chalk.red(`Invalid issue number: ${arg}`));
-    process.exitCode = 1;
-    return null;
-  }
-  return issue;
 }
 
 /** `sequant locks list` — print every active lock with staleness metadata. */
@@ -441,8 +408,12 @@ export async function locksAcquireCommand(
   issueArg: string,
   options: LocksAcquireOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 1;
+    return;
+  }
 
   const command = options.command ?? "unknown";
   const manager = new LockManager();
@@ -519,8 +490,12 @@ export async function locksReleaseCommand(
   issueArg: string,
   options: LocksReleaseOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 1;
+    return;
+  }
 
   const manager = new LockManager();
   if (manager.isNoop) {
@@ -556,8 +531,12 @@ export async function locksCheckCommand(
   issueArg: string,
   options: LocksCheckOptions = {},
 ): Promise<void> {
-  const issue = parseIssue(issueArg);
-  if (issue === null) return;
+  const issue = parseIssueNumber(issueArg);
+  if (issue === null) {
+    console.error(chalk.red(`Invalid issue number: ${issueArg}`));
+    process.exitCode = 1;
+    return;
+  }
 
   const manager = new LockManager();
   if (manager.isNoop) {
@@ -604,8 +583,8 @@ export async function locksCheckBatchCommand(
 ): Promise<void> {
   const issues: number[] = [];
   for (const arg of issueArgs) {
-    const issue = Number.parseInt(arg, 10);
-    if (!Number.isInteger(issue) || issue <= 0) {
+    const issue = parseIssueNumber(arg);
+    if (issue === null) {
       console.error(chalk.red(`Invalid issue number: ${arg}`));
       process.exitCode = 2;
       return;
