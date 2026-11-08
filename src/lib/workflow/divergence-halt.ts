@@ -36,7 +36,14 @@ export type LadderHaltReason =
   /** Repeated progress at a still-failing verdict (#971 AC-3). */
   | "DIVERGENCE_SUSPECT"
   /** A further trigger arrived on the last rung (#971 AC-9). */
-  | "TOP_OF_LADDER";
+  | "TOP_OF_LADDER"
+  /**
+   * Two consecutive `AC_NOT_MET` QA verdicts in the quality loop (#1646).
+   * Not a ladder halt: it fires with no ladder configured, and outlives the
+   * ladder's removal (#1647). It shares the bundle so the run log records it
+   * the way #1254 records a ladder halt.
+   */
+  | "AC_NOT_MET_REPEATED";
 
 /** One iteration's observable outcome, as replayed in the bundle. */
 export interface DivergenceIterationRecord {
@@ -46,6 +53,8 @@ export interface DivergenceIterationRecord {
   sha?: string;
   /** QA verdict for the iteration, when one was parsed. */
   verdict?: string;
+  /** AC ids the QA verdict marked `not_met` (#1646; `AC_NOT_MET_REPEATED` only). */
+  failedAcs?: string[];
 }
 
 /**
@@ -88,6 +97,8 @@ const REASON_HEADLINE: Record<LadderHaltReason, string> = {
     "repeated progress at a still-failing verdict — divergence-suspect, so the model was never escalated",
   TOP_OF_LADDER:
     "a further capability-bound trigger arrived on the ladder's last rung — there is nowhere left to climb",
+  AC_NOT_MET_REPEATED:
+    "QA returned AC_NOT_MET twice in a row — one fix pass did not move the verdict, so a second is not spent",
 };
 
 /** What the human should do next, per halt reason. */
@@ -98,6 +109,8 @@ const REASON_NEXT_STEP: Record<LadderHaltReason, string> = {
     "Review the diffs produced above against the failing criteria — the loop is building plausible work that the criteria keep rejecting. Re-specify before re-running.",
   TOP_OF_LADDER:
     "The strongest configured model still could not converge. Review the work in the worktree, or reconsider the criteria, before spending more.",
+  AC_NOT_MET_REPEATED:
+    "Read both QA verdicts on the issue and the failed ACs below. Fix the work by hand or re-specify the criteria, then re-run.",
 };
 
 /**
@@ -110,8 +123,13 @@ const REASON_NEXT_STEP: Record<LadderHaltReason, string> = {
  */
 export function formatEvidenceBundle(bundle: EvidenceBundle): string {
   const lines: string[] = [];
+  // #1646: the repeat halt is the quality loop's own stop, not the ladder's.
+  const kind =
+    bundle.reason === "AC_NOT_MET_REPEATED"
+      ? "Quality loop halt"
+      : "Ladder halt";
   lines.push(
-    `Ladder halt: ${bundle.reason} — issue #${bundle.issueNumber}, phase '${bundle.phase}'`,
+    `${kind}: ${bundle.reason} — issue #${bundle.issueNumber}, phase '${bundle.phase}'`,
   );
   lines.push(`  Why: ${REASON_HEADLINE[bundle.reason]}`);
 
@@ -134,7 +152,10 @@ export function formatEvidenceBundle(bundle: EvidenceBundle): string {
   } else {
     for (const it of bundle.iterations) {
       lines.push(
-        `    ${it.iteration}: verdict=${it.verdict ?? "(none)"} sha=${it.sha ?? "(none)"}`,
+        `    ${it.iteration}: verdict=${it.verdict ?? "(none)"} sha=${it.sha ?? "(none)"}` +
+          (it.failedAcs !== undefined
+            ? ` failed=${it.failedAcs.length > 0 ? it.failedAcs.join(",") : "(none recorded)"}`
+            : ""),
       );
     }
   }

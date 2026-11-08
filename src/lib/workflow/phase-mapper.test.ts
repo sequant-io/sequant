@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   detectPhasesFromLabels,
   determinePhasesForIssue,
-  hasUILabels,
   DOCS_LABELS,
   BUG_LABELS,
 } from "./phase-mapper.js";
@@ -116,16 +115,31 @@ describe("exact matching regression (AC-4)", () => {
   });
 });
 
-describe("hasUILabels exact matching (AC-5)", () => {
-  it("returns true for exact UI label", () => {
-    expect(hasUILabels(["ui"])).toBe(true);
-    expect(hasUILabels(["frontend"])).toBe(true);
-    expect(hasUILabels(["admin"])).toBe(true);
+describe("label does not add test", () => {
+  it("keeps an explicit spec-only list for a frontend label", () => {
+    expect(determinePhasesForIssue(["spec"], ["frontend"], {})).toEqual([
+      "spec",
+    ]);
   });
 
-  it("returns false for substring collisions", () => {
-    expect(hasUILabels(["webinar"])).toBe(false);
-    expect(hasUILabels(["stadium"])).toBe(false);
+  it("keeps spec,exec,qa without test for a frontend label", () => {
+    expect(
+      determinePhasesForIssue(["spec", "exec", "qa"], ["frontend"], {}),
+    ).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("still inserts testgen after spec with --testgen", () => {
+    expect(
+      determinePhasesForIssue(["spec", "exec", "qa"], ["frontend"], {
+        testgen: true,
+      }),
+    ).toEqual(["spec", "testgen", "exec", "qa"]);
+  });
+
+  it("keeps test when the list names it", () => {
+    expect(
+      determinePhasesForIssue(["spec", "exec", "test", "qa"], ["ui"], {}),
+    ).toEqual(["spec", "exec", "test", "qa"]);
   });
 });
 

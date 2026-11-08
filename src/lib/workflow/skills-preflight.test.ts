@@ -174,12 +174,12 @@ describe("resolveRequiredSkills (#813 AC-2)", () => {
     expect(skills).toContain("security-review");
   });
 
-  it("includes the test skill for issues with UI labels", () => {
+  it("does not require the test skill for UI labels on an explicit list (#1631)", () => {
     const skills = resolveRequiredSkills({
       ...EXPLICIT_BASE,
       issueInfoMap: infoMap([[1, ["ui"]]]),
     });
-    expect(skills).toContain("test");
+    expect(skills).not.toContain("test");
   });
 
   it("includes loop when the quality loop is enabled", () => {
@@ -233,7 +233,7 @@ describe("resolveRequiredSkills (#813 AC-2)", () => {
     );
   });
 
-  it("unions phases across issues without duplicates", () => {
+  it("unions phases across issues without duplicates or a UI-label test skill", () => {
     const skills = resolveRequiredSkills({
       ...EXPLICIT_BASE,
       issueNumbers: [1, 2],
@@ -243,7 +243,7 @@ describe("resolveRequiredSkills (#813 AC-2)", () => {
       ]),
     });
     expect(skills.filter((s) => s === "qa")).toHaveLength(1);
-    expect(skills).toContain("test");
+    expect(skills).not.toContain("test");
   });
 });
 
