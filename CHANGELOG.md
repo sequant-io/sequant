@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Run-log helpers live in one module (#1471).** `parseLogFile`, `listLogFiles` and `resolveLogDir` are defined once in `src/lib/run-logs.ts` and `formatDuration` once in `src/lib/cli-ui/format.ts`; the duplicate copies in `sequant logs`, `sequant stats`, the `sequant_logs` and `sequant_run` MCP tools, `merge --check` and `phase-executor.ts` are removed. `resolveLogPath` is renamed `resolveLogDir`. No output, path or precedence changes.
 - **Five small helpers are defined once (#1473).** `ensureDir` (`lib/fs.ts`, plus `ensureParentDirSync` for the relay writer's file path), `escapeRegex` (`lib/regex.ts`), `formatTimestamp` (`lib/cli-ui/format.ts`, now taking a `Date` or an ISO string), `truncateToWidth` and `truncateAtWord` (`lib/cli-ui/truncate.ts`) and `parseIssueNumber` (`lib/cli-flags.ts`, returning `number | null`). The upstream assessment writer now reports a failed `mkdir` instead of swallowing it. `sequant watch` prints an unparsable timestamp as given instead of `NaN:NaN:NaN`. TUI and `/assess` output are unchanged.
 
+### Removed
+
+- **BREAKING: the model ladder (`--model-ladder`, `run.modelLadder`) and effort escalation (`--escalate-effort`, `run.effortEscalation`) are removed from `run` and `ready` (#1647).** The flags now error as unknown options. A settings file that still sets either key loads with one warning per key saying it was removed in 3.0, and the key is ignored. Run logs written before 3.0 still load, including ladder fields, `escalationHistory` and the `ladder_halt` category. The `SPEC_DIVERGENCE` halt and the repeat halt (`AC_NOT_MET_REPEATED`, #1646) are unchanged, and a `SPEC_DIVERGENCE` halt still records category `ladder_halt`. The ladder-only `DIVERGENCE_SUSPECT` and `TOP_OF_LADDER` halts are gone. `docs/reference/model-ladder.md` is now `docs/reference/spec-divergence-halt.md`.
+
 ### Added
 
 - **Every PR `sequant run` opens gets one "Read first" comment after QA (#1520).** The comment splits the diff into Residue (files no AC's `Evidence:` clause names, hot files with 3 or more `fix` commits in 28 days, deleted or weakened tests, tautology-detector hits, more than 400 changed non-test lines), Tests (each test file's seam class, `real`/`mock`/`prose`, with any mocked module the project does not own and its `SEQUANT_MUTATION` record) and Explained (files an AC's evidence names, with the AC id). Each residue and test line shows the command that produced it, and no model writes any of it. The comment is posted once per PR: a later run reads the PR's comments and skips the post. A failed git read logs a warning and posts nothing. `scripts/qa/ac-attribution-rate.ts` measures how many ACs name a path, and `scripts/qa/residue-outcomes.ts` counts reviewer comments before merge on PRs with and without residue. `GitHubProvider` gains `listClosedIssuesWithBodySync` and `listMergedPRsWithCommentsSync`, and its `gh` runner's output buffer is now 32 MB. See `docs/reference/review-residue.md` and ADR-0021.
@@ -391,7 +395,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Verbose output now names the trigger in words —
     `model: sonnet → opus (no-progress retry)` — at all four dispatch print
     sites, replacing the raw reason code.
-  - New reference doc: [Model Escalation Ladder](docs/reference/model-ladder.md),
+  - New reference doc: [Model Escalation Ladder](docs/reference/spec-divergence-halt.md),
     covering the capability-vs-spec-bound distinction, the escape hatch, and the
     cost model.
 

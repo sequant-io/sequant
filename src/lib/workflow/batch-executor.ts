@@ -25,42 +25,12 @@ import {
   type QaVerdict,
   type QaSummary,
 } from "./types.js";
-import { withEscalatedEffort } from "./effort-escalation.js";
-import {
-  withEscalatedModel,
-  createLadderState,
-  isLadderConfigured,
-  effectiveModelTrigger,
-  detectCapabilityBoundTrigger,
-  formatEscalationTriggerLabel,
-  type EscalationTrigger,
-  type LadderState,
-  type ModelEscalationRecord,
-} from "./model-ladder.js";
 import {
   formatEvidenceBundle,
   type EvidenceBundle,
   type DivergenceIterationRecord,
   type LadderHaltReason,
 } from "./divergence-halt.js";
-
-/**
- * Consecutive `divergence-suspect` iterations required before the run halts
- * (#995 / #971 AC-3).
- *
- * Two, not one. A single iteration that produced a diff and still failed QA is
- * the ordinary `AC_NOT_MET → /loop → re-QA` cycle — the quality loop working
- * as designed. Halting on the first would turn every normal second pass into a
- * dead run. Two in a row is the fingerprint AC-3 describes: plausible work that
- * keeps not converging, which a stronger model would only rediscover more
- * expensively.
- */
-const DIVERGENCE_SUSPECT_HALT_THRESHOLD = 2;
-import {
-  snapshotLoopProgress,
-  compareLoopProgress,
-  type LoopProgressSnapshot,
-} from "./qa-stagnation.js";
 import type { ShutdownManager } from "../shutdown.js";
 import {
   classifyError,
@@ -702,15 +672,19 @@ export function deriveFailureCategory(
 }
 
 /**
- * The issue-level record of a ladder halt (#1254).
+ * The issue-level record of a `SPEC_DIVERGENCE` halt (#1254).
  *
  * A halt is the orchestrator's decision, not a phase failure, so
  * {@link deriveFailureCategory} finds nothing to classify — a halt where every
  * phase exited cleanly used to return `success: false` with no category and no
- * reason. Both `runIssueWithLogging` return sites spread this, so all four
- * producers (spec path, loop `SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`,
- * `TOP_OF_LADDER`) are recorded through one owner. Reuses `abortReason` rather
- * than a halt-specific field (owner decision 2026-10-04).
+ * reason. Both `runIssueWithLogging` return sites spread this, so both
+ * producers (spec path and loop `SPEC_DIVERGENCE`) are recorded through one
+ * owner. Reuses `abortReason` rather than a halt-specific field (owner
+ * decision 2026-10-04).
+ *
+ * The name and the `ladder_halt` category outlive the model ladder (#1647):
+ * the halt kept working without it, and renaming the category would change
+ * the run-log shape old readers expect.
  *
  * @internal Exported for testing
  */
@@ -1209,10 +1183,6 @@ interface IssueRunState {
   phases: Phase[];
   detectedQualityLoop: boolean;
   specAlreadyRan: boolean;
-  /** Per-iteration verdicts/SHAs replayed in a ladder halt's evidence bundle. */
-  iterationRecords: DivergenceIterationRecord[];
-  /** Every rung this issue actually spent — the bundle's "no rung was spent" proof. */
-  modelEscalations: ModelEscalationRecord[];
   // Set when a phase hits its turn cap (#739): halt the outer quality-loop
   // retry too, not just the inner /loop spawn — re-running a capped phase
   // would only cap again, and "surface + halt" means the user resumes.
@@ -1222,48 +1192,22 @@ interface IssueRunState {
   // (or spawning /loop) cannot succeed while the window is closed, so halt the
   // outer quality loop and let the user resume once credits/window are restored.
   haltedByBilling: boolean;
-  // #995 (#971 AC-3/4/9): set when the ladder halts instead of climbing — an
-  // agent declared the spec impossible (`SPEC_DIVERGENCE`), the loop kept
-  // producing diffs at a failing verdict (`DIVERGENCE_SUSPECT`), or a further
-  // trigger arrived on the last rung (`TOP_OF_LADDER`). Like the turn cap and
-  // the billing window, this suppresses the /loop spawn and breaks the outer
-  // quality loop: none of the three can be resolved by running the same work
-  // again, and two of them must not be resolved by running it on a stronger
-  // model.
+  // #995 (#971 AC-4): set when an agent declares the spec impossible
+  // (`SPEC_DIVERGENCE`). Like the turn cap and the billing window, this
+  // suppresses the /loop spawn and breaks the outer quality loop: a retry
+  // cannot un-contradict a spec.
   haltedByDivergence: LadderHaltReason | null;
   /** The bundle printed and persisted at the halt. Null until one fires. */
   divergenceBundle: EvidenceBundle | null;
   /**
-   * #995 (#971 AC-3): consecutive iterations classified `divergence-suspect`.
-   * The halt fires at two, not one: a single divergence-suspect iteration is
-   * the ORDINARY `AC_NOT_MET → /loop → re-QA` cycle, and halting on it would
-   * break every quality loop in the product. Two in a row is the pattern the
-   * AC names — plausible diffs that keep not converging.
-   */
-  consecutiveDivergenceSuspect: number;
-  /**
    * #1646: the QA verdicts of the current run of consecutive `AC_NOT_MET`
    * results, oldest first. Its length is the counter; any other verdict, or a
-   * qa result with no parsed verdict, empties it. Independent of the ladder:
-   * it reads only the parsed verdict, so it counts with no ladder configured.
+   * qa result with no parsed verdict, empties it. It reads only the parsed
+   * verdict.
    */
   acNotMetStreak: DivergenceIterationRecord[];
   /** #1646: set when the streak reaches two — the loop halts. */
   repeatHaltBundle: EvidenceBundle | null;
-  // #971: per-issue rung state for the model escalation ladder. Stickiness
-  // lives here rather than in `ExecutionConfig` — the config is built once per
-  // run and shared across every phase, so a rung baked into it would leak
-  // (#915 AC-7's rationale). `createLadderState` is cheap and unconditional;
-  // the ladder itself is off unless `config.modelLadder` is configured.
-  ladderState: LadderState;
-  /**
-   * #971: the capability-bound trigger observed at the END of the previous
-   * quality-loop iteration, consumed by this iteration's dispatches. `null`
-   * on the first iteration and whenever the previous iteration produced a
-   * diff — progress at a failing verdict is divergence-suspect, never a rung
-   * (AC-3).
-   */
-  lastTrigger: EscalationTrigger | null;
   /**
    * #1520: the PR opened right after exec (#1247), kept so the Read-first
    * comment reaches it when the run ends at a failing verdict and the
@@ -1290,8 +1234,6 @@ interface IssueRunIteration {
 interface DispatchedPhase {
   result: PhaseResult;
   dispatchConfig: ExecutionConfig;
-  escalationRecord: ReturnType<typeof withEscalatedEffort>["record"];
-  modelTrigger: EscalationTrigger | null;
   startTime: Date;
   endTime: Date;
 }
@@ -1304,17 +1246,12 @@ function createIssueRunState(): IssueRunState {
     phases: [],
     detectedQualityLoop: false,
     specAlreadyRan: false,
-    iterationRecords: [],
-    modelEscalations: [],
     haltedByCap: false,
     haltedByBilling: false,
     haltedByDivergence: null,
     divergenceBundle: null,
-    consecutiveDivergenceSuspect: 0,
     acNotMetStreak: [],
     repeatHaltBundle: null,
-    ladderState: createLadderState(),
-    lastTrigger: null,
     earlyPr: null,
   };
 }
@@ -1558,22 +1495,15 @@ async function openOrUpdatePR(
 }
 
 /**
- * #995: assemble the evidence bundle for a ladder halt.
+ * #995: assemble the evidence bundle for a `SPEC_DIVERGENCE` halt.
  *
- * Reads only state the issue run already keeps, so a halt costs no extra
- * `git` call on top of the ladder's existing per-iteration snapshot. The
- * `escalationHistory` it hands over is the live `modelEscalations` array —
- * empty on a `SPEC_DIVERGENCE` or `DIVERGENCE_SUSPECT` halt, which is what
- * makes "no rung was spent" a fact in the record rather than a claim in a
- * comment (#971 AC-3/AC-4).
- *
- * #1250: shared with the spec path, so a spec-phase SPEC_DIVERGENCE halt
- * reuses the one bundle builder. Both arrays are still empty at spec time —
- * the "no SHA tried, no rung spent" record.
+ * #1250: shared with the spec path and the loop. Since #1647 removed the
+ * model ladder and its per-iteration snapshot, the SHA, iteration and
+ * escalation arrays are always empty; they stay in the bundle because the
+ * run-log schema and the formatter read them.
  */
 function buildBundle(
   issueNumber: number,
-  state: IssueRunState,
   reason: LadderHaltReason,
   phase: string,
   declared?: { acs?: string; message?: string },
@@ -1582,15 +1512,9 @@ function buildBundle(
     issueNumber,
     phase,
     reason,
-    shasTried: [
-      ...new Set(
-        state.iterationRecords
-          .map((r) => r.sha)
-          .filter((sha): sha is string => Boolean(sha)),
-      ),
-    ],
-    iterations: [...state.iterationRecords],
-    escalationHistory: [...state.modelEscalations],
+    shasTried: [],
+    iterations: [],
+    escalationHistory: [],
     // `declaredAcs` is present-but-empty when the agent halted without naming
     // an AC; the formatter reports that explicitly rather than omitting the
     // line, because AC-14 requires the halt output to name the AC.
@@ -1952,7 +1876,6 @@ async function recordSpecOutcome(
   const specBundle = specResult.specDivergence
     ? buildBundle(
         issueNumber,
-        state,
         "SPEC_DIVERGENCE",
         "spec",
         specResult.specDivergence,
@@ -2142,29 +2065,14 @@ async function runQualityLoop(
   env: IssueRunEnv,
   state: IssueRunState,
 ): Promise<boolean> {
-  const { config, snapshotProgressFn } = env.ctx;
-  const { worktreePath } = env;
+  const { config } = env.ctx;
   let iteration = 0;
   const useQualityLoop = config.qualityLoop || state.detectedQualityLoop;
   const maxIterations = useQualityLoop ? config.maxIterations : 1;
   let completedSuccessfully = false;
-  /**
-   * #971 AC-D2: the ladder needs a per-iteration progress snapshot, which
-   * costs two `git` invocations. Gate it on a configured ladder so an
-   * unconfigured run issues ZERO additional `git` calls per iteration and
-   * stays byte-identical to pre-#971.
-   */
-  const ladderConfigured = isLadderConfigured(env.issueConfig);
-  const takeSnapshot = snapshotProgressFn ?? snapshotLoopProgress;
 
   while (iteration < maxIterations) {
     iteration++;
-    // #971: snapshot before this iteration's phases so the end-of-iteration
-    // comparison can tell "produced nothing" (capability-bound) from
-    // "produced a diff that still failed" (divergence-suspect).
-    const iterationStartSnapshot =
-      ladderConfigured && worktreePath ? takeSnapshot(worktreePath) : null;
-
     if (useQualityLoop && iteration > 1) {
       env.log(
         chalk.cyan(`    Quality loop iteration ${iteration}/${maxIterations}`),
@@ -2183,18 +2091,6 @@ async function runQualityLoop(
     for (let phaseIdx = 0; phaseIdx < state.phases.length; phaseIdx++) {
       const step = await runPhaseStep(env, state, iter, state.phases[phaseIdx]);
       if (step === "break") break;
-    }
-
-    // Gated on a configured ladder, so an unconfigured run performs no
-    // snapshot and issues no extra `git` calls (AC-D2).
-    if (iterationStartSnapshot && worktreePath) {
-      assessIterationProgress(
-        env,
-        state,
-        iter,
-        iterationStartSnapshot,
-        takeSnapshot(worktreePath),
-      );
     }
 
     // If all phases passed, exit the loop
@@ -2230,7 +2126,6 @@ async function runPhaseStep(
   phase: Phase,
 ): Promise<"next" | "break"> {
   const dispatched = await dispatchLoopPhase(env, state, iter, phase);
-  if (!dispatched) return "break";
 
   await recordLoopPhaseOutcome(env, state, iter, phase, dispatched);
 
@@ -2254,36 +2149,27 @@ async function runPhaseStep(
     // Phase succeeded — RunRenderer (#618) updates state via onProgress.
     return "next";
   }
-  await handlePhaseFailure(
-    env,
-    state,
-    iter,
-    dispatched.result,
-    dispatched.modelTrigger,
-  );
+  await handlePhaseFailure(env, state, iter, dispatched.result);
   // Stop on first failure. A /loop pass that succeeded also ends this
   // iteration's phase chain: the next iteration re-runs the phases.
   return "break";
 }
 
 /**
- * Emits the phase's start, applies effort/model escalation and dispatches
- * it. Returns `null` when the ladder halts at its top rung instead.
+ * Emits the phase's start and dispatches it.
  */
 async function dispatchLoopPhase(
   env: IssueRunEnv,
   state: IssueRunState,
   iter: IssueRunIteration,
   phase: Phase,
-): Promise<DispatchedPhase | null> {
+): Promise<DispatchedPhase> {
   const {
     issueNumber,
-    config,
     services: { stateManager, shutdownManager },
     onProgress,
     phasePauseHandle,
   } = env.ctx;
-  const { log } = env;
   const { iteration } = iter;
 
   // RunRenderer (#618) owns phase progress via emitProgressLine + onProgress.
@@ -2310,84 +2196,13 @@ async function dispatchLoopPhase(
     }
   }
 
-  // #915: iteration > 1 is the outer quality-loop's retry signal — the
-  // same condition that triggers the "Quality loop iteration" log line
-  // above. This loop re-runs the WHOLE `phases` list on every iteration
-  // (it does not resume from the specific phase that failed), so the
-  // escalation is per RETRIED ITERATION, not per specific-phase-that-
-  // previously-failed: every phase dispatched while iteration > 1
-  // escalates, including one that already succeeded on iteration 1 (e.g.
-  // exec re-running alongside a retried qa). `withEscalatedEffort` is a
-  // no-op (returns the input config by reference) whenever escalation is
-  // off or this is the first attempt.
-  //
-  // #971 AC-5, enforced structurally rather than by convention. Both
-  // halves come from ONE value, `modelTrigger`:
-  //
-  // - "retry 1 escalates effort only": `effectiveModelTrigger` withholds
-  //   the trigger until retry 2, so the first retry leaves the effort
-  //   bump enabled and spends the cheap rung — the ladder's own cost
-  //   argument, applied to #915's rung.
-  // - "never both on one iteration": from retry 2 on, an active trigger
-  //   disables the effort bump and spends a model rung instead.
-  //
-  // Written this way, "effort and model both changed on one iteration" is
-  // unrepresentable rather than merely untested.
-  const modelTrigger = effectiveModelTrigger(state.lastTrigger, iteration - 1);
-  const { config: effortConfig, record: escalationRecord } =
-    withEscalatedEffort(
-      withActivityHook(
-        env.issueConfig,
-        issueNumber,
-        phase,
-        onProgress,
-        makeWaitTransition(env, phase),
-      ),
-      phase,
-      iteration > 1 && modelTrigger === null,
-    );
-  if (escalationRecord && config.verbose) {
-    log(
-      chalk.gray(
-        `    effort: ${escalationRecord.base} → ${escalationRecord.escalated} (loop retry)`,
-      ),
-    );
-  }
-  // #971: apply the ladder for THIS dispatch. A no-op returning the input
-  // config by reference whenever no ladder is configured, no trigger
-  // arrived and no sticky rung has been reached, or the phase's `--models`
-  // pin is off-ladder (AC-7).
-  const {
-    config: dispatchConfig,
-    record: modelRecord,
-    topOfLadder: phaseTopOfLadder,
-  } = withEscalatedModel(effortConfig, phase, modelTrigger, state.ladderState);
-  if (modelRecord) state.modelEscalations.push(modelRecord);
-  if (modelRecord && config.verbose) {
-    log(
-      chalk.gray(
-        `    model: ${modelRecord.base} → ${modelRecord.escalated} (${formatEscalationTriggerLabel(modelRecord.trigger)} retry)`,
-      ),
-    );
-  }
-
-  // #995 (#971 AC-9): a capability-bound trigger arrived and the phase is
-  // already on the last rung. Before #995 this flag was produced and
-  // consumed by nothing — the run simply looped again on the same model,
-  // which is the one thing the evidence says will not work. Halt with the
-  // bundle instead of dispatching.
-  if (phaseTopOfLadder) {
-    state.haltedByDivergence = "TOP_OF_LADDER";
-    state.divergenceBundle = buildBundle(
-      issueNumber,
-      state,
-      "TOP_OF_LADDER",
-      phase,
-    );
-    env.warn(formatEvidenceBundle(state.divergenceBundle));
-    iter.phasesFailed = true;
-    return null;
-  }
+  const dispatchConfig = withActivityHook(
+    env.issueConfig,
+    issueNumber,
+    phase,
+    onProgress,
+    makeWaitTransition(env, phase),
+  );
 
   const phaseStartTime = new Date();
   // #982: qa never resumes the implementer's session (first pass and
@@ -2435,8 +2250,6 @@ async function dispatchLoopPhase(
   return {
     result,
     dispatchConfig,
-    escalationRecord,
-    modelTrigger,
     startTime: phaseStartTime,
     endTime: phaseEndTime,
   };
@@ -2463,12 +2276,12 @@ async function recordLoopPhaseOutcome(
   } = env.ctx;
   const { worktreePath, branch, warn } = env;
   const { iteration } = iter;
-  const { result, escalationRecord, dispatchConfig } = dispatched;
+  const { result, dispatchConfig } = dispatched;
   const { phaseResults } = state;
 
   // #995 (#971 AC-4): the escape hatch. The agent declared an AC
   // impossible as written, so no retry was dispatched (`phase-executor`
-  // short-circuits) and no rung is spent here either. Recorded BEFORE the
+  // short-circuits). Recorded BEFORE the
   // result is pushed so the halt is visible even if a later step throws;
   // the break itself happens in `runPhaseStep`, after the result is
   // preserved and the failure events are emitted, so the partial work is
@@ -2479,24 +2292,13 @@ async function recordLoopPhaseOutcome(
     state.haltedByDivergence = "SPEC_DIVERGENCE";
     state.divergenceBundle = buildBundle(
       issueNumber,
-      state,
       "SPEC_DIVERGENCE",
       phase,
       result.specDivergence,
     );
   }
 
-  phaseResults.push(
-    escalationRecord
-      ? {
-          ...result,
-          escalatedEffort: {
-            base: escalationRecord.base,
-            escalated: escalationRecord.escalated,
-          },
-        }
-      : result,
-  );
+  phaseResults.push(result);
 
   // #1254: one decision for the progress event, run-log row and state.
   const record = phaseRecordFor(result);
@@ -2726,7 +2528,7 @@ function recordAcNotMetStreak(
       ),
     ],
     iterations,
-    escalationHistory: [...state.modelEscalations],
+    escalationHistory: [],
   };
   // `warn`, not `log`: `log` is a no-op in parallel mode (#1342).
   env.warn(formatEvidenceBundle(state.repeatHaltBundle));
@@ -2810,7 +2612,6 @@ async function handlePhaseFailure(
   state: IssueRunState,
   iter: IssueRunIteration,
   result: PhaseResult,
-  modelTrigger: EscalationTrigger | null,
 ): Promise<void> {
   iter.phasesFailed = true;
   if (result.capped) {
@@ -2831,16 +2632,14 @@ async function handlePhaseFailure(
   // risk the capped path is meant to avoid. The user resumes instead.
   // A billing / rate-limit-window halt (#799) is skipped for the same
   // reason: /loop would re-spawn into the same closed window.
-  // A ladder halt (#995) skips the loop for the third time in this
-  // family's history and for the same reason: /loop cannot un-contradict
-  // a spec, cannot converge work that keeps failing at a new SHA, and
-  // cannot climb a rung that does not exist.
+  // A `SPEC_DIVERGENCE` halt (#995) skips the loop for the same reason:
+  // /loop cannot un-contradict a spec.
   if (
     iter.useQualityLoop &&
     iter.iteration < iter.maxIterations &&
     !loopHalted(state)
   ) {
-    await runLoopFixPhase(env, state, iter, result, modelTrigger);
+    await runLoopFixPhase(env, state, iter, result);
   }
 }
 
@@ -2850,7 +2649,6 @@ async function runLoopFixPhase(
   state: IssueRunState,
   iter: IssueRunIteration,
   result: PhaseResult,
-  modelTrigger: EscalationTrigger | null,
 ): Promise<void> {
   const {
     issueNumber,
@@ -2885,34 +2683,12 @@ async function runLoopFixPhase(
     promptContext: buildLoopContext(result),
   };
 
-  // #971 (spec sibling-site scan / OQ-6): this is the FOURTH
-  // retry-dispatch site, and the one #915 never reached — it calls
-  // `executePhaseWithRetry` without `withEscalatedEffort`. The ladder
-  // is applied here too so the new mechanism is not born with the same
-  // hole. (Backfilling #915's effort escalation here would change
-  // #915's behaviour under a #971 PR, so it is deliberately left to a
-  // follow-up.)
-  const loopLadder = withEscalatedModel(
-    loopConfig,
-    "loop",
-    modelTrigger,
-    state.ladderState,
-  );
-  if (loopLadder.record) state.modelEscalations.push(loopLadder.record);
-  if (loopLadder.record && config.verbose) {
-    env.log(
-      chalk.gray(
-        `    model: ${loopLadder.record.base} → ${loopLadder.record.escalated} (${formatEscalationTriggerLabel(loopLadder.record.trigger)} retry)`,
-      ),
-    );
-  }
-
   const loopStartTime = new Date();
   const loopResult = await executePhaseWithRetry(
     issueNumber,
     "loop",
     withActivityHook(
-      loopLadder.config,
+      loopConfig,
       issueNumber,
       "loop",
       onProgress,
@@ -2981,78 +2757,6 @@ async function runLoopFixPhase(
 
   if (loopResult.resumeHandle) {
     state.resumeHandle = loopResult.resumeHandle;
-  }
-}
-
-/**
- * #971: close out an iteration's capability-bound assessment. Compare
- * the worktree against the snapshot taken before the iteration's phases
- * ran, and hand the verdict to the NEXT iteration's dispatches:
- *
- * - nothing produced → `LOOP_NO_DIFF`: the agent could not make a working
- *   change, which is the capability-bound fingerprint → escalate a rung.
- * - a diff was produced but the iteration still failed → divergence-
- *   suspect: a stronger model would rediscover the contradiction more
- *   expensively, so the trigger is cleared and the model stays constant
- *   (AC-3).
- */
-function assessIterationProgress(
-  env: IssueRunEnv,
-  state: IssueRunState,
-  iter: IssueRunIteration,
-  iterationStartSnapshot: LoopProgressSnapshot,
-  iterationEndSnapshot: LoopProgressSnapshot,
-): void {
-  const decision = detectCapabilityBoundTrigger({
-    isRetry: true,
-    loopProgress: compareLoopProgress(
-      iterationStartSnapshot,
-      iterationEndSnapshot,
-    ),
-  });
-  state.lastTrigger = decision.trigger;
-
-  // #995: replay material for the evidence bundle. Recorded on every
-  // iteration (not only at a halt) because the bundle's job is to show
-  // what was TRIED — a record assembled after the fact could only show
-  // the last one.
-  state.iterationRecords.push({
-    iteration: iter.iteration,
-    sha: iterationEndSnapshot.sha,
-    ...(iter.lastPhaseVerdict ? { verdict: iter.lastPhaseVerdict } : {}),
-  });
-
-  // #995 (#971 AC-3): the divergence-suspect halt. Counted rather than
-  // fired on sight — one iteration that produces a diff at a failing
-  // verdict is the ordinary quality loop doing its job, and halting there
-  // would break every `AC_NOT_MET → /loop → re-QA` cycle in the product,
-  // ladder or no ladder. TWO CONSECUTIVE such iterations is the pattern
-  // AC-3 names: plausible diffs that keep not converging, where a stronger
-  // model would only rediscover the contradiction more expensively.
-  //
-  // Reachable only with a ladder configured: `iterationStartSnapshot` is
-  // null otherwise, so the whole block — and every halt in it — is dead
-  // on an unconfigured run (AC-D1).
-  if (decision.classification === "divergence-suspect" && iter.phasesFailed) {
-    state.consecutiveDivergenceSuspect++;
-    if (
-      state.consecutiveDivergenceSuspect >= DIVERGENCE_SUSPECT_HALT_THRESHOLD &&
-      state.haltedByDivergence === null
-    ) {
-      state.haltedByDivergence = "DIVERGENCE_SUSPECT";
-      state.divergenceBundle = buildBundle(
-        env.ctx.issueNumber,
-        state,
-        "DIVERGENCE_SUSPECT",
-        state.phases[state.phases.length - 1],
-      );
-      env.warn(formatEvidenceBundle(state.divergenceBundle));
-    }
-  } else {
-    // Any other classification breaks the streak: the halt is about a
-    // REPEATED pattern, and counting non-adjacent iterations would halt a
-    // loop that recovered in between.
-    state.consecutiveDivergenceSuspect = 0;
   }
 }
 

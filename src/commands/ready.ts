@@ -22,7 +22,6 @@ import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
 import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
 import { buildProgressWiring } from "./run-progress.js";
-import { formatEscalationTriggerLabel } from "../lib/workflow/model-ladder.js";
 import { MetricsWriter } from "../lib/workflow/metrics-writer.js";
 import type {
   MetricPhase,
@@ -62,10 +61,6 @@ export interface ReadyCommandOptions {
   models?: string;
   /** Per-phase effort override (#914). See `RunOptions.efforts`. */
   efforts?: string;
-  /** Evidence-based effort escalation on QA-pass retries (#915). See `RunOptions.escalateEffort`. */
-  escalateEffort?: boolean;
-  /** Model escalation ladder for capability-bound retries (#971). See `RunOptions.modelLadder`. */
-  modelLadder?: string;
 }
 
 /**
@@ -163,8 +158,6 @@ export function buildReadyMetricsRecord(
     duration: durationSeconds,
     flags: [`--policy=${result.policy}`],
     ...(config.phasePolicies ? { phasePolicies: config.phasePolicies } : {}),
-    effortEscalations: result.effortEscalations,
-    modelEscalations: result.modelEscalations,
     metrics: {
       tokensUsed: result.tokensUsed,
       qaIterations: result.iterations,
@@ -192,32 +185,6 @@ async function recordReadyMetrics(
   }
 }
 
-/** Verbose-only: print the escalated effort and model rungs the gate spent. */
-function printEscalations(
-  result: ReadyResult,
-  verbose: boolean | undefined,
-): void {
-  // #915: surface any escalated qa/loop dispatches — the gate has no live
-  // print of its own (see `withEscalatedEffort` in `ready-gate.ts`).
-  if (verbose) {
-    for (const e of result.effortEscalations) {
-      console.log(
-        colors.muted(`  effort: ${e.base} → ${e.escalated} (${e.phase} retry)`),
-      );
-    }
-    // #971: the model rungs the gate spent, for the same reason — the gate
-    // has no live print of its own. Since #929 they are also in the run's
-    // `source: "ready"` metrics record; this is the only live view of them.
-    for (const e of result.modelEscalations) {
-      console.log(
-        colors.muted(
-          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${formatEscalationTriggerLabel(e.trigger)} retry)`,
-        ),
-      );
-    }
-  }
-}
-
 export async function readyCommand(
   issueArg: string,
   options: ReadyCommandOptions,
@@ -239,7 +206,7 @@ export async function readyCommand(
   const policy = resolvePolicy(options.policy, settings.ready.policy);
   const { tokenBudget } = resolveReadyLimits(options);
   // #863: one resolved ExecutionConfig, from the same producer the `run` path
-  // uses. Replaces the inline `resolvePhasePolicies` + `effortEscalation`
+  // uses. Replaces the inline `resolvePhasePolicies` and effort
   // blocks this command used to keep in lockstep with `buildExecutionConfig`
   // by hand (#914/#915/#936 each patched one field of that drift). Everything
   // the gate's phases need — `agent`, `aiderSettings`, `retry`, `mcpAllowlist`,
@@ -265,8 +232,6 @@ export async function readyCommand(
         verbose: options.verbose,
         models: options.models,
         efforts: options.efforts,
-        escalateEffort: options.escalateEffort,
-        modelLadder: options.modelLadder,
       } as RunOptions,
       settings,
     ),
@@ -415,8 +380,6 @@ export async function readyCommand(
     process.exitCode = 2;
     return;
   }
-
-  printEscalations(result, options.verbose);
 
   // Persist the terminal state so `sequant status` reflects it (Derived AC).
   // Best-effort: initialize the issue in state if a prior run didn't track it.

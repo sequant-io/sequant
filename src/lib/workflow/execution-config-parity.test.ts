@@ -135,23 +135,14 @@ const SCENARIOS: Array<{
     run: {},
   },
   {
-    name: "mcp off with an allowlist, escalation + policies on",
-    options: { noMcp: true, models: "qa=sonnet", escalateEffort: true },
-    run: { mcpAllowlist: ["stripe", "notion"], effortEscalation: true },
+    name: "mcp off with an allowlist, policies on",
+    options: { noMcp: true, models: "qa=sonnet" },
+    run: { mcpAllowlist: ["stripe", "notion"] },
   },
   {
     name: "auto-wait, relay off, isolate-parallel",
     options: { autoWaitMinutes: 45, relay: false, isolateParallel: true },
     run: {},
-  },
-  {
-    // #971 AC-11: the model ladder is resolved by `config-resolver.ts` alone.
-    // The gate must INHERIT it through `RunReadyGateOptions.config` — it is
-    // not on the allowlist, so any divergence (including the gate resolving
-    // its own) fails the parity check above.
-    name: "model ladder configured (#971 AC-11)",
-    options: { modelLadder: "role:fast,role:strong" },
-    run: { modelLadder: ["sonnet", "opus", "fable"] },
   },
 ];
 
@@ -260,8 +251,11 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
     );
   });
 
-  it("971 AC-11: the gate inherits the resolved model ladder rather than resolving one", () => {
-    const settings = settingsWith({ modelLadder: ["sonnet", "opus", "fable"] });
+  it("#1647: a pre-3.0 settings file that still sets the ladder keys grows no key on either producer", () => {
+    const settings = settingsWith({
+      modelLadder: ["sonnet", "opus", "fable"],
+      effortEscalation: true,
+    } as Partial<SequantSettings["run"]>);
     const resolved = buildExecutionConfig(
       resolveRunOptions({} as RunOptions, settings),
       settings,
@@ -269,27 +263,11 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
     );
     const gate = buildPhaseConfig(gateOpts(resolved), {});
 
-    expect(resolved.modelLadder).toEqual(["sonnet", "opus", "fable"]);
-    expect(gate.modelLadder).toEqual(resolved.modelLadder);
+    for (const key of ["modelLadder", "effortEscalation"]) {
+      expect(key in resolved).toBe(false);
+      expect(key in gate).toBe(false);
+    }
     expect(unallowedDiffs(resolved, gate)).toEqual([]);
-  });
-
-  it("971 AC-1: with no ladder configured, NEITHER producer grows a ladder key", () => {
-    // The off-by-default half. `unallowedDiffs` compares over the UNION of
-    // keys, so a key present-but-undefined on one side would be caught there;
-    // this asserts the stronger property directly — the key is absent on both.
-    const settings = settingsWith({});
-    const resolved = buildExecutionConfig(
-      resolveRunOptions({} as RunOptions, settings),
-      settings,
-      1,
-    );
-    const gate = buildPhaseConfig(gateOpts(resolved), {});
-
-    expect("modelLadder" in resolved).toBe(false);
-    expect("modelLadder" in gate).toBe(false);
-    expect("modelLadderRequested" in resolved).toBe(false);
-    expect("modelEscalation" in resolved).toBe(false);
   });
 
   it("allowlist entries are permitted to differ, not required to differ", () => {

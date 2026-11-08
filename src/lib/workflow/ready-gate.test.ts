@@ -795,7 +795,6 @@ describe("formatReadyReport (AC-4)", () => {
       remaining: [],
       tokensUsed: 0,
       report: "",
-      effortEscalations: [],
     };
     const report = formatReadyReport(result);
     expect(report).toContain("NOT READY — no implementation");
@@ -827,7 +826,6 @@ describe("formatReadyReport (AC-4)", () => {
       ],
       tokensUsed: 0,
       report: "",
-      effortEscalations: [],
     };
     const report = formatReadyReport(result);
     expect(report).toContain("`test_gap · document`");

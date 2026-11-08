@@ -170,22 +170,6 @@ export class MetricsWriter {
         resolvedModel?: string;
       }
     >;
-    /** Effort escalations applied during this run (#915). See `createMetricRun`. */
-    effortEscalations?: Array<{
-      phase: string;
-      base: string;
-      escalated: string;
-    }>;
-    /** Model-rung escalations applied during this run (#971). See `createMetricRun`. */
-    modelEscalations?: Array<{
-      phase: string;
-      rung: number;
-      base: string;
-      escalated: string;
-      trigger: string;
-      requestedModel?: string;
-      topOfLadder?: boolean;
-    }>;
     metrics?: Partial<RunMetrics>;
   }): Promise<MetricRun> {
     const metrics = await this.getMetrics();

@@ -19,7 +19,6 @@ import type { EvidenceBundle } from "./divergence-halt.js";
 // Type-only import — erased at compile, so the ready-gate ⇄ types cycle is
 // purely nominal (ready-gate.ts imports these types back, also type-only).
 import type { ReadyResult } from "./ready-gate.js";
-import type { LoopProgressSnapshot } from "./qa-stagnation.js";
 
 // Importing the registry triggers its side-effect registrations (built-ins
 // live at the bottom of phase-registry.ts), guaranteeing the registry is
@@ -276,81 +275,6 @@ export interface ExecutionConfig {
       requestedModel?: string;
     }
   >;
-  /**
-   * Evidence-based effort escalation on quality-loop retries (#915). CLI >
-   * settings > absent (`false`), resolved by `buildExecutionConfig`
-   * (`config-resolver.ts`) — the single producer since #863; `ready-gate.ts`
-   * receives it through `RunReadyGateOptions.config` — so this cannot drift
-   * from `phasePolicies` (#833 class). Consumed only at dispatch time by
-   * `effort-escalation.ts`'s `withEscalatedEffort`, never baked statically
-   * into `phasePolicies` here — escalation is per-execution, not per-run.
-   */
-  effortEscalation?: boolean;
-  /**
-   * Model escalation ladder for capability-bound non-convergence (#971),
-   * cheapest rung first, already role-resolved (#975). CLI (`--model-ladder`)
-   * > `settings.run.modelLadder` > absent, resolved by `buildExecutionConfig`
-   * (`config-resolver.ts`) — the single producer since #863; `ready-gate.ts`
-   * receives it through `RunReadyGateOptions.config` and never reads settings
-   * itself (#971 AC-11).
-   *
-   * The key is **omitted entirely** when no ladder is configured, not set to
-   * `[]` — an unconfigured run's `ExecutionConfig` must be indistinguishable
-   * from pre-#971 (AC-1).
-   *
-   * Consumed only at dispatch time by `model-ladder.ts`'s
-   * `withEscalatedModel`, never baked statically into `phasePolicies` here:
-   * escalation is per-execution and per-phase, not per-run (the #915 AC-7
-   * leak this shape exists to prevent).
-   */
-  modelLadder?: string[];
-  /**
-   * The ladder entries as the user wrote them, before `role:` resolution
-   * (#975). Present only when {@link modelLadder} is, and only when at least
-   * one entry used a `role:` prefix — recorded so metrics can show both what
-   * was configured and what was dispatched (#971 AC-10).
-   */
-  modelLadderRequested?: string[];
-  /**
-   * The same ladder resolved for each phase agent that differs from the
-   * run-level agent (#1150), keyed by driver name. A `role:` rung can map to
-   * different models per driver, so a phase running on codex must escalate
-   * through codex's models, not claude-code's. Omitted entirely unless a
-   * ladder is configured AND some phase overrides its agent, so every other
-   * run's `ExecutionConfig` is unchanged. Read only through
-   * `ladderForPhase` (`model-ladder.ts`).
-   */
-  modelLadderByAgent?: Record<string, string[]>;
-  /**
-   * Set by `withEscalatedModel` on the per-dispatch config copy when THIS
-   * execution escalated a rung (#971 AC-10). Never set by a producer and
-   * never present on a shared config — `phase-executor.ts` reads it to thread
-   * the dispatch-time facts into the phase env and onto `PhaseResult`.
-   */
-  modelEscalation?: ModelEscalationFacts;
-}
-
-/**
- * Dispatch-time facts about one model-rung escalation (#971 AC-10).
- *
- * Flat scalars only, deliberately: these fields land in the `SEQUANT_PHASE`
- * phase marker, whose parser (`phase-detection.ts`'s `PHASE_MARKER_REGEX`,
- * `/<!-- SEQUANT_PHASE: (\{[^}]+\}) -->/g`) matches flat JSON only. A nested
- * object would silently stop the marker from parsing at all.
- */
-export interface ModelEscalationFacts {
-  /** 0-based index into the ladder this dispatch runs at. */
-  rung: number;
-  /** Model the phase would have run on without escalation. */
-  base: string;
-  /** Model actually dispatched. */
-  escalated: string;
-  /** Which deterministic no-progress signal triggered the rung. */
-  trigger: string;
-  /** The pre-resolution ladder entry (`role:strong`), when one was used. */
-  requestedModel?: string;
-  /** True when this dispatch sits on the last rung with nowhere left to go. */
-  topOfLadder?: boolean;
 }
 
 /**
@@ -436,28 +360,13 @@ export interface PhaseResult {
   /** Process exit code from the agent driver (#447) */
   exitCode?: number;
   /**
-   * Set when this execution's effort was escalated one tier above its
-   * resolved base (#915) — a quality-loop retry with `effortEscalation`
-   * enabled. Additive/optional, same shape as `capped?`/`structuredError?`;
-   * absent on every non-escalated execution.
-   */
-  escalatedEffort?: { base: string; escalated: string };
-  /**
-   * Set when this execution was re-dispatched one model rung up (#971) — a
-   * capability-bound retry with a `modelLadder` configured. Additive/optional,
-   * same shape contract as `escalatedEffort` above; absent on every
-   * non-escalated execution, which is every execution when no ladder is set.
-   */
-  escalatedModel?: ModelEscalationFacts;
-  /**
    * Set when this phase declared the spec impossible as written (#995 /
    * #971 AC-4) by emitting `"outcome":"SPEC_DIVERGENCE"` in its own
    * `SEQUANT_PHASE` marker. Additive/optional, same shape contract as
-   * `capped?`/`escalatedModel?`.
+   * `capped?`.
    *
-   * Its presence is terminal for the retry path *and* for the ladder: a retry
-   * cannot un-contradict a spec, and a stronger model would only rediscover
-   * the contradiction more expensively. Consumers treat it like `capped` —
+   * Its presence is terminal for the retry path: a retry cannot
+   * un-contradict a spec. Consumers treat it like `capped` —
    * surface and halt, preserving whatever partial work exists.
    */
   specDivergence?: { acs?: string; message?: string };
@@ -514,9 +423,9 @@ export interface IssueResult {
    */
   abortReason?: string;
   /**
-   * The evidence bundle of a ladder halt (#1254) — `SPEC_DIVERGENCE`,
-   * `DIVERGENCE_SUSPECT` or `TOP_OF_LADDER`. Present iff the run halted on
-   * one; `failureCategory` is then `ladder_halt`. Also carried by the
+   * The evidence bundle of a `SPEC_DIVERGENCE` halt (#1254). Present iff the
+   * run halted on one; `failureCategory` is then `ladder_halt` (the name
+   * outlived the ladder, #1647). Also carried by the
    * quality loop's `AC_NOT_MET_REPEATED` halt (#1646), whose
    * `failureCategory` is `ac_not_met_repeated`.
    */
@@ -778,20 +687,6 @@ export interface RunOptions {
    */
   efforts?: string;
   /**
-   * Evidence-based effort escalation on quality-loop retries (#915). Set via
-   * `--escalate-effort`. When true, a retried phase execution resolves one
-   * effort tier above its configured/inherited base for that execution only
-   * — see `effort-escalation.ts`. Default `false`: escalation raises token
-   * spend, so an unset flag leaves every run byte-identical to pre-#915.
-   */
-  escalateEffort?: boolean;
-  /**
-   * Model escalation ladder (#971). Set via `--model-ladder`: a comma list of
-   * rungs, cheapest first (`sonnet,opus,fable`), optionally `role:`-prefixed.
-   * Beats `settings.run.modelLadder`; absent leaves the feature fully off.
-   */
-  modelLadder?: string;
-  /**
    * Force full-weight (standalone) QA regardless of resume/context state
    * (#982). Set via `--full-qa`. Mirrors the existing `ExecutionConfig.fullQa`
    * (#683) already honored by `phase-executor.ts` and forced unconditionally
@@ -991,11 +886,4 @@ export interface IssueExecutionContext {
    * real `GitHubProvider` when unset.
    */
   readFirstProvider?: PlatformProvider;
-  /**
-   * @internal Test seam for #971's per-iteration loop-progress snapshot.
-   * Defaults to `qa-stagnation.ts`'s `snapshotLoopProgress` when unset, and is
-   * only ever called when a `modelLadder` is configured — an unconfigured run
-   * issues no additional `git` calls (AC-D2).
-   */
-  snapshotProgressFn?: (cwd: string) => LoopProgressSnapshot;
 }

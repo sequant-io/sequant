@@ -1693,24 +1693,6 @@ async function buildPhaseEnv(
     env.SEQUANT_FAILED_ACS = config.failedAcs;
   }
 
-  // #971 AC-10: thread the dispatch-time escalation facts into the phase env
-  // so the skill prose that emits `SEQUANT_PHASE` markers can print them
-  // (node 14 / #995 wires that prose; the machinery is built once, here).
-  // Dispatch-time facts only — the resolved concrete model ID comes from
-  // `modelUsage` after execution and lives in run metrics (#975).
-  if (config.modelEscalation) {
-    env.SEQUANT_MODEL_RUNG = String(config.modelEscalation.rung);
-    env.SEQUANT_MODEL_BASE = config.modelEscalation.base;
-    env.SEQUANT_MODEL_ESCALATED = config.modelEscalation.escalated;
-    env.SEQUANT_ESCALATION_TRIGGER = config.modelEscalation.trigger;
-    if (config.modelEscalation.requestedModel) {
-      env.SEQUANT_MODEL_REQUESTED = config.modelEscalation.requestedModel;
-    }
-    if (config.modelEscalation.topOfLadder) {
-      env.SEQUANT_MODEL_TOP_OF_LADDER = "1";
-    }
-  }
-
   // Propagate parallel isolation mode to exec skill (#485)
   if (config.isolateParallel) {
     env.SEQUANT_ISOLATE_PARALLEL = "true";
@@ -1952,14 +1934,6 @@ async function executePhase(
     ...(resolvedModel ? { resolvedModel } : {}),
     // Attached on both paths: a failed phase still spent its tokens.
     ...(usage.length > 0 ? { usage } : {}),
-    // #971 AC-10: carry the dispatch-time rung facts back out on the result,
-    // so the metrics writer can append them to this execution's `phaseUsage`
-    // rows. Attached here rather than at each dispatch site so all four sites
-    // record identically — `withEscalatedModel` is the only thing that ever
-    // sets `config.modelEscalation`, and only on a per-dispatch config copy.
-    ...(config.modelEscalation
-      ? { escalatedModel: config.modelEscalation }
-      : {}),
   });
 
   if (agentResult.success) {
@@ -2127,11 +2101,8 @@ async function runSingleAttemptLoop(
 
     // #995 (#971 AC-4): the agent declared the spec impossible as written.
     // Modelled on the `capped` early return directly above and terminal for
-    // the same reason — a retry cannot un-contradict a spec. AC-4's "halts
-    // without escalating" has to hold against the RETRY path too, not only
-    // against the ladder: a cold-start re-spawn or the MCP fallback would
-    // re-dispatch the phase and hand the ladder a second observation to
-    // escalate on.
+    // the same reason — a retry cannot un-contradict a spec, so a cold-start
+    // re-spawn or the MCP fallback must not re-dispatch the phase.
     if (lastResult.specDivergence) {
       return { kind: "return", result: lastResult };
     }

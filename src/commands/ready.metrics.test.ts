@@ -2,7 +2,7 @@
  * Tests for #929: standalone `sequant ready` records run metrics.
  *
  * - AC-1: one `source: "ready"` record per run; a write failure keeps the exit code.
- * - AC-2: record carries policy, outcome, iterations and effortEscalations.
+ * - AC-2: record carries policy, outcome and iterations.
  *
  * Run with: npm test -- src/commands/ready.metrics.test.ts
  */
@@ -62,8 +62,6 @@ function result(overrides: Partial<ReadyResult> = {}): ReadyResult {
     remaining: [],
     tokensUsed: 1234,
     report: "REPORT",
-    effortEscalations: [],
-    modelEscalations: [],
     ...overrides,
   };
 }
@@ -190,16 +188,14 @@ describe("readyCommand — #929 metrics recording", () => {
     });
   });
 
-  describe("AC-2: record carries policy, outcome, iterations, effortEscalations", () => {
-    it("maps a ReadyResult to flags, outcome, qaIterations and effortEscalations", async () => {
-      const escalations = [{ phase: "qa", base: "medium", escalated: "high" }];
+  describe("AC-2: record carries policy, outcome, iterations", () => {
+    it("maps a ReadyResult to flags, outcome and qaIterations, with no escalation arrays (#1647)", async () => {
       vi.mocked(runReadyGate).mockResolvedValue(
         result({
           policy: "a-plus",
           ready: false,
           reason: "MAX_ITERATIONS",
           iterations: 2,
-          effortEscalations: escalations,
         }),
       );
 
@@ -210,7 +206,8 @@ describe("readyCommand — #929 metrics recording", () => {
       expect(payload.outcome).toBe("failed");
       expect(payload.metrics.qaIterations).toBe(2);
       expect(payload.metrics.tokensUsed).toBe(1234);
-      expect(payload.effortEscalations).toEqual(escalations);
+      expect("effortEscalations" in payload).toBe(false);
+      expect("modelEscalations" in payload).toBe(false);
     });
 
     it("maps ready:true to outcome 'success'", async () => {

@@ -97,7 +97,7 @@ QA findings post back to the issue as comments, with each acceptance criterion r
 
 - **The PR says what QA did and didn't do** — until QA has reviewed the latest exec, the PR body says `QA has not run`. After QA it shows the latest verdict, exec's `## Summary` with its mutation records, and a `## Follow-ups` checklist of everything QA deferred. See [What the PR body carries](docs/features/run-pr-creation.md#what-the-pr-body-carries).
 - **QA closes its own loose ends** — every deferred item must end `filed #N`, `fixed in this PR` or `dropped: <reason>`. An unresolved item keeps the verdict below `READY_FOR_MERGE`.
-- **Failures are recorded, not just printed** — a model-ladder halt is recorded in the run log, the state and the MCP result. A failed `gh` comment or label post is now an error, not a silent success.
+- **Failures are recorded, not just printed** — a `SPEC_DIVERGENCE` or repeated-refusal halt is recorded in the run log, the state and the MCP result. A failed `gh` comment or label post is now an error, not a silent success.
 - **Recommended Claude Code is now ≥ 2.1.288** — older versions don't stop a phase agent running `bash -c "rm -rf ~"`. See [Prerequisites](#prerequisites).
 - **Narrower skill permissions** — skills no longer pre-approve broad shell, `gh api`, `rm` or `find` access. When you run a skill by hand, those commands now ask first; `sequant run` is unaffected.
 
@@ -322,13 +322,12 @@ Multi-issue runs are parallel by default, and a per-issue lock (`.sequant/locks/
     "defaultBase": "feature/dashboard",  // Optional: custom default base branch
     "phases": {
       "exec": { "model": "sonnet", "effort": "medium" }  // Optional: per-phase model/effort override
-    },
-    "effortEscalation": false  // Optional: escalate effort one tier on a quality-loop retry
+    }
   }
 }
 ```
 
-See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags, and precedence, [Effort Escalation on Retries](docs/reference/run-command.md#effort-escalation-on-retries) for `run.effortEscalation`/`--escalate-effort`, and [Model Escalation Ladder](docs/reference/model-ladder.md) for `run.modelLadder`/`--model-ladder` and the three ladder halts.
+See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags and precedence, and [Spec-Divergence and Repeat Halts](docs/reference/spec-divergence-halt.md) for the `SPEC_DIVERGENCE` and `AC_NOT_MET_REPEATED` halts.
 
 `fullQa` under `run` in `.sequant/settings.json` (default `false`) mirrors `--full-qa` above — CLI flag beats the setting.
 
@@ -355,7 +354,7 @@ See [Customization Guide](docs/guides/customization.md) for all options, [Per-Ph
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/reference/run-command.md)
 - [Concurrency & Per-Issue Locks](docs/reference/concurrency.md)
-- [Model Escalation Ladder](docs/reference/model-ladder.md) — capability-bound escalation, `SPEC_DIVERGENCE`, and the halts that stop a runaway loop
+- [Spec-Divergence and Repeat Halts](docs/reference/spec-divergence-halt.md) — `SPEC_DIVERGENCE`, `AC_NOT_MET_REPEATED`, and the evidence bundle
 - [Plugin Eval CI](docs/reference/plugin-eval.md) — manual-dispatch `claude plugin eval` workflow, budget cap, and canary design
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
