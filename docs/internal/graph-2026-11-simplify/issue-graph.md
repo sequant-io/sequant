@@ -89,4 +89,4 @@ graph TD
 
 ## Linked, not in the graph
 
-Review candidates (RQ-2): #1640 (print each phase's model), #1642 (record the skill tree's version), #1626 (timeout labelled "Out of credits"), #1630 (CI pending verdict), #1641 (credentials; #1652 covers its ask 3 in code). Other graphs' nodes (D-6): #1501 F-10, #1526, #1521, #1529, #1622 (#1523), #1605, #1606 (#1602). Post-freeze: #1455, #1457, #1459, #1400, #1397.
+Review candidates (RQ-2): #1640 (print each phase's model), #1642 (record the skill tree's version), #1626 (timeout labelled "Out of credits"), #1630 (CI pending verdict), #1641 (credentials; #1652 covers its ask 3 in code). Other graphs' nodes (D-6): #1501 F-10, #1526, #1521, #1529, #1622 (#1523), #1605, #1606 (#1602). Post-freeze: #1455, #1457, #1459, #1400, #1397, #1662.
