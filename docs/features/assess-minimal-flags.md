@@ -16,19 +16,19 @@
 |------------|-------------|-------------|
 | Default workflow | `npx sequant run 532 -Q --phases spec,exec,qa` | `npx sequant run 532 -Q` |
 | testgen needed | `npx sequant run 552 -Q --phases spec,testgen,exec,qa` | `npx sequant run 552 -Q --testgen` |
-| ui-labelled (test phase auto-added) | `npx sequant run 499 -Q --phases spec,exec,test,qa` | `npx sequant run 499 -Q` |
+| ui-labelled | `npx sequant run 499 -Q --phases spec,exec,test,qa` | `npx sequant run 499 -Q` (since #1649 this no longer runs `test`; add `--phases spec,exec,test,qa` to get it) |
 | security-review | `npx sequant run 500 -Q --phases spec,security-review,exec,qa` | `npx sequant run 500 -Q --security-review` |
 
 ## What runs at runtime
 
 The displayed command is human shorthand. At runtime, `phase-mapper.determinePhasesForIssue` (in `src/lib/workflow/phase-mapper.ts`) resolves phases per issue based on labels:
 
-- Issues labelled `ui`, `frontend`, `admin`, `web`, or `browser` automatically get the `test` phase inserted before `qa`.
+- A UI label (`ui`, `frontend`, `admin`, `web`, `browser`) no longer adds the `test` phase to a phase list (#1649, closing #1631). Ask for it by name with `--phases spec,exec,test,qa`. In auto-detect mode (`run.autoDetectPhases`), a UI label still selects the UI workflow, which includes `test`.
 - The `--testgen` flag inserts `testgen` after `spec`.
 - The `--security-review` flag inserts `security-review` after `spec` (idempotent — no duplicate when `auth`/`security` labels already trigger auto-detection).
 - Chain commands (`--chain`) resolve phases per issue, so each issue in the chain gets its own phase list.
 
-Example: `npx sequant run 499 -Q` for a ui-labelled issue runs `spec → exec → test → qa` even though the displayed command shows no `--phases` flag.
+Example: `npx sequant run 499 -Q` for a ui-labelled issue runs `spec → exec → qa`. The `/assess` shorthand still omits `--phases` for these issues. That is skill text, outside graph-2026-11-simplify's I-1 scope, and is tracked on #1649.
 
 ## Markers vs displayed commands
 

@@ -109,7 +109,7 @@ export type SkillsPreflightResult =
  *
  * Explicit-phase runs start from `phases` as given; auto-detect runs start
  * from each issue's label-detected pipeline. Both then apply the additive
- * `--testgen` / `--security-review` / UI-label rules via
+ * `--testgen` / `--security-review` rules via
  * `determinePhasesForIssue`.
  *
  * Two deliberate over-approximations keep late-added phases covered:

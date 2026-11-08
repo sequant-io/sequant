@@ -154,23 +154,6 @@ export function parseRecommendedWorkflow(output: string): {
 }
 
 /**
- * Check if an issue has UI-related labels.
- *
- * Sources the label list from the `test` phase's `detect.labels` entry in
- * the registry — same data as `detectPhasesFromLabels` consults, just
- * exposed as a boolean for callers that only need the yes/no answer
- * (e.g. test phase insertion in `determinePhasesForIssue`).
- */
-export function hasUILabels(labels: string[]): boolean {
-  const testTriggers = phaseRegistry.has("test")
-    ? (phaseRegistry.get("test").detect?.labels ?? [])
-    : [];
-  if (testTriggers.length === 0) return false;
-  const lowered = new Set(testTriggers.map((t) => t.toLowerCase()));
-  return labels.some((label) => lowered.has(label.toLowerCase()));
-}
-
-/**
  * Determine phases to run based on options and issue labels
  */
 export function determinePhasesForIssue(
@@ -194,17 +177,6 @@ export function determinePhasesForIssue(
     const specIndex = phases.indexOf("spec");
     if (!phases.includes("security-review")) {
       phases.splice(specIndex + 1, 0, "security-review");
-    }
-  }
-
-  // Auto-detect UI issues and add test phase
-  if (hasUILabels(labels) && !phases.includes("test")) {
-    // Add test phase before qa if present, otherwise at the end
-    const qaIndex = phases.indexOf("qa");
-    if (qaIndex !== -1) {
-      phases.splice(qaIndex, 0, "test");
-    } else {
-      phases.push("test");
     }
   }
 
