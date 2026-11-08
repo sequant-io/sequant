@@ -472,8 +472,11 @@ describe("Error Category Constants", () => {
       // ladder_halt added by #1254 — assigned only when the issue returns from
       // a ladder halt, which is the orchestrator's decision, not a phase's.
       expect(ERROR_CATEGORIES).toContain("ladder_halt");
+      // ac_not_met_repeated added by #1646 — assigned only when the quality
+      // loop stops on a second consecutive AC_NOT_MET verdict.
+      expect(ERROR_CATEGORIES).toContain("ac_not_met_repeated");
       expect(ERROR_CATEGORIES).toContain("unknown");
-      expect(ERROR_CATEGORIES).toHaveLength(10);
+      expect(ERROR_CATEGORIES).toHaveLength(11);
     });
   });
 

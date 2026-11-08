@@ -139,7 +139,7 @@ export const ErrorContextSchema = z.object({
    * Classified error category (legacy, kept for backwards compatibility).
    * Keep in sync with `ERROR_CATEGORIES` in `error-classifier.ts` —
    * `rate_limit` / `billing` added by #761 AC-6, `pr_creation` by #920,
-   * `ladder_halt` by #1254.
+   * `ladder_halt` by #1254, `ac_not_met_repeated` by #1646.
    */
   category: z.enum([
     "context_overflow",
@@ -151,6 +151,7 @@ export const ErrorContextSchema = z.object({
     "billing",
     "pr_creation",
     "ladder_halt",
+    "ac_not_met_repeated",
     "unknown",
   ]),
   /** Typed error class name (AC-8), e.g. "ApiError", "BuildError" */
@@ -307,13 +308,19 @@ export type PhaseLog = z.infer<typeof PhaseLogSchema>;
 export const EvidenceBundleSchema = z.object({
   issueNumber: z.number().int().positive(),
   phase: z.string(),
-  reason: z.enum(["SPEC_DIVERGENCE", "DIVERGENCE_SUSPECT", "TOP_OF_LADDER"]),
+  reason: z.enum([
+    "SPEC_DIVERGENCE",
+    "DIVERGENCE_SUSPECT",
+    "TOP_OF_LADDER",
+    "AC_NOT_MET_REPEATED",
+  ]),
   shasTried: z.array(z.string()),
   iterations: z.array(
     z.object({
       iteration: z.number().int(),
       sha: z.string().optional(),
       verdict: z.string().optional(),
+      failedAcs: z.array(z.string()).optional(),
     }),
   ),
   escalationHistory: z.array(

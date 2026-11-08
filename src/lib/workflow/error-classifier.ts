@@ -27,6 +27,8 @@ import {
  * `ladder_halt` (#1254) is likewise assigned only when the issue returns from a
  * ladder halt (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) — the
  * orchestrator's decision to stop, not a phase failure.
+ * `ac_not_met_repeated` (#1646) is assigned the same way, when the quality
+ * loop stops on a second consecutive `AC_NOT_MET` QA verdict.
  * Keep in sync with the inline category enum in `run-log-schema.ts`.
  */
 export const ERROR_CATEGORIES = [
@@ -39,6 +41,7 @@ export const ERROR_CATEGORIES = [
   "billing",
   "pr_creation",
   "ladder_halt",
+  "ac_not_met_repeated",
   "unknown",
 ] as const;
 
