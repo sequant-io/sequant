@@ -313,6 +313,63 @@ describe("Zod Schemas", () => {
       const { title, ...withoutTitle } = validIssueLog;
       expect(() => IssueLogSchema.parse(withoutTitle)).toThrow();
     });
+
+    describe("ac_not_met_repeated halt (#1646)", () => {
+      const repeatHalt = {
+        ...validIssueLog,
+        status: "failure",
+        abortReason:
+          "ac_not_met_repeated: AC_NOT_MET twice in qa at abc123, def456 (failed: AC-1, AC-3)",
+        evidenceBundle: {
+          issueNumber: 123,
+          phase: "qa",
+          reason: "AC_NOT_MET_REPEATED",
+          shasTried: ["abc123", "def456"],
+          iterations: [
+            {
+              iteration: 1,
+              sha: "abc123",
+              verdict: "AC_NOT_MET",
+              failedAcs: ["AC-1", "AC-3"],
+            },
+            {
+              iteration: 2,
+              sha: "def456",
+              verdict: "AC_NOT_MET",
+              failedAcs: ["AC-3"],
+            },
+          ],
+          escalationHistory: [],
+        },
+      };
+
+      it("accepts ac_not_met_repeated with its abortReason and evidenceBundle", () => {
+        const parsed = IssueLogSchema.parse(repeatHalt);
+        expect(parsed.abortReason).toMatch(/^ac_not_met_repeated/);
+        expect(parsed.evidenceBundle?.reason).toBe("AC_NOT_MET_REPEATED");
+        expect(parsed.evidenceBundle?.iterations[0].failedAcs).toEqual([
+          "AC-1",
+          "AC-3",
+        ]);
+      });
+
+      it("accepts the ac_not_met_repeated error category", () => {
+        const parsed = ErrorContextSchema.parse({
+          stderrTail: [],
+          stdoutTail: [],
+          category: "ac_not_met_repeated",
+        });
+        expect(parsed.category).toBe("ac_not_met_repeated");
+      });
+
+      it("ac_not_met_repeated still rejects a halt reason outside the enum", () => {
+        const result = IssueLogSchema.safeParse({
+          ...repeatHalt,
+          evidenceBundle: { ...repeatHalt.evidenceBundle, reason: "NOPE" },
+        });
+        expect(result.success).toBe(false);
+      });
+    });
   });
 
   describe("RunConfigSchema", () => {
@@ -486,6 +543,8 @@ describe("Zod Schemas", () => {
         "rate_limit",
         "billing",
         "pr_creation",
+        "ladder_halt",
+        "ac_not_met_repeated",
         "unknown",
       ];
       for (const category of categories) {

@@ -509,13 +509,16 @@ export interface IssueResult {
   phaseResults: PhaseResult[];
   /**
    * Why the issue stopped when no failed phase says so: a chain/rebase abort,
-   * a lock, or a ladder halt (#1254: `ladder halt: <reason> in <phase>`).
+   * a lock, a ladder halt (#1254: `ladder halt: <reason> in <phase>`), or a
+   * repeated refusal (#1646: `ac_not_met_repeated: …`).
    */
   abortReason?: string;
   /**
    * The evidence bundle of a ladder halt (#1254) — `SPEC_DIVERGENCE`,
    * `DIVERGENCE_SUSPECT` or `TOP_OF_LADDER`. Present iff the run halted on
-   * one; `failureCategory` is then `ladder_halt`.
+   * one; `failureCategory` is then `ladder_halt`. Also carried by the
+   * quality loop's `AC_NOT_MET_REPEATED` halt (#1646), whose
+   * `failureCategory` is `ac_not_met_repeated`.
    */
   evidenceBundle?: EvidenceBundle;
   loopTriggered?: boolean;
