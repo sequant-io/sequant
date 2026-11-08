@@ -81,7 +81,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `security-review` | Deep security analysis (auto-added for `security`/`auth`/`authentication`/`permissions`/`admin`-labeled issues) |
 | `exec` | Implementation execution |
 | `testgen` | Generate test stubs from spec |
-| `test` | Browser-based testing (auto-added for `ui`/`frontend`/`admin`/`web`/`browser`-labeled issues) |
+| `test` | Browser-based testing (added by auto-detect mode, `run.autoDetectPhases`, for `ui`/`frontend`/`admin`/`web`/`browser`-labeled issues, or by naming it in `--phases`) |
 | `verify` | Execution verification — runs commands and captures output for review |
 | `qa` | Quality review and approval |
 | `loop` | Quality iteration loop |
