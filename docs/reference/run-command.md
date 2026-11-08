@@ -176,6 +176,8 @@ This is useful for complex issues where initial implementation may need refineme
 npx sequant run 42 --quality-loop --max-iterations 5
 ```
 
+**Repeated refusal halt.** Two consecutive `AC_NOT_MET` QA verdicts stop the loop before the next `/loop` fix pass, even when iterations remain. One fix pass after a refusal is allowed; a second pass after a second refusal is not spent. Any other verdict, or a QA pass with no parsed verdict, resets the count. The issue fails with category `ac_not_met_repeated`. Its `abortReason` in the run log starts with `ac_not_met_repeated` and names both SHAs and the failed AC ids, and its `evidenceBundle` has reason `AC_NOT_MET_REPEATED` with one entry per verdict (`iteration`, `sha`, `verdict`, `failedAcs`). The halt needs no model ladder. It applies to `sequant run` and MCP `sequant_run`; the `--ready-gate` loop is unchanged. `--max-iterations` still defaults to 3.
+
 When a phase fails on one iteration but **recovers** on a later one, the issue is reported as passed consistently across the live view, the summary table, and the JSON log — a transient failure that the loop later fixes is not left showing as `failed`. The summary's failure reason reflects the *last* failing attempt, not the first.
 
 ### Chain Mode

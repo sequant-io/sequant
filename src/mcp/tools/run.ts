@@ -63,8 +63,12 @@ interface RunToolIssueSummary {
   truncated?: boolean;
   /** Why the issue stopped outside a phase, e.g. `ladder halt: SPEC_DIVERGENCE in exec (AC-2)` (#1254) */
   abortReason?: string;
-  /** Ladder-halt reason, read from the run log's evidence bundle (#1254 AC-3) */
-  haltReason?: "SPEC_DIVERGENCE" | "DIVERGENCE_SUSPECT" | "TOP_OF_LADDER";
+  /** Halt reason, read from the run log's evidence bundle (#1254 AC-3; `AC_NOT_MET_REPEATED` #1646) */
+  haltReason?:
+    | "SPEC_DIVERGENCE"
+    | "DIVERGENCE_SUSPECT"
+    | "TOP_OF_LADDER"
+    | "AC_NOT_MET_REPEATED";
   /** AC IDs the halting phase declared impossible, from the same bundle (#1254 AC-3) */
   declaredAcs?: string;
 }

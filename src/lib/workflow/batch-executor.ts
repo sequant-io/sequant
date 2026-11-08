@@ -103,7 +103,7 @@ import {
 } from "../relay/activation.js";
 import { getSettings } from "../settings.js";
 import { GhCommandError, GitHubProvider } from "./platforms/github.js";
-import { recordAcStatuses } from "./ac-status.js";
+import { recordAcStatuses, type AcStatusEntry } from "./ac-status.js";
 import type { PlatformProvider } from "./platforms/platform-provider.js";
 import {
   runReadyGate,
@@ -726,6 +726,35 @@ export function ladderHaltOutcome(
 }
 
 /**
+ * #1646: the issue-level record of the quality loop's repeat halt — two
+ * consecutive `AC_NOT_MET` verdicts. A sibling of {@link ladderHaltOutcome}
+ * with its own category, because it is not a ladder halt and must survive the
+ * ladder's removal (#1647).
+ *
+ * @internal Exported for testing
+ */
+function repeatHaltOutcome(
+  bundle: EvidenceBundle,
+): Pick<IssueResult, "failureCategory" | "abortReason" | "evidenceBundle"> {
+  const shas = bundle.iterations.map((it) => it.sha ?? "(no sha)").join(", ");
+  const failed = [
+    ...new Set(bundle.iterations.flatMap((it) => it.failedAcs ?? [])),
+  ];
+  return {
+    failureCategory: "ac_not_met_repeated",
+    abortReason: `ac_not_met_repeated: AC_NOT_MET twice in ${bundle.phase} at ${shas}${failed.length > 0 ? ` (failed: ${failed.join(", ")})` : ""}`,
+    evidenceBundle: bundle,
+  };
+}
+
+/**
+ * Number of consecutive `AC_NOT_MET` QA verdicts that stop the quality loop
+ * (#1646, the #1162 rule). One fix pass on a refusal is supported; a second
+ * pass after a second refusal is not.
+ */
+const AC_NOT_MET_REPEAT_HALT_THRESHOLD = 2;
+
+/**
  * How a finished phase is recorded — in state, the run-log phase row and the
  * progress event alike (#1254).
  *
@@ -1212,6 +1241,15 @@ interface IssueRunState {
    * AC names — plausible diffs that keep not converging.
    */
   consecutiveDivergenceSuspect: number;
+  /**
+   * #1646: the QA verdicts of the current run of consecutive `AC_NOT_MET`
+   * results, oldest first. Its length is the counter; any other verdict, or a
+   * qa result with no parsed verdict, empties it. Independent of the ladder:
+   * it reads only the parsed verdict, so it counts with no ladder configured.
+   */
+  acNotMetStreak: DivergenceIterationRecord[];
+  /** #1646: set when the streak reaches two — the loop halts. */
+  repeatHaltBundle: EvidenceBundle | null;
   // #971: per-issue rung state for the model escalation ladder. Stickiness
   // lives here rather than in `ExecutionConfig` — the config is built once per
   // run and shared across every phase, so a rung baked into it would leak
@@ -1273,6 +1311,8 @@ function createIssueRunState(): IssueRunState {
     haltedByDivergence: null,
     divergenceBundle: null,
     consecutiveDivergenceSuspect: 0,
+    acNotMetStreak: [],
+    repeatHaltBundle: null,
     ladderState: createLadderState(),
     lastTrigger: null,
     earlyPr: null,
@@ -2167,11 +2207,7 @@ async function runQualityLoop(
     // re-running would only cap again; the partial work is already preserved.
     // A billing / rate-limit-window failure (#799) halts for the same reason:
     // the retry re-spawns into the same closed window and cannot progress.
-    if (
-      state.haltedByCap ||
-      state.haltedByBilling ||
-      state.haltedByDivergence !== null
-    ) {
+    if (loopHalted(state)) {
       break;
     }
 
@@ -2514,11 +2550,12 @@ async function recordLoopPhaseOutcome(
   // since a verdict is only set once one parsed. `result.success` is
   // deliberately absent (#1070): AC_NOT_MET is a failed phase carrying a
   // full findings payload, and it is the review that most needs posting.
+  let verdictCommitHash: string | undefined;
   if (phase === "qa" && result.verdict) {
     const verdictDiffBase = worktreePath
       ? resolveDiffBase(worktreePath, baseBranch ?? "main")
       : undefined;
-    const verdictCommitHash =
+    verdictCommitHash =
       worktreePath && verdictDiffBase
         ? getCommitHash(worktreePath, verdictDiffBase)
         : undefined;
@@ -2538,8 +2575,9 @@ async function recordLoopPhaseOutcome(
   // id the QA output names but the issue does not declare is not written; it
   // is reported here so the count is visible (`warn`, not `log`: `log` is a
   // no-op in parallel mode, #1342).
+  let qaAcs: AcStatusEntry[] = [];
   if (phase === "qa" && result.output) {
-    const { ignored } = await recordAcStatuses({
+    const { acs, ignored } = await recordAcStatuses({
       issueNumber,
       output: result.output,
       stateManager,
@@ -2550,6 +2588,18 @@ async function recordLoopPhaseOutcome(
         `    !  AC status: ${ignored.length} id(s) in the QA output not declared by the issue, ignored: ${ignored.join(", ")}`,
       );
     }
+    qaAcs = acs;
+  }
+
+  if (phase === "qa") {
+    recordAcNotMetStreak(
+      env,
+      state,
+      iteration,
+      result,
+      verdictCommitHash,
+      qaAcs,
+    );
   }
 
   logLoopPhaseResult(env, phase, dispatched, record);
@@ -2617,6 +2667,69 @@ async function recordLoopPhaseOutcome(
   // Durable halt-and-resume (#892 AC-1): a waitable-window halt writes
   // `resumeAt`; success or a non-window failure clears any stale record.
   await recordWindowHaltState(stateManager, issueNumber, phase, result);
+}
+
+/**
+ * #1646: one stop predicate for the quality loop — the outer-loop `break` and
+ * the `/loop` spawn guard both read it, so a new halt is added in one place.
+ * `haltedByCap` is set from `result.capped` before the guard reads it.
+ */
+function loopHalted(state: IssueRunState): boolean {
+  return (
+    state.haltedByCap ||
+    state.haltedByBilling ||
+    state.haltedByDivergence !== null ||
+    state.repeatHaltBundle !== null
+  );
+}
+
+/**
+ * #1646 (H-1): count consecutive `AC_NOT_MET` QA verdicts. At the threshold,
+ * build and print the bundle; {@link handlePhaseFailure} then skips the `/loop`
+ * spawn and the outer loop breaks. Any other verdict, or none, resets the
+ * count — a null verdict is not evidence that the fix pass failed.
+ */
+function recordAcNotMetStreak(
+  env: IssueRunEnv,
+  state: IssueRunState,
+  iteration: number,
+  result: PhaseResult,
+  sha: string | undefined,
+  acs: AcStatusEntry[],
+): void {
+  if (result.verdict !== "AC_NOT_MET") {
+    state.acNotMetStreak = [];
+    return;
+  }
+  state.acNotMetStreak.push({
+    iteration,
+    ...(sha ? { sha } : {}),
+    verdict: result.verdict,
+    failedAcs: acs.filter((ac) => ac.status === "not_met").map((ac) => ac.id),
+  });
+  if (
+    state.acNotMetStreak.length < AC_NOT_MET_REPEAT_HALT_THRESHOLD ||
+    state.repeatHaltBundle !== null
+  ) {
+    return;
+  }
+  const iterations = state.acNotMetStreak.slice(
+    -AC_NOT_MET_REPEAT_HALT_THRESHOLD,
+  );
+  state.repeatHaltBundle = {
+    issueNumber: env.ctx.issueNumber,
+    phase: "qa",
+    reason: "AC_NOT_MET_REPEATED",
+    shasTried: [
+      ...new Set(
+        iterations.map((r) => r.sha).filter((s): s is string => Boolean(s)),
+      ),
+    ],
+    iterations,
+    escalationHistory: [...state.modelEscalations],
+  };
+  // `warn`, not `log`: `log` is a no-op in parallel mode (#1342).
+  env.warn(formatEvidenceBundle(state.repeatHaltBundle));
 }
 
 /** Log phase result with observability data (AC-1, AC-2, AC-3, AC-7). */
@@ -2725,9 +2838,7 @@ async function handlePhaseFailure(
   if (
     iter.useQualityLoop &&
     iter.iteration < iter.maxIterations &&
-    !result.capped &&
-    !state.haltedByBilling &&
-    state.haltedByDivergence === null
+    !loopHalted(state)
   ) {
     await runLoopFixPhase(env, state, iter, result, modelTrigger);
   }
@@ -3293,6 +3404,10 @@ async function deliverIssueBranch(
     // `ladder_halt` and carries its reason and evidence bundle.
     ...(divergenceBundle && !overallSuccess
       ? ladderHaltOutcome(divergenceBundle)
+      : {}),
+    // #1646: the quality loop's repeat halt, recorded the same way.
+    ...(state.repeatHaltBundle && !divergenceBundle && !overallSuccess
+      ? repeatHaltOutcome(state.repeatHaltBundle)
       : {}),
     // #817: present only when `--ready-gate` ran the gate; the summary renders
     // its terminal reason (AC-6).
