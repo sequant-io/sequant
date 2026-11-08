@@ -16,20 +16,38 @@
  * - `TOP_OF_LADDER` — a further capability-bound trigger arrived with no rung
  *   left to climb (#971 AC-9). Looping again buys nothing.
  *
- * Deliberately its own module rather than living in `model-ladder.ts`: that
- * module is a pure config resolver with two dispatch callers, whereas this is
- * human-facing formatting with two *different* callers (`batch-executor.ts`
- * and `ready-gate.ts`). Folding them together would give the resolver a
- * rendering dependency neither dispatch site needs.
+ * #1647 removed the ladder. `SPEC_DIVERGENCE` and the #1646
+ * `AC_NOT_MET_REPEATED` halt are the only reasons still produced;
+ * `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER` and a non-empty `escalationHistory`
+ * stay readable because pre-3.0 run logs carry them.
  *
  * The shape follows the #739 turn-cap and #799 billing-window halts — surface,
  * halt, preserve partial work — so this reads as a third member of that family
  * rather than a new idiom.
  */
 
-import type { ModelEscalationRecord } from "./model-ladder.js";
+/**
+ * One model-rung escalation as a pre-3.0 run recorded it (#971). Read-only
+ * since #1647 removed the ladder: nothing produces one, but old run logs and
+ * evidence bundles still carry them.
+ */
+export interface ModelEscalationRecord {
+  phase: string;
+  /** 0-based index into the ladder the dispatch ran at. */
+  rung: number;
+  /** Model the phase would have run on without escalation. */
+  base: string;
+  /** Model actually dispatched. */
+  escalated: string;
+  /** Which no-progress signal triggered the rung. */
+  trigger: string;
+  /** The pre-resolution ladder entry (`role:strong`), when one was used. */
+  requestedModel?: string;
+  /** True when the dispatch sat on the last rung. */
+  topOfLadder?: boolean;
+}
 
-/** Why the ladder halted instead of climbing. */
+/** Why the run halted. `DIVERGENCE_SUSPECT` and `TOP_OF_LADDER` are pre-3.0 only (#1647). */
 export type LadderHaltReason =
   /** An agent declared the spec impossible as written (#971 AC-4). */
   | "SPEC_DIVERGENCE"
@@ -39,8 +57,8 @@ export type LadderHaltReason =
   | "TOP_OF_LADDER"
   /**
    * Two consecutive `AC_NOT_MET` QA verdicts in the quality loop (#1646).
-   * Not a ladder halt: it fires with no ladder configured, and outlives the
-   * ladder's removal (#1647). It shares the bundle so the run log records it
+   * Not a ladder halt: it never needed the ladder, and outlived its removal
+   * (#1647). It shares the bundle so the run log records it
    * the way #1254 records a ladder halt.
    */
   | "AC_NOT_MET_REPEATED";

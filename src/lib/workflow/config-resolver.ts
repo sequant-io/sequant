@@ -465,106 +465,6 @@ export function resolvePhasePolicies(
 }
 
 /**
- * A resolved model escalation ladder (#971).
- *
- * Both fields are absent when no ladder is configured — the caller spreads
- * this object conditionally so an unconfigured run's `ExecutionConfig` never
- * grows a ladder key at all (AC-1's deep-equal against the pre-#971 shape).
- */
-export interface ResolvedModelLadder {
-  /** Role-resolved rungs, cheapest first. Absent when unconfigured. */
-  modelLadder?: string[];
-  /**
-   * The rungs as written, before `role:` resolution — present only when at
-   * least one entry used a `role:` prefix, so a raw-string ladder records
-   * nothing redundant (#975 AC-3 / #971 AC-10).
-   */
-  modelLadderRequested?: string[];
-  /**
-   * The ladder resolved for each phase agent that differs from the run-level
-   * one (#1150). Present only when a ladder is configured and some phase
-   * overrides its agent.
-   */
-  modelLadderByAgent?: Record<string, string[]>;
-}
-
-/**
- * Resolve the model escalation ladder with CLI > settings > absent precedence
- * (#971 AC-1).
- *
- * This is the ladder's ONLY resolution site (AC-11): `ready-gate.ts` receives
- * the result through `RunReadyGateOptions.config` and never reads
- * `settings.run.modelLadder` itself, so the two `ExecutionConfig` consumers
- * cannot drift the way the two `phaseTimeout` producers did in #833.
- *
- * The CLI form is a comma list (`"sonnet,opus,fable"`). An empty or
- * whitespace-only CLI value is a user error at the flag boundary, not a
- * silent "no ladder" — it throws, matching `parsePhaseSpec`'s fail-fast
- * contract. A settings array that is present but empty resolves to absent:
- * `[]` is indistinguishable in intent from "off", and an empty ladder has no
- * rung to escalate to.
- *
- * Each entry resolves through {@link resolveRoleToModel} (#975 OQ-5), so
- * `["role:fast", "role:strong"]` and `["sonnet", "opus"]` are both legal.
- */
-export function resolveModelLadder(
-  cliLadder: string | undefined,
-  settingsLadder: string[] | undefined,
-  modelRoles?: ModelRoles,
-  activeDriver?: string,
-  phaseAgents: Record<string, string> = {},
-): ResolvedModelLadder {
-  let requested: string[] | undefined;
-
-  if (cliLadder !== undefined) {
-    const entries = cliLadder
-      .split(",")
-      .map((r) => r.trim())
-      .filter((r) => r.length > 0);
-    if (entries.length === 0) {
-      throw new Error(
-        "Malformed --model-ladder: expected a comma list of model rungs, cheapest first (e.g. 'sonnet,opus,fable').",
-      );
-    }
-    requested = entries;
-  } else if (settingsLadder && settingsLadder.length > 0) {
-    requested = settingsLadder.map((r) => r.trim()).filter((r) => r.length > 0);
-    if (requested.length === 0) requested = undefined;
-  }
-
-  if (!requested) return {};
-
-  const resolved = requested.map((entry) =>
-    resolveRoleToModel(entry, modelRoles, activeDriver),
-  );
-  const usedRole = requested.some((entry) => entry.startsWith("role:"));
-
-  // #1150: a phase whose agent differs from the run-level one escalates
-  // through the ladder resolved for ITS driver — a `role:` rung can name a
-  // different model per driver. Keyed by driver; a failure names the phase.
-  const byAgent: Record<string, string[]> = {};
-  for (const [phase, agent] of Object.entries(phaseAgents)) {
-    if (agent === (activeDriver ?? "claude-code") || byAgent[agent]) continue;
-    try {
-      byAgent[agent] = requested.map((entry) =>
-        resolveRoleToModel(entry, modelRoles, agent),
-      );
-    } catch (err) {
-      throw new Error(
-        `Model ladder for phase "${phase}" (agent "${agent}"): ${(err as Error).message}`,
-        { cause: err },
-      );
-    }
-  }
-
-  return {
-    modelLadder: resolved,
-    ...(usedRole ? { modelLadderRequested: requested } : {}),
-    ...(Object.keys(byAgent).length > 0 ? { modelLadderByAgent: byAgent } : {}),
-  };
-}
-
-/**
  * Build an ExecutionConfig from merged RunOptions and settings.
  * Extracts the phase-timeout, MCP, retry, and mode resolution logic
  * that was previously inline in run.ts.
@@ -665,13 +565,7 @@ export function buildExecutionConfig(
     // useless if it stops reaching the executor here.
     readyGate: mergedOptions.readyGate ?? false,
     phasePolicies,
-    // #915: CLI > settings > default `false` — mirrors the `readyGate`
-    // precedent above. Resolved here only; since #863 `ready-gate.ts` receives
-    // this config instead of producing its own (#833 class).
-    effortEscalation:
-      mergedOptions.escalateEffort ?? settings.run.effortEscalation ?? false,
-    // #982: CLI > settings > default `false`, mirrors `effortEscalation`
-    // above. `ready-gate.ts` still overrides this per-dispatch with its own
+    // #982: CLI > settings > default `false`, mirrors `readyGate` above. `ready-gate.ts` still overrides this per-dispatch with its own
     // `buildPhaseConfig(opts, { fullQa: true })` (AC-5) — this resolver only
     // sets the base value `sequant run` uses.
     fullQa: mergedOptions.fullQa ?? settings.run.fullQa ?? false,
@@ -680,17 +574,5 @@ export function buildExecutionConfig(
     // `resolvePrLinkMode` would from raw settings.
     prIssueLink: settings.run.prIssueLink ?? "closes",
     prNoCloseLabel: settings.run.prNoCloseLabel ?? "no-autoclose",
-    // #971: CLI > settings > absent, resolved here only (AC-11). Spread
-    // conditionally rather than assigned: with no ladder configured the keys
-    // must be ABSENT, not `undefined`, so `ExecutionConfig` is byte-identical
-    // to pre-#971 and the #863 parity test sees no new key on either producer
-    // (AC-1).
-    ...resolveModelLadder(
-      mergedOptions.modelLadder,
-      settings.run.modelLadder,
-      settings.run.modelRoles,
-      runAgent,
-      phaseAgents,
-    ),
   };
 }

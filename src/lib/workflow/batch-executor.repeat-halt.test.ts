@@ -2,10 +2,9 @@
  * #1646 AC-1 — the quality loop halts on a second consecutive `AC_NOT_MET`.
  *
  * Drives the real outer quality loop in `runIssueWithLogging` with
- * `executePhaseWithRetry` mocked and NO `modelLadder` configured: the halt is
- * a counter on the parsed QA verdict and must not depend on the ladder, which
- * #1647 removes. `/loop` dispatches are counted through the mocked executor,
- * as `batch-executor.model-ladder.test.ts` counts `exec` dispatches.
+ * `executePhaseWithRetry` mocked: the halt is a counter on the parsed QA
+ * verdict and outlived the model ladder's removal (#1647). `/loop`
+ * dispatches are counted through the mocked executor.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -107,7 +106,6 @@ function fakeStateManager(): StateManager {
 function makeCtx(
   config: Partial<ExecutionConfig> = {},
   stateManager: StateManager | null = null,
-  snapshotProgressFn?: IssueExecutionContext["snapshotProgressFn"],
 ): IssueExecutionContext {
   return {
     issueNumber: 1646,
@@ -132,7 +130,6 @@ function makeCtx(
     services: { logWriter: null, stateManager },
     worktree: { path: "/tmp/worktree-1646", branch: "feature/1646" },
     postComment: vi.fn().mockResolvedValue(undefined),
-    ...(snapshotProgressFn ? { snapshotProgressFn } : {}),
   };
 }
 
@@ -226,16 +223,6 @@ describe("1646 AC-1: ac_not_met_repeated halts the quality loop", () => {
     expect(result.evidenceBundle?.iterations.map((it) => it.failedAcs)).toEqual(
       [[], []],
     );
-  });
-
-  it("with no ladder configured, the per-iteration snapshot is never taken (#971 AC-D2)", async () => {
-    scriptPhases([qa("AC_NOT_MET"), qa("AC_NOT_MET")]);
-    const snapshot = vi.fn(() => ({ sha: "frozen", dirty: [] }));
-
-    const result = await runIssueWithLogging(makeCtx({}, null, snapshot));
-
-    expect(result.failureCategory).toBe("ac_not_met_repeated");
-    expect(snapshot).not.toHaveBeenCalled();
   });
 
   it("the halt reaches the run log's issue entry with its abortReason and bundle", async () => {

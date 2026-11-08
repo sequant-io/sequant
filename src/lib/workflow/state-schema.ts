@@ -95,12 +95,11 @@ export const PhaseMarkerSchema = z.object({
    * choice: `phase-detection.ts` parses these markers with
    * `/<!-- SEQUANT_PHASE: (\{[^}]+\}) -->/g`, whose `[^}]+` body cannot span a
    * nested object — a `{ escalation: { … } }` marker would stop parsing at the
-   * inner brace and take every marker in the comment with it. See
-   * `model-ladder.ts`'s `buildEscalationMarkerFields`, and the round-trip test
-   * that is the standing proof (AC-D1).
+   * inner brace and take every marker in the comment with it.
    *
    * All optional and append-only (I-2): markers written before #971 keep
-   * loading unchanged.
+   * loading unchanged. Read-only since #1647 removed the ladder: nothing
+   * writes these fields, but pre-3.0 markers carry them.
    */
   /** 0-based rung index the phase was dispatched at. */
   ladderRung: z.number().int().nonnegative().optional(),

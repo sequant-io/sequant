@@ -121,37 +121,6 @@ describe("#914 AC-5: buildExecutionConfig resolves phasePolicies", () => {
   });
 });
 
-describe("#915 AC-1: buildExecutionConfig resolves effortEscalation", () => {
-  function resolve(cli: Partial<RunOptions>, settings: SequantSettings) {
-    return buildExecutionConfig(
-      resolveRunOptions(cli as RunOptions, settings),
-      settings,
-      1,
-    );
-  }
-
-  it("defaults to false when neither CLI nor settings opt in", () => {
-    expect(resolve({}, DEFAULT_SETTINGS).effortEscalation).toBe(false);
-  });
-
-  it("settings.run.effortEscalation = true is honored with no CLI flag", () => {
-    const settings: SequantSettings = {
-      ...DEFAULT_SETTINGS,
-      run: { ...DEFAULT_SETTINGS.run, effortEscalation: true },
-    };
-    expect(resolve({}, settings).effortEscalation).toBe(true);
-  });
-
-  it("--escalate-effort (CLI true) wins over settings.run.effortEscalation = false", () => {
-    const settings: SequantSettings = {
-      ...DEFAULT_SETTINGS,
-      run: { ...DEFAULT_SETTINGS.run, effortEscalation: false },
-    };
-    const cli: Partial<RunOptions> = { escalateEffort: true };
-    expect(resolve(cli, settings).effortEscalation).toBe(true);
-  });
-});
-
 describe("#1150: buildExecutionConfig resolves per-phase agents", () => {
   function resolve(cli: Partial<RunOptions>, settings: SequantSettings) {
     return buildExecutionConfig(

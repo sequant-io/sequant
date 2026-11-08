@@ -284,7 +284,7 @@ Each item in `issues`:
 | `findings`        | `Array<{ category, description, evidence, recommendedAction, affectedAcs? }>` | QA's structured findings, at most 10, with `description`/`evidence` capped at 300 characters (#1200) |
 | `truncated`       | `boolean`                                   | `true` when any cap applied, or when findings and then gaps were dropped to fit the 64 KB limit (#1200) |
 | `abortReason`     | `string`                                    | Why the issue stopped outside a phase, e.g. `ladder halt: SPEC_DIVERGENCE in exec (AC-2)` or a rebase-conflict abort (#1254) |
-| `haltReason`      | `"SPEC_DIVERGENCE" \| "DIVERGENCE_SUSPECT" \| "TOP_OF_LADDER"` | Present when the run halted on the [model ladder](../reference/model-ladder.md) (#1254) |
+| `haltReason`      | `"SPEC_DIVERGENCE" \| "AC_NOT_MET_REPEATED"` | Present when the run halted on [`SPEC_DIVERGENCE` or a repeated refusal](../reference/spec-divergence-halt.md) (#1254, #1646). Logs written before 3.0 may also carry `DIVERGENCE_SUSPECT` or `TOP_OF_LADDER` |
 | `declaredAcs`     | `string`                                    | ACs the agent declared impossible, with `haltReason: "SPEC_DIVERGENCE"` (#1254) |
 
 When the structured run log is unavailable (e.g., the process crashed or the disk was full before it was written), a fallback response is returned. It has an empty `issues` array, `runLogMissing: true`, `requestedIssues` and a `note`, and keeps the raw output. Its `summary` counts come from the exit code only. The run log is found by the runId the CLI reports; when that log is missing, the server never substitutes another run's log (#1515). Only a CLI that reports no runId (older than #631) falls back to the newest log from the last 5 minutes.

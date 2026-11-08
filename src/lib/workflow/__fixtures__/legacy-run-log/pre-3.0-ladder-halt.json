@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "runId": "9b1f3c2e-4d5a-4b6c-8d7e-0f1a2b3c4d5e",
+  "startTime": "2026-10-20T10:00:00.000Z",
+  "endTime": "2026-10-20T10:40:00.000Z",
+  "config": {
+    "phases": ["exec", "qa"],
+    "sequential": false,
+    "qualityLoop": true,
+    "maxIterations": 3
+  },
+  "issues": [
+    {
+      "issueNumber": 971,
+      "title": "Pre-3.0 run that halted at the top of the model ladder",
+      "labels": ["enhancement"],
+      "status": "failure",
+      "totalDurationSeconds": 2400,
+      "abortReason": "ladder halt: TOP_OF_LADDER in qa",
+      "phases": [
+        {
+          "phase": "exec",
+          "issueNumber": 971,
+          "startTime": "2026-10-20T10:00:00.000Z",
+          "endTime": "2026-10-20T10:20:00.000Z",
+          "durationSeconds": 1200,
+          "status": "success",
+          "model": "claude-opus-4",
+          "requestedModel": "role:strong",
+          "ladderRung": 1,
+          "baseModel": "sonnet",
+          "escalatedModel": "opus",
+          "escalationTrigger": "LOOP_NO_DIFF",
+          "topOfLadder": true
+        },
+        {
+          "phase": "qa",
+          "issueNumber": 971,
+          "startTime": "2026-10-20T10:20:00.000Z",
+          "endTime": "2026-10-20T10:40:00.000Z",
+          "durationSeconds": 1200,
+          "status": "failure",
+          "error": "ladder halt",
+          "errorContext": {
+            "stderrTail": [],
+            "stdoutTail": [],
+            "category": "ladder_halt"
+          }
+        }
+      ],
+      "evidenceBundle": {
+        "issueNumber": 971,
+        "phase": "qa",
+        "reason": "TOP_OF_LADDER",
+        "shasTried": ["a1b2c3d", "e4f5a6b"],
+        "iterations": [
+          { "iteration": 1, "sha": "a1b2c3d", "verdict": "AC_NOT_MET" },
+          { "iteration": 2, "sha": "e4f5a6b", "verdict": "AC_NOT_MET" }
+        ],
+        "escalationHistory": [
+          {
+            "phase": "exec",
+            "rung": 1,
+            "base": "sonnet",
+            "escalated": "opus",
+            "trigger": "LOOP_NO_DIFF",
+            "requestedModel": "role:strong",
+            "topOfLadder": true
+          }
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "totalIssues": 1,
+    "passed": 0,
+    "failed": 1,
+    "totalDurationSeconds": 2400
+  }
+}

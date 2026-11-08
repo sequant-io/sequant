@@ -301,9 +301,14 @@ export const PhaseLogSchema = z.object({
 export type PhaseLog = z.infer<typeof PhaseLogSchema>;
 
 /**
- * The evidence bundle a ladder halt prints (#995), persisted with the issue
+ * The evidence bundle a halt prints (#995), persisted with the issue
  * (#1254). Mirrors `EvidenceBundle` in `divergence-halt.ts`; `escalationHistory`
  * is always present, because an empty history is the proof no rung was spent.
+ *
+ * Since #1647 removed the ladder, only `SPEC_DIVERGENCE` and
+ * `AC_NOT_MET_REPEATED` are produced and `escalationHistory` is always empty.
+ * `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER` and non-empty histories stay readable
+ * because pre-3.0 run logs carry them (I-2).
  */
 export const EvidenceBundleSchema = z.object({
   issueNumber: z.number().int().positive(),

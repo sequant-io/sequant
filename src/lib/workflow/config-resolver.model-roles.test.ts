@@ -353,32 +353,6 @@ describe("#1150 AC-5: roles and ladder rungs resolve against the phase's own age
     expect(config.phasePolicies?.exec?.model).toBe("gpt-5-codex");
     expect(config.phasePolicies?.qa?.model).toBe("opus");
   });
-
-  it("the ladder is also resolved per overriding agent, keyed by driver", () => {
-    const config = resolve({
-      modelLadder: ["role:fast", "role:strong"],
-      phases: { exec: { agent: "codex" } },
-    });
-    expect(config.modelLadder).toEqual(["sonnet", "opus"]);
-    expect(config.modelLadderByAgent).toEqual({
-      codex: ["gpt-5-mini", "gpt-5-codex"],
-    });
-  });
-
-  it("no per-agent ladder when no phase overrides its agent", () => {
-    const config = resolve({ modelLadder: ["role:fast", "role:strong"] });
-    expect("modelLadderByAgent" in config).toBe(false);
-  });
-
-  it("a rung the phase's driver has no model for fails at config time, naming the phase", () => {
-    expect(() =>
-      resolve({
-        modelLadder: ["role:fast"],
-        modelRoles: { fast: { "claude-code": "sonnet" } },
-        phases: { exec: { agent: "codex" } },
-      }),
-    ).toThrow(/Model ladder for phase "exec" \(agent "codex"\)/);
-  });
 });
 
 describe("#1150: role: references follow --agent, not settings.run.agent", () => {

@@ -91,9 +91,8 @@ export const PhaseUsageSchema = z.object({
    * silently merges a quality-loop retry into its first attempt (the reason
    * #986 keeps rows in `phaseResults` order).
    *
-   * Absent on every non-escalated execution — which is every execution when no
-   * ladder is configured. Optional and additive: records written before #971
-   * still load (`stats.test.ts`'s pre-fix-record tests are the standing proof).
+   * Read-only since #1647 removed the ladder: nothing writes these columns,
+   * but records written before 3.0 still carry them and must keep loading.
    */
   /** 0-based rung index the phase was dispatched at. */
   ladderRung: z.number().int().nonnegative().optional(),
@@ -221,6 +220,9 @@ export const MetricRunSchema = z.object({
    * escalated; omitted entirely (not an empty array) otherwise, matching
    * `phasePolicies`'s omit-when-empty convention. Phase names and enum
    * effort strings only, consistent with this schema's privacy contract.
+   *
+   * Read-only since #1647 removed effort escalation: nothing writes it, but
+   * pre-3.0 records carry it and must keep loading.
    */
   effortEscalations: z
     .array(
@@ -243,7 +245,7 @@ export const MetricRunSchema = z.object({
    * produces no `phaseUsage` row at all: `runReadyGate`'s phase results are
    * consumed inside the gate and never reach `IssueResult.phaseResults`,
    * which is the only source those rows are built from. Without it, an
-   * escalation on `sequant ready --model-ladder` (or `run --ready-gate`)
+   * escalation on the pre-3.0 ladder in `sequant ready` (or `run --ready-gate`)
    * changes which model runs, spends the money, and records nothing.
    *
    * Deliberately the exact shape and lifecycle of `effortEscalations` above,
@@ -251,6 +253,9 @@ export const MetricRunSchema = z.object({
    * precedent rather than inventing a second convention.
    *
    * Omitted entirely (not an empty array) when nothing escalated.
+   *
+   * Read-only since #1647 removed the ladder: nothing writes it, but pre-3.0
+   * records carry it and must keep loading.
    */
   modelEscalations: z
     .array(
@@ -332,28 +337,6 @@ export function createMetricRun(options: {
       resolvedModel?: string;
     }
   >;
-  /**
-   * Effort escalations applied during this run (#915), one entry per
-   * escalated phase execution. Pass only executions that actually escalated
-   * — see `MetricRunSchema.effortEscalations`'s doc comment for why this is
-   * a sibling array rather than an extension of `phasePolicies`.
-   */
-  effortEscalations?: Array<{ phase: string; base: string; escalated: string }>;
-  /**
-   * Model-rung escalations applied during this run (#971). Pass only
-   * dispatches that actually advanced a rung — see
-   * `MetricRunSchema.modelEscalations` for why the gate path needs this
-   * run-level log in addition to the `phaseUsage` row columns.
-   */
-  modelEscalations?: Array<{
-    phase: string;
-    rung: number;
-    base: string;
-    escalated: string;
-    trigger: string;
-    requestedModel?: string;
-    topOfLadder?: boolean;
-  }>;
   metrics?: Partial<RunMetrics>;
 }): MetricRun {
   return {
@@ -369,12 +352,6 @@ export function createMetricRun(options: {
     failureCategory: options.failureCategory,
     ...(options.phasePolicies && Object.keys(options.phasePolicies).length > 0
       ? { phasePolicies: options.phasePolicies }
-      : {}),
-    ...(options.effortEscalations && options.effortEscalations.length > 0
-      ? { effortEscalations: options.effortEscalations }
-      : {}),
-    ...(options.modelEscalations && options.modelEscalations.length > 0
-      ? { modelEscalations: options.modelEscalations }
       : {}),
     metrics: {
       tokensUsed: options.metrics?.tokensUsed ?? 0,

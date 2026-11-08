@@ -69,9 +69,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--full-qa` | Force full-weight (standalone) QA on every `qa` dispatch — the same pre-flight `sequant ready` always runs. Setting: `run.fullQa` (#982) | `false` (off) |
 | `--models <spec>` | Per-phase Claude model override — a bare value (`sonnet`) applies to every phase, or a comma list of `phase=model` pairs (`spec=fable,exec=sonnet`). See [Per-Phase Model & Effort](#per-phase-model--effort) | none (CLI default model) |
 | `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. See [Per-Phase Model & Effort](#per-phase-model--effort) | none (SDK default) |
-| `--escalate-effort` | On a quality-loop retry (loop iteration ≥ 2), run every phase dispatched in that iteration one reasoning-effort tier above its resolved base. See [Effort Escalation on Retries](#effort-escalation-on-retries) | `false` (off) |
 | `--agent <name>` | Agent driver for every phase: `claude-code` (default), `aider`, or `opencode` (**experimental** — see [opencode Issues](../troubleshooting.md#opencode-issues); its promotion gate #997 is deferred). Also settable as `run.agent`. | `claude-code` |
-| `--model-ladder <rungs>` | Comma list of model rungs, cheapest first (e.g. `sonnet,opus`), applied only when a retried phase made no progress. Off unless set. See [Model Escalation Ladder](model-ladder.md). | - |
 
 ### Available Phases
 
@@ -418,12 +416,12 @@ A full ID pins a model across CLI upgrades (`--models spec=claude-opus-5-5,exec=
 **What follows the phase's agent:**
 
 - `model` and `effort` in the same phase entry go to that phase's driver, not the run-level one.
-- A `role:` model reference (see `run.modelRoles`) resolves against the phase's agent, so a driver-keyed role such as `{ "claude-code": "opus", "codex": "gpt-5-codex" }` gives each phase its own driver's model. The model escalation ladder does the same: a codex phase escalates through the ladder's codex models.
+- A `role:` model reference (see `run.modelRoles`) resolves against the phase's agent, so a driver-keyed role such as `{ "claude-code": "opus", "codex": "gpt-5-codex" }` gives each phase its own driver's model.
 - The skills pre-flight checks each phase against its own driver, so an aider run with a Claude Code `exec` phase still needs the `exec` skill installed.
 - `sequant doctor` runs the driver checks for every agent the run can use, including ones named only by a phase.
 - A phase never resumes a session another driver created: each driver's `canResume` rejects foreign handles.
 
-**Validation:** an unknown driver name in `run.phases.<phase>.agent` fails when the run's config is resolved, before any phase runs, with the same `Unknown agent driver "<name>". Available drivers: …` message a bad `run.agent` gives. A role or ladder rung that has no entry for a phase's driver also fails at that point, naming the phase.
+**Validation:** an unknown driver name in `run.phases.<phase>.agent` fails when the run's config is resolved, before any phase runs, with the same `Unknown agent driver "<name>". Available drivers: …` message a bad `run.agent` gives. A role that has no entry for a phase's driver also fails at that point, naming the phase.
 
 #### Run the review on a different driver
 
@@ -442,44 +440,13 @@ Every QA verdict comment ends with a line naming the reviewing session's driver 
 
 The verdict line then reads `Reviewed in a separate session by codex (…); the change was written by claude-code (…)`. A separate session of the same model is a different context, not a different judge: it removes the author's transcript from the reviewer's view, but not the model's own blind spots. A different driver and model is the stronger step.
 
-### Effort Escalation on Retries
+### Spec-Divergence Halt
 
-**Default: off** (#915) — raising effort raises token spend, which is a cost decision the user should opt into explicitly, not one sequant makes on your behalf.
+An agent that finds an acceptance criterion impossible as written declares `SPEC_DIVERGENCE` and the run halts at once: no retry, no `/loop` spawn, no PR. The halt prints an evidence bundle and records it in the run log. Together with the repeated-refusal halt (`AC_NOT_MET_REPEATED`), it is how a run hands an issue back to a human instead of looping.
 
-The quality risk in effort tuning lives entirely in *speculative* downgrades — guessing a task is easy from weak proxies and lowering effort before any evidence exists. The inverse carries essentially no such risk: escalating effort only after the workflow has *observed* a retry can only trade cost for quality, never the reverse. That is what this flag does — nothing more. It does **not** predict difficulty from `/spec`'s scope verdict or any other signal ahead of time; that predictive form is explicitly out of scope until dogfood metrics from #914 justify it.
+Full reference — the declaration marker, the evidence bundle, and how the halt is recorded: **[Spec-Divergence and Repeat Halts](spec-divergence-halt.md)**.
 
-**What counts as a retry:** the outer quality-loop re-entering a phase (`sequant run --quality-loop`/`-Q`, loop iteration ≥ 2) and a `sequant ready` QA-pass re-run (pass ≥ 2). A cold-start or MCP-fallback retry inside a single phase attempt does **not** count — those recover transient infrastructure failures, not task difficulty, and escalating there would spend tokens for no quality signal.
-
-**Settings** (`.sequant/settings.json`):
-
-```json
-{
-  "run": {
-    "effortEscalation": true
-  }
-}
-```
-
-**CLI flag** (`sequant run` and `sequant ready`), highest precedence:
-
-```bash
-npx sequant run 42 --quality-loop --escalate-effort
-npx sequant ready 42 --escalate-effort
-```
-
-**The ladder:** `low → medium → high → xhigh → max`. On a retried execution, the phase's resolved effort (its configured `run.phases.<phase>.effort`/`--efforts` value, or the SDK default if unconfigured) moves up exactly **one** tier — never more, regardless of how many retries have already happened. A phase whose base is already `high` on the 3rd loop iteration escalates to `xhigh`, not `max`: escalation is always computed from the phase's *configured* base, not from a previously escalated value. A phase already at `max` stays at `max`.
-
-**Scope:** escalation applies only to the phase executions dispatched during a retried pass — never baked into a static config, so it cannot leak into a later, unrelated phase in the chain. Because the outer quality loop re-runs its whole phase list on every iteration (it does not resume from the specific phase that failed), every phase dispatched during a retried iteration escalates, including one that already succeeded on the first pass.
-
-**Observability:** an escalated execution prints `effort: <base> → <escalated> (...)` under `--verbose`, and run metrics (`.sequant/metrics.json`) record an `effortEscalations` entry (`phase`, `base`, `escalated`) for every execution that escalated — a sibling array to the per-phase `phasePolicies` metrics field, since escalation is a per-execution value while `phasePolicies` is a flat per-run map.
-
-### Model Escalation Ladder
-
-**Default: off** (#971/#995). `run.modelLadder` / `--model-ladder sonnet,opus` escalates a churning phase one *model* rung at a time — the next tier up from [effort escalation](#effort-escalation-on-retries), which remains the cheaper rung and is always spent first.
-
-The ladder climbs only on **capability-bound** churn (iterations that produced no diff at all). The opposite fingerprint — a new diff every iteration that QA keeps rejecting — is **spec-bound**, where a stronger model only rediscovers the contradiction more expensively; there the ladder halts instead of climbing. Three halts (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) each print an evidence bundle and end the run without merging.
-
-Full reference — configuration, the capability-vs-spec-bound distinction, the `SPEC_DIVERGENCE` escape hatch, cost model, and observability: **[Model Escalation Ladder](model-ladder.md)**.
+The model ladder and effort escalation were removed in 3.0 (#1647). See the [CHANGELOG](../../CHANGELOG.md).
 
 ### Chain Pre-flight
 

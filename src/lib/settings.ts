@@ -89,7 +89,7 @@ export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
  * - a plain string shorthand — desugars to `{ "claude-code": value }` (claude-code driver only)
  * - an object keyed by driver registry name, for cross-driver mappings
  *
- * Role references use a `role:` prefix in phase policy / ladder entries;
+ * Role references use a `role:` prefix in phase policy entries;
  * bare strings pass through verbatim (AC-3 backward compat).
  */
 export const ModelRolesSchema = z.record(
@@ -346,31 +346,6 @@ export interface RunSettings {
    */
   phases?: Record<string, PhasePolicy>;
   /**
-   * Evidence-based effort escalation on quality-loop retries (#915). Default
-   * `false` — raising effort raises token spend, which is the user's call.
-   * Overridable per-invocation with `--escalate-effort` (CLI > settings >
-   * default). See `effort-escalation.ts` for the resolver.
-   */
-  effortEscalation: boolean;
-  /**
-   * Model escalation ladder for capability-bound non-convergence (#971).
-   *
-   * Ordered rungs, cheapest first (e.g. `["sonnet", "opus", "fable"]`, or
-   * role references: `["role:fast", "role:strong", "role:frontier"]`).
-   * Absent by default — with no ladder configured the feature is fully off
-   * and retried phases behave exactly as #914/#915 ship them.
-   *
-   * Escalation is routed on the deterministic no-progress signals only
-   * (`LOOP_NO_DIFF`, `SAME_SHA_NO_PROGRESS`), never on repeated QA failure at
-   * advancing SHAs — that pattern is divergence-suspect, and a stronger model
-   * only rediscovers the contradiction more expensively. See
-   * `workflow/model-ladder.ts`.
-   *
-   * Overridable per-invocation with `--model-ladder` (CLI > settings >
-   * absent).
-   */
-  modelLadder?: string[];
-  /**
    * Whether `/fullsolve`'s Phase 5.3 merges the PR automatically once QA
    * passes (#958). Default `false` — the workflow stops at PR creation +
    * final summary, preserving the human merge gate kept by #817–#819.
@@ -392,7 +367,7 @@ export interface RunSettings {
    * Map of semantic role names to model strings (#975).
    *
    * Config expresses **roles**; this map resolves roles to concrete model
-   * strings. Phase policy, ladder, and other model-referencing surfaces use
+   * strings. Phase policy and other model-referencing surfaces use
    * `role:<name>` to reference an entry; bare strings pass through verbatim.
    *
    * Default: `{ fast: "sonnet", strong: "opus", frontier: "fable" }`.
@@ -634,24 +609,6 @@ export const RunSettingsSchema = z.object({
    */
   phases: z.record(z.string(), PhasePolicySchema).optional(),
   /**
-   * Evidence-based effort escalation on quality-loop retries (#915). Default
-   * `false` — raising effort raises token spend, which is the user's call.
-   * When enabled, a retried phase execution (loop iteration ≥ 2, or a
-   * `sequant ready` QA-pass loop re-run) resolves one effort tier above its
-   * configured/inherited base for that execution only. See
-   * `effort-escalation.ts` for the resolver.
-   */
-  effortEscalation: z.boolean().default(false),
-  /**
-   * Model escalation ladder for capability-bound non-convergence (#971).
-   * Ordered rungs, cheapest first. Absent by default (not `[]`) — an omitted
-   * key must leave `ExecutionConfig` without a ladder key at all, so an
-   * unconfigured run is byte-identical to pre-#971. Entries are plain strings
-   * here; `role:<name>` references resolve against `run.modelRoles` in
-   * `config-resolver.ts` (#975 AC-3 keeps raw model strings legal).
-   */
-  modelLadder: z.array(z.string()).optional(),
-  /**
    * Whether `/fullsolve`'s Phase 5.3 merges the PR automatically once QA
    * passes (#958). Default `false` — preserves the human merge gate kept by
    * #817–#819. Overridable per-invocation with `--auto-merge`.
@@ -833,7 +790,6 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "relay",
     "phases",
     "modelRoles",
-    "modelLadder",
     "fullQa", // #982
   ]),
   // #914: keyed by real phase name so a typo (`run.phases.exce`) warns
@@ -876,6 +832,19 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
 };
 
 /**
+ * Keys a pre-3.0 settings file may still set, removed in 3.0 (#1647). Each
+ * loads with one warning naming the removal instead of the generic
+ * unknown-key warning; the nested Zod schema strips the value, so nothing
+ * reads it.
+ */
+const REMOVED_KEYS: Record<string, string> = {
+  "run.modelLadder":
+    "'run.modelLadder' was removed in 3.0 with the model ladder (#1647); it is ignored. Delete it from settings.json.",
+  "run.effortEscalation":
+    "'run.effortEscalation' was removed in 3.0 with effort escalation (#1647); it is ignored. Delete it from settings.json.",
+};
+
+/**
  * Recursively detect unknown keys in a raw settings object.
  */
 function detectUnknownKeys(
@@ -888,6 +857,11 @@ function detectUnknownKeys(
 
   for (const key of Object.keys(obj)) {
     const fullPath = prefix ? `${prefix}.${key}` : key;
+    const removed = REMOVED_KEYS[fullPath];
+    if (removed) {
+      warnings.push({ path: fullPath, message: removed });
+      continue;
+    }
     if (!knownSet.has(key)) {
       warnings.push({
         path: fullPath,
@@ -1098,7 +1072,6 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     prIssueLink: "closes", // #1197: default keeps today's auto-close behavior
     prNoCloseLabel: "no-autoclose", // #1197 AC-2: label always forces Refs #N
     relay: true, // Enable interactive relay (#383) by default
-    effortEscalation: false, // #915: off by default — raises token spend
     autoMerge: false, // #958: off by default — preserves the human merge gate
     fullQa: false, // #982: off by default — adds visible pre-flight work
     modelRoles: DEFAULT_MODEL_ROLES, // #975: shipped defaults; absent key → these
@@ -1842,7 +1815,6 @@ Generated by \`sequant init\`. See defaults below.
 | \`prNoCloseLabel\` | string | \`"no-autoclose"\` | Issue label that always forces \`Refs #N\`, regardless of \`prIssueLink\` (#1197) |
 | \`agent\` | string | — | Agent driver for every phase: \`"claude-code"\` (default), \`"aider"\`, \`"opencode"\` or \`"codex"\` |
 | \`phases\` | object | — | Per-phase overrides keyed by phase name (\`spec\`, \`exec\`, \`qa\`, …). Each entry takes \`agent\` (driver for that phase, overriding \`agent\` above; #1150), \`model\` and \`effort\` (\`low\`…\`max\`), which go to that phase's driver (#914). \`--models\`/\`--efforts\` override \`model\`/\`effort\` |
-| \`modelLadder\` | string[] | — | Model escalation ladder, cheapest rung first (e.g. \`["sonnet","opus","fable"]\`, or \`role:\`-prefixed entries resolved via \`run.modelRoles\`). Absent = off: retried phases keep their configured model. When set, a retried phase whose prior attempt made **no progress** (\`LOOP_NO_DIFF\` / \`SAME_SHA_NO_PROGRESS\`) re-dispatches one rung up and stays there; repeated QA failure at *advancing* SHAs never escalates. Raises token spend — opt-in (#971) |
 
 ### \`run.rotation\` — Log Rotation
 

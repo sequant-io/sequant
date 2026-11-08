@@ -75,8 +75,6 @@ function result(overrides: Partial<ReadyResult>): ReadyResult {
     remaining: [],
     tokensUsed: 0,
     report: "",
-    effortEscalations: [],
-    modelEscalations: [],
     ...overrides,
   };
 }
@@ -250,8 +248,6 @@ describe("readyCommand — #697 renderer wiring", () => {
           remaining: [],
           tokensUsed: 0,
           report: REPORT_MARKER,
-          effortEscalations: [],
-          modelEscalations: [],
         };
       },
     );
@@ -363,7 +359,6 @@ describe("readyCommand — #697 renderer wiring", () => {
           verbose: true,
           models: undefined,
           efforts: undefined,
-          escalateEffort: undefined,
         } as RunOptions,
         settings,
       ),

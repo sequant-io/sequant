@@ -1,12 +1,13 @@
 /**
  * Direct unit coverage for `formatEvidenceBundle` (#995).
  *
- * The halt tests in `model-ladder.test.ts` drive this formatter through the
- * real run and ready-gate paths, which is what proves the halts fire. They do
- * not, however, reach every branch of the renderer: an empty `shasTried`, an
- * empty `iterations` list, a present-but-empty `declaredAcs`, and a NON-empty
- * escalation history each render a distinct line that only shows up in halt
- * shapes those integration tests do not produce.
+ * The run and ready-gate halt tests drive this formatter through the real
+ * paths, which is what proves the halts fire. They do not reach every branch
+ * of the renderer: an empty `shasTried`, an empty `iterations` list, a
+ * present-but-empty `declaredAcs`, and a NON-empty escalation history each
+ * render a distinct line. Since #1647 removed the ladder, a non-empty history
+ * and the `DIVERGENCE_SUSPECT`/`TOP_OF_LADDER` reasons only arrive from a
+ * pre-3.0 run log, so these cases are the only coverage they have.
  *
  * Those branches are the ones a human reads when adjudicating a halt, and the
  * empty/non-empty escalation-history distinction is the load-bearing evidence
@@ -20,8 +21,8 @@ import {
   formatEvidenceBundle,
   type EvidenceBundle,
   type LadderHaltReason,
+  type ModelEscalationRecord,
 } from "./divergence-halt.js";
-import type { ModelEscalationRecord } from "./model-ladder.js";
 
 /** A minimal bundle; each test overrides only the field it is about. */
 function bundle(overrides: Partial<EvidenceBundle> = {}): EvidenceBundle {

@@ -436,20 +436,6 @@ program
     "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none — inherits the SDK default)",
     parsePhaseSpecFlag("--efforts", getPhaseNames(), EFFORT_LEVELS),
   )
-  // #915: opt-in escalation on quality-loop retries. Raises token cost, so
-  // off by default — matches --ready-gate's opt-in shape above.
-  .option(
-    "--escalate-effort",
-    "On a quality-loop retry (loop iteration ≥ 2), run that retried phase one reasoning-effort tier above its resolved base (default: off — see --efforts)",
-  )
-  // #971: opt-in model escalation ladder. Same opt-in shape as
-  // --escalate-effort above; raises token cost by construction, so absent =
-  // fully off. Comma list, cheapest rung first; `role:` entries resolve
-  // through settings.run.modelRoles (#975).
-  .option(
-    "--model-ladder <rungs>",
-    "Comma list of model rungs, cheapest first (e.g. 'sonnet,opus,fable'), used only when a retried phase's prior attempt made no progress (default: off — no escalation)",
-  )
   .option(
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard) and take over per-issue locks",
@@ -663,18 +649,6 @@ program
     "--efforts <spec>",
     "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none)",
     parsePhaseSpecFlag("--efforts", getPhaseNames(), EFFORT_LEVELS),
-  )
-  // #915: same opt-in escalation as `sequant run --escalate-effort`, applied
-  // to this gate's qa/loop retry passes.
-  .option(
-    "--escalate-effort",
-    "On a QA-pass retry (pass ≥ 2), run that retried phase one reasoning-effort tier above its resolved base (default: off)",
-  )
-  // #971: same ladder as `sequant run --model-ladder`, applied to this
-  // gate's qa/loop retry passes.
-  .option(
-    "--model-ladder <rungs>",
-    "Comma list of model rungs, cheapest first (e.g. 'sonnet,opus,fable'), used only when a QA-pass retry follows a no-progress fix loop (default: off)",
   )
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
