@@ -2535,18 +2535,18 @@ describe("determinePhasesForIssue", () => {
     expect(result).toEqual(["spec", "testgen", "exec", "qa"]);
   });
 
-  it("should add test phase before qa for UI labels", () => {
+  it("should not add test phase before qa for UI labels (#1631)", () => {
     const result = determinePhasesForIssue(
       ["spec", "exec", "qa"],
       ["frontend"],
       {} as any,
     );
-    expect(result).toEqual(["spec", "exec", "test", "qa"]);
+    expect(result).toEqual(["spec", "exec", "qa"]);
   });
 
-  it("should add test phase at end when qa is not present", () => {
+  it("should not add test phase at end for UI labels when qa is not present (#1631)", () => {
     const result = determinePhasesForIssue(["spec", "exec"], ["ui"], {} as any);
-    expect(result).toEqual(["spec", "exec", "test"]);
+    expect(result).toEqual(["spec", "exec"]);
   });
 
   it("should not duplicate test phase if already present", () => {
@@ -2558,13 +2558,13 @@ describe("determinePhasesForIssue", () => {
     expect(result).toEqual(["spec", "exec", "test", "qa"]);
   });
 
-  it("should handle both testgen and UI labels together", () => {
+  it("should insert testgen but not test for testgen and UI labels (#1631)", () => {
     const result = determinePhasesForIssue(
       ["spec", "exec", "qa"],
       ["frontend"],
       { testgen: true } as any,
     );
-    expect(result).toEqual(["spec", "testgen", "exec", "test", "qa"]);
+    expect(result).toEqual(["spec", "testgen", "exec", "qa"]);
   });
 
   it("should not modify original phases array", () => {
