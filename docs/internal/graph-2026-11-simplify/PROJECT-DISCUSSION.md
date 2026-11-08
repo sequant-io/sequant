@@ -1,6 +1,6 @@
 # graph-2026-11-simplify: sequant 3.0, cut to the parts the measurements support
 
-**Status:** approved and filed 2026-11-07 as #1645 (tracker) and #1646–#1657 (map in `issue-graph.md`); stop-at-PR (I-5); OQ-7 open. Phase-0 measurements were taken on `main` at `31c6f8bdc` (tagged `research-baseline-2026-11-03`, the build every executor-swap run used) and on this checkout's `.sequant/metrics.json` and hook logs, on 2026-11-04. Issues are in `issues/` with placeholder numbers (`#S-NN`); the map and the DAG are in `issue-graph.md`; the Evidence run record is `phase0-evidence.md`.
+**Status:** approved and filed 2026-11-07 as #1645 (tracker) and #1646–#1657 (map in `issue-graph.md`); stop-at-PR (I-5); OQ-7 answered 2026-11-06 (none join). Phase-0 measurements were taken on `main` at `31c6f8bdc` (tagged `research-baseline-2026-11-03`, the build every executor-swap run used) and on this checkout's `.sequant/metrics.json` and hook logs, on 2026-11-04. Issues are in `issues/` with placeholder numbers (`#S-NN`); the map and the DAG are in `issue-graph.md`; the Evidence run record is `phase0-evidence.md`.
 
 **Sources.** The research knowledge base `admarble/smpl-sequant` (private): `claims/evidenced-answer-2026-11-03.md` (the synthesis of nine experiments and 172 scored runs), `plans/2026-11-03-simplification-proposal.md` (the seven kept parts, the three bins, D-1..D-8 with the owner's answers) and `decisions/log.md` (no fork, the tag, the downstream pin). Numbers below that come from those files say so; every other number was measured today with the command beside it.
 
@@ -166,7 +166,7 @@ Decisions execution forced (W1, 2026-11-07):
 
 ## §10 Parked directions
 
-- **Post-freeze (eligible since the 2026-11-06 lift; OQ-7: none join this graph, they run as their own PRs after 3.0):** the `/reflect` skill text (D-1); §6h's handling of needs-human Evidence in the qa skill (D-8's skill half); the qa cuts #1068 chooses; #1622, #1606, #1459, #1455, #1400, #1457.
+- **Post-freeze (eligible since the 2026-11-06 lift; OQ-7: none join this graph, they run as their own PRs after 3.0):** the `/reflect` skill text (D-1); §6h's handling of needs-human Evidence in the qa skill (D-8's skill half); the qa cuts #1068 chooses; #1622, #1606, #1459, #1455, #1400, #1457; #1662 (`/assess`'s minimal-flags rule, stale after #1649; filed 2026-11-07).
 - **After #1653:** running #1068 (owner's word, at the estimate); exec and fullsolve by the same method (D-4, "later").
 - **After #1654:** any hook change, with the precision per rule as its input.
 - **After a tally:** the test-tautology detector (#940 closed; the false-positive tally the inventory asked for does not exist yet).
