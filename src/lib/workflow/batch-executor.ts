@@ -733,7 +733,7 @@ export function ladderHaltOutcome(
  *
  * @internal Exported for testing
  */
-export function repeatHaltOutcome(
+function repeatHaltOutcome(
   bundle: EvidenceBundle,
 ): Pick<IssueResult, "failureCategory" | "abortReason" | "evidenceBundle"> {
   const shas = bundle.iterations.map((it) => it.sha ?? "(no sha)").join(", ");
@@ -752,7 +752,7 @@ export function repeatHaltOutcome(
  * (#1646, the #1162 rule). One fix pass on a refusal is supported; a second
  * pass after a second refusal is not.
  */
-export const AC_NOT_MET_REPEAT_HALT_THRESHOLD = 2;
+const AC_NOT_MET_REPEAT_HALT_THRESHOLD = 2;
 
 /**
  * How a finished phase is recorded — in state, the run-log phase row and the
