@@ -62,11 +62,11 @@ The metrics `source` is `run` on every row, so MCP use cannot be told apart (10-
 
 | Copy under `~/.sequant/hook-log-freeze-2026-11-04/` | Blocks | Span | Top rules | sha256 (first 12) |
 |---|---|---|---|---|
-| `sequant-home.log` | 442 | 11-02 to 11-03 (E2c, sandboxed) | staged-secret 186, sensitive-file 186, worktree-boundary 62 | `f3f1e3855e98` |
+| `sequant-home.log` | 442 | 11-02 to 11-03 (434 are matcha-maps hook-test fixtures run during E2c; corrected 2026-11-07) | staged-secret 186, sensitive-file 186, worktree-boundary 62 | `f3f1e3855e98` |
 | `plugin-sequant-dev.log` | 136 | 10-09 to 10-26 | env-dump 63, force-push 28, no-changes 24 | `d3381e5daee1` |
-| `plugin-sequant.log` | 85 | 09-18 to 11-03 | no-changes 38, env-dump 20, commit-format 9 | `0d5d04096e34` |
+| `plugin-sequant.log` | 84 (85 as first counted; one line was prose inside a logged command) | 09-18 to 11-03 | no-changes 38, env-dump 20, commit-format 9 | `0d5d04096e34` |
 
-663 blocks over 14 rules. A plain random 50 would be mostly E2c's two secret rules; #1654 stratifies.
+~~663 blocks over 14 rules~~ (corrected 2026-11-07 during #1654: neither number came from a command that parsed block records). 662 block records over 11 rules, of which 469 are test fixtures written to the real log: 434 by matcha-maps' hook tests during E2c and 35 by sequant's own `opencode-hooks.test.ts`. That leaves 193 agent blocks over 9 rules; `staged-secret` and `sensitive-file` have none. The same flood is what rotated the inventory's 538 blocks away. #1654 samples the 193, stratified by rule.
 
 **Downstream callers.** `~/Projects/harness/scripts/launch.sh:24` runs `nohup npx sequant run …` unpinned, from inside the matcha-maps checkout, which has no `sequant` dependency; the harness CLAUDE.md names "Sequant 2.20, run as `npx sequant run`". A published 3.0 becomes their executor on the next launch. `sequant-landing`, `workout` and `workout-admin` declare `"sequant": "^2.17.0"`, which 3.0 does not satisfy. Fourteen other local repos have a `.sequant/` directory and no dependency (counted by a loop over `~/Projects/*/.sequant`); none is a production executor today. `npm view sequant dist-tags`: `latest` and `next` both 2.20.0.
 
@@ -135,6 +135,14 @@ Plan-time decisions (each with what lost):
 | P-12 | The smoke runs on `admarble/notes-fixture` with two new smoke issues, from a `main` build, launched by `launchctl submit` as `run <B> <A> --chain` (B first, since `--chain` halts on A's designed failure), under E2c's `sandbox-exec` deny profile as it stands: it denies the matcha-maps checkout, seed and worktrees, `~/.claude/secrets.env`, every `.env.local` under the home directory and the Vercel token directory; the smoke's `notes-fixture-worktrees` paths are outside it (read 2026-11-04) | the ad-motion testbed (#1507's) has no Evidence that reaches outside the worktree, and a needs-human AC on a real repo is the risk the node exists to remove |
 | P-13 | 3.0 goes to `next` first and `latest` on the owner's word, as the release checklist does | publishing straight to `latest` |
 
+Decisions execution forced (W1, 2026-11-07):
+
+| ID | Decision | Why |
+|---|---|---|
+| X-1 | W1's code nodes ran through a CLI launch from a one-shot launchd plist (`RunAtLoad`, no `KeepAlive`, kept outside `~/Library/LaunchAgents`), one issue after the other | the runner session was opened in another repo, and MCP `sequant_run` has no repo parameter (sequant#856 rules out a backgrounded CLI) |
+| X-2 | `npx sequant@2.20.0` resolved to the global `npm link` of this checkout, so W1 ran `dist/` as built from `31c6f8bdc` (the measured baseline) rather than the npm tarball | recorded, not changed: same code as `research-baseline-2026-11-03`. The same link is the harness's executor today (#1656 comment) |
+| X-3 | Tier by a scripted flip of `.sequant/settings.json` between the two sequential runs, restored by an `EXIT` trap and checked with `cmp` | one MCP or CLI call reads one tier policy; the run log's `phases[].model` confirmed opus ×3 on #1646 and sonnet, sonnet, opus on #1649 |
+
 ## §8 Issue conventions
 
 - One line per AC with a trailing `Evidence:` clause; `## Non-Goals` in every body; edges as `- **Blocked by**: #S-NN` list items under the metadata line, substituted to real numbers in one `gh issue edit` pass after filing (`perl -pi -e`, never BSD `sed`), then grepped for leftover `#S-\d`.
@@ -149,7 +157,7 @@ Plan-time decisions (each with what lost):
 | ID | Question | Resolved by |
 |---|---|---|
 | OQ-1 | Does any MCP caller pass `fullQa`? Metrics cannot say (`source` is `run`) | #1648: a grep of the owner's harness and graph docs at exec. The MCP input schema strips unknown keys (no `.strict()`), so a caller still passing `fullQa` would be ignored silently, and the grep is the only check |
-| OQ-2 | Do the 11 runs with `qaIterations` ≥ 3 contain two consecutive `AC_NOT_MET`? If none did, the halt has never been the binding stop | #1646: count from the run logs at exec, recorded in the PR body (no AC depends on it) |
+| ~~OQ-2~~ | ~~Do the 11 runs with `qaIterations` ≥ 3 contain two consecutive `AC_NOT_MET`?~~ | **Resolved 2026-11-07 (#1646, PR #1660):** 1 of 92 run logs in `.sequant/logs/` holds two consecutive `AC_NOT_MET` qa verdicts in one loop (#1297, 2026-10-04) |
 | OQ-3 | Does the qa agent obey a prompt block telling it not to run an Evidence line, while the skill's §6h says run each one? | #1655: the smoke's transcript grep |
 | OQ-4 | Which E6/E6b cost per `/qa` run sets #1068's estimate, and how many sections does the leave-one-out cover? | #1653 |
 | OQ-5 | Do any of the fourteen `.sequant/` repos without a dependency need a pin? | #1656: the owner names them or none |
