@@ -664,8 +664,8 @@ Boundary rule above: halt and report instead of merging it.
 
 ### Stacked PR Detection (#605)
 
-PRs created with `sequant run --stacked` have a non-`main` base and a manifest
-line in the body (`Part of stack: #N1 → #N2 → ...`). They **must merge in
+PRs created by pre-3.0 `sequant run` stacked runs (the flag was removed in 3.0,
+#1648; open ones may remain) have a non-`main` base and a manifest line in the body (`Part of stack: #N1 → #N2 → ...`). They **must merge in
 order** — predecessor first. Merging out of order re-bases the dependent PR's
 diff against an unexpected commit and inflates the visible change set.
 
