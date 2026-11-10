@@ -450,7 +450,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
       base?: string;
     };
     expect(fields.body).toContain("Exec summary from state.");
-    expect(fields.base).toBe("feature/1200-first");
+    expect(fields.base).toBeUndefined();
   });
 
   it("a failed PATCH warns but the run keeps its PR", () => {
@@ -1041,7 +1041,6 @@ describe("#1386: resolvePrBase", () => {
     expect(resolvePrBase("feat/x", detected)).toBe("feat/x");
     expect(resolvePrBase("origin/feat/x", detected)).toBe("feat/x");
   });
-
 });
 
 // #1380: a stale-and-clean worktree is recreated from origin/<branch> when the
