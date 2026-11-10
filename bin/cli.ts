@@ -359,10 +359,6 @@ program
     "--chain",
     "Chain issues: each successor is rebased onto the previous issue's committed work before it runs (implies --sequential)",
   )
-  .option(
-    "--stacked",
-    "Stack PRs: middle PRs target predecessor branch instead of main; first/last target main (implies --chain)",
-  )
   // #795: deliberately a visible `.option()`, NOT `.hideHelp()` like
   // `--experimental-tui` below. The two are different cases: `--qa-gate`
   // shipped in #133 and was documented across four user-facing docs, so users
@@ -417,12 +413,6 @@ program
     "--ready-gate",
     "After phases succeed, run the post-QA ready gate (qa→loop→qa to the configured policy) — never merges, stops at the human merge gate",
   )
-  // #982: opt-in full-weight QA. Mirrors --ready-gate's opt-in shape above —
-  // adds visible pre-flight work to every qa dispatch, so off by default.
-  .option(
-    "--full-qa",
-    "Force full-weight (standalone) QA regardless of resume/context state (default: off)",
-  )
   // #914: per-phase model/effort override for the claude-code driver. Bare
   // value applies to every phase; comma list of phase=value pairs applies
   // per phase. CLI > settings.run.phases > absent (resolvePhasePolicies).
@@ -456,7 +446,6 @@ program
     "--isolate-parallel",
     "Isolate parallel agent groups in separate worktrees (prevents file conflicts)",
   )
-  .option("--reflect", "Analyze run results and suggest improvements")
   .option(
     "--agent <name>",
     'Agent driver for phase execution (default: "claude-code")',

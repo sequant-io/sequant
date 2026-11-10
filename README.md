@@ -196,10 +196,9 @@ In Claude Code:
 /fullsolve 123
 ```
 
-Headless (`-Q` runs the quality loop; `--full-qa` makes the reviewer come in cold with the full standalone pre-flight):
+Headless (`-Q` runs the quality loop):
 ```bash
 npx sequant run 123 -Q
-npx sequant run 123 --full-qa
 ```
 
 > `sequant run --help` is the authoritative flag list. There is **no** `--skip-spec` — to skip the plan phase, use `--phases exec,qa`.
@@ -328,8 +327,6 @@ Multi-issue runs are parallel by default, and a per-issue lock (`.sequant/locks/
 ```
 
 See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags and precedence, and [Spec-Divergence and Repeat Halts](docs/reference/spec-divergence-halt.md) for the `SPEC_DIVERGENCE` and `AC_NOT_MET_REPEATED` halts.
-
-`fullQa` under `run` in `.sequant/settings.json` (default `false`) mirrors `--full-qa` above — CLI flag beats the setting.
 
 ---
 

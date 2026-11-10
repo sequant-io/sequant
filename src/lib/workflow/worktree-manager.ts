@@ -896,10 +896,10 @@ export function resolveWorktreeRoot(
  *
  * A non-default bare base is `origin/<base>` too when the remote has it
  * (#1406), so creation, staleness (`countCommitsBehind`) and the recorded
- * base read one ref. Chain mode (a `--stacked` predecessor) and a base with
+ * base read one ref. Chain mode (a `--chain` predecessor) and a base with
  * no `origin/<base>` stay bare: those are local branches by design.
  *
- * @param opts.chainMode - the bare base is a stacked predecessor
+ * @param opts.chainMode - the bare base is a chain predecessor
  * @param opts.hasRemote - whether `origin/<baseBranch>` exists locally
  *
  * @internal Exported for testing only.
@@ -1013,8 +1013,8 @@ export function resolveBranchStartRef(
  * The branch a PR is opened against (#1386): the same base value the worktree
  * was cut from, as a bare branch name for `gh pr create --base`.
  *
- * `stackPrBase` (the `--stacked` predecessor) wins; else `baseBranch` with any
- * `origin/` prefix stripped when it differs from the detected default; else
+ * `baseBranch` with any `origin/` prefix stripped when it differs from the
+ * detected default; else
  * `undefined`, so gh uses the repository's default branch as it always has.
  * Passing the detected default explicitly is avoided on purpose: detection
  * falls back to `"main"`, which `gh` would then reject on a repo whose default
@@ -1023,11 +1023,9 @@ export function resolveBranchStartRef(
  * @internal Exported for testing only.
  */
 export function resolvePrBase(
-  stackPrBase: string | undefined,
   baseBranch: string | undefined,
   detectedDefault: () => string,
 ): string | undefined {
-  if (stackPrBase) return stackPrBase;
   if (!baseBranch) return undefined;
   const bare = baseBranch.replace(/^origin\//, "");
   return bare === detectedDefault() ? undefined : bare;
@@ -2647,7 +2645,6 @@ export function isAutomatedPRBody(body: string | undefined): boolean {
  * directly.
  *
  * @param issueNumber Issue the PR closes
- * @param opts.stackManifest Appended before the trailer under --stacked (#605)
  * @param opts.qaVerdict QA verdict for the run; a non-A+ stopping state
  *   (anything other than `READY_FOR_MERGE`) surfaces a note so a human reviewer
  *   sees why the run broke to PR without reaching A+ (#749).
@@ -2680,7 +2677,6 @@ export function isAutomatedPRBody(body: string | undefined): boolean {
 export function buildAutomatedPRBody(
   issueNumber: number,
   opts?: {
-    stackManifest?: string;
     qaVerdict?: string;
     readyGateReport?: string;
     linkMode?: "closes" | "refs";
@@ -2725,15 +2721,10 @@ export function buildAutomatedPRBody(
   if (followups) {
     bodyLines.push(followups, ``);
   }
-  // #605 AC-4: emit stack manifest before the trailer so reviewers see the
-  // chain at the top of the body. Manifest is only set under --stacked.
-  if (opts?.stackManifest) {
-    bodyLines.push(opts.stackManifest, ``);
-  }
   bodyLines.push(`---`, AUTOMATED_PR_TRAILER);
   const rendered = bodyLines.join("\n");
   // #1197 AC-4: catch any other closing-verb + issueNumber combination that
-  // slipped into the body via stackManifest/readyGateReport text, not just the
+  // slipped into the body via readyGateReport/execSummary text, not just the
   // explicit closingLine above.
   return linkMode === "refs"
     ? rewriteClosingKeywordsToRefs(rendered, issueNumber)
@@ -2746,8 +2737,7 @@ export function buildAutomatedPRBody(
  * Under `sequant run` this is the only PR producer (#1247): the exec skill
  * opens none while `SEQUANT_ORCHESTRATOR` is set. A PR that already exists
  * for the branch is pushed to and updated in place — title and body only when
- * {@link isAutomatedPRBody} says the body is sequant's own, `base` under
- * `--stacked` regardless. A failed update warns but stays a success.
+ * {@link isAutomatedPRBody} says the body is sequant's own, `base` regardless. A failed update warns but stays a success.
  *
  * Returns `{ success: false, error }` on failure. As of #879 the caller
  * (`runIssueWithLogging`) treats an attempted-but-failed PR as a run failure:
@@ -2760,9 +2750,6 @@ export function buildAutomatedPRBody(
  * @param branch Branch name
  * @param verbose Whether to show verbose output
  * @param labels Issue labels (used to pick `fix(...)` vs `feat(...)` prefix)
- * @param stackOptions When set under --stacked, `prBase` overrides the default
- *   PR target (otherwise gh defaults to the repo's default branch) and
- *   `stackManifest` is appended to the PR body. (#605)
  * @param qaVerdict QA verdict surfaced in the PR body when non-A+ (#749).
  * @param readyGateReport Rendered `sequant ready` gap report, set only when the
  *   run used `--ready-gate` (#817).
@@ -2772,8 +2759,8 @@ export function buildAutomatedPRBody(
  * @param prNoCloseLabel `settings.run.prNoCloseLabel` (#1197 AC-2), default
  *   `"no-autoclose"`.
  * @param opts.baseBranch The run's resolved base (`ResolvedRun.baseBranch`,
- *   #1386): the PR target when it is not the repo default and `--stacked`
- *   sets no `prBase`. Resolved through {@link resolvePrBase}.
+ *   #1386): the PR target when it is not the repo default,
+ *   resolved through {@link resolvePrBase}.
  * @param opts.execOutput The exec phase's captured output (#1223 AC-2),
  *   threaded through to {@link buildAutomatedPRBody}. Added as a trailing
  *   options object rather than another positional parameter.
@@ -2792,7 +2779,6 @@ export function createPR(
   branch: string,
   verbose: boolean,
   labels?: string[],
-  stackOptions?: { prBase?: string; stackManifest?: string },
   qaVerdict?: string,
   readyGateReport?: string,
   prIssueLink?: "closes" | "refs",
@@ -2808,7 +2794,7 @@ export function createPR(
 ): PRCreationResult {
   const github = new GitHubProvider();
   // #1386: one PR base for the create and update paths, resolved once.
-  const prBase = resolvePrBase(stackOptions?.prBase, opts?.baseBranch, () =>
+  const prBase = resolvePrBase(opts?.baseBranch, () =>
     detectDefaultBranch(verbose),
   );
 
@@ -2817,7 +2803,6 @@ export function createPR(
   const prTitle = buildPRTitle(issueTitle, issueNumber, labels);
   const linkMode = resolvePrLinkMode(labels, prIssueLink, prNoCloseLabel);
   const prBody = buildAutomatedPRBody(issueNumber, {
-    stackManifest: stackOptions?.stackManifest,
     qaVerdict,
     readyGateReport,
     linkMode,

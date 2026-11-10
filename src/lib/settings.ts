@@ -355,15 +355,6 @@ export interface RunSettings {
    */
   autoMerge: boolean;
   /**
-   * Force full-weight (standalone) QA on every `qa` dispatch, regardless of
-   * resume/context state (#982). Default `false` — opt-in, since it adds
-   * visible pre-flight work to every QA pass. Mirrors the existing
-   * `ExecutionConfig.fullQa` (#683), already forced unconditionally by
-   * `sequant ready`; this setting just exposes the same knob to `sequant run`.
-   * Overridable per-invocation with `--full-qa` (CLI > settings > default).
-   */
-  fullQa: boolean;
-  /**
    * Map of semantic role names to model strings (#975).
    *
    * Config expresses **roles**; this map resolves roles to concrete model
@@ -615,11 +606,6 @@ export const RunSettingsSchema = z.object({
    */
   autoMerge: z.boolean().default(false),
   /**
-   * Force full-weight (standalone) QA on every `qa` dispatch (#982). Default
-   * `false` — opt-in. Overridable per-invocation with `--full-qa`.
-   */
-  fullQa: z.boolean().default(false),
-  /**
    * Semantic role → model string map (#975). See `ModelRolesSchema` and
    * `DEFAULT_MODEL_ROLES` for the shipped defaults. Absent from generated
    * settings — absent key → defaults apply. Do not emit in `generateSettingsJsonc`.
@@ -790,7 +776,6 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "relay",
     "phases",
     "modelRoles",
-    "fullQa", // #982
   ]),
   // #914: keyed by real phase name so a typo (`run.phases.exce`) warns
   // instead of silently resolving to nothing. Computed from the registry
@@ -842,6 +827,8 @@ const REMOVED_KEYS: Record<string, string> = {
     "'run.modelLadder' was removed in 3.0 with the model ladder (#1647); it is ignored. Delete it from settings.json.",
   "run.effortEscalation":
     "'run.effortEscalation' was removed in 3.0 with effort escalation (#1647); it is ignored. Delete it from settings.json.",
+  "run.fullQa":
+    "'run.fullQa' was removed in 3.0 with the --full-qa opt-in (#1648); it is ignored. `sequant ready` still forces full-weight QA. Delete it from settings.json.",
 };
 
 /**
@@ -1073,7 +1060,6 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     prNoCloseLabel: "no-autoclose", // #1197 AC-2: label always forces Refs #N
     relay: true, // Enable interactive relay (#383) by default
     autoMerge: false, // #958: off by default — preserves the human merge gate
-    fullQa: false, // #982: off by default — adds visible pre-flight work
     modelRoles: DEFAULT_MODEL_ROLES, // #975: shipped defaults; absent key → these
   },
   agents: DEFAULT_AGENT_SETTINGS,

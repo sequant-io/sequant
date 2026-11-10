@@ -47,7 +47,6 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 Running issues
 - [Parallel Execution](features/parallel-execution.md) — Running several issues at once, and when to use `--sequential` or `--chain` instead
-- [Stacked PRs](features/stacked-prs.md) — Chained issues that build on each other, one PR per issue
 - [Spec Phase by Default](features/spec-by-default.md) — Which issues get a planning phase, and how to skip it
 - [Automatic PR Creation](features/run-pr-creation.md) — When `sequant run` opens and updates the PR
 - [Run Ready Gate](features/run-ready-gate.md) — Extra QA rounds before you merge (`--ready-gate`)

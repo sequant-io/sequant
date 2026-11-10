@@ -93,12 +93,6 @@ describe("runCommand pre-flight exit codes (#848)", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("AC-2: sets exit 1 on the --stacked + --no-chain conflict", async () => {
-    await runCommand(["999"], { quiet: true, stacked: true, chain: false });
-
-    expect(process.exitCode).toBe(1);
-  });
-
   it("AC-3: sets exit 1 on the --chain + --batch conflict", async () => {
     await runCommand(["999"], { quiet: true, chain: true, batch: ["1"] });
 

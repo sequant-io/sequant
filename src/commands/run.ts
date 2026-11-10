@@ -64,16 +64,6 @@ export async function runCommand(
   }
   const settings = await getSettings();
 
-  // #605: --stacked implies --chain; reject explicit --no-chain combo before
-  // we evaluate any --chain-dependent constraint below.
-  if (options.stacked && options.chain === false) {
-    rejectPreflight("❌ --stacked cannot be combined with --no-chain");
-    return;
-  }
-  if (options.stacked) {
-    options.chain = true;
-  }
-
   if (options.chain && options.batch?.length) {
     rejectPreflight("❌ --chain cannot be used with --batch");
     return;

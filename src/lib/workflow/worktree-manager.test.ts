@@ -273,7 +273,7 @@ describe("#1197 PR issue link: closes vs refs", () => {
   it("AC-4: refs mode rewrites closing verbs in tables and the owner/repo#N form", () => {
     const body = buildAutomatedPRBody(1197, {
       linkMode: "refs",
-      stackManifest:
+      readyGateReport:
         "| AC | Note |\n|----|----|\n| Closes #1197 | row |\nFixes sequant-io/sequant#1197",
     });
     expect(body).not.toMatch(
@@ -340,10 +340,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const run = (
-    stackOptions?: { prBase?: string; stackManifest?: string },
-    baseBranch?: string,
-  ) =>
+  const run = (baseBranch?: string) =>
     createPR(
       wt,
       1247,
@@ -351,7 +348,6 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
       "feature/1247",
       false,
       ["bug"],
-      stackOptions,
       "AC_MET_BUT_NOT_A_PLUS",
       undefined,
       undefined,
@@ -384,7 +380,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     expect(fields.base).toBeUndefined();
   });
 
-  // #1386: a plain --base (no --stacked) reaches `gh`'s --base / the PATCH.
+  // #1386: a plain --base reaches `gh`'s --base / the PATCH.
   it("#1386 AC-1: create path passes --base <branch> when only --base is set", () => {
     viewSpy.mockReturnValue(null);
     createSpy.mockReturnValue({
@@ -393,7 +389,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
       exitCode: 0,
     });
 
-    run(undefined, "feat/x");
+    run("feat/x");
 
     expect(createSpy).toHaveBeenCalledTimes(1);
     // `base` is createPRCliSync's 5th positional argument.
@@ -403,19 +399,10 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
   it("#1386 AC-1: update path retargets the PR to --base <branch>", () => {
     viewSpy.mockReturnValue(existing(AUTOMATED_BODY));
 
-    run(undefined, "origin/feat/x");
+    run("origin/feat/x");
 
     const fields = updateSpy.mock.calls[0][1] as { base?: string };
     expect(fields.base).toBe("feat/x");
-  });
-
-  it("#1386 AC-4: --stacked predecessor wins over --base", () => {
-    viewSpy.mockReturnValue(existing(AUTOMATED_BODY));
-
-    run({ prBase: "feature/1200-first" }, "feat/x");
-
-    const fields = updateSpy.mock.calls[0][1] as { base?: string };
-    expect(fields.base).toBe("feature/1200-first");
   });
 
   it("an empty existing body is overwritten too", () => {
@@ -425,10 +412,10 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     expect(fields.body).toContain("Exec summary from state.");
   });
 
-  it("a hand-edited body is left alone, logged, and base still set under --stacked", () => {
+  it("a hand-edited body is left alone, logged, and base is not retargeted", () => {
     viewSpy.mockReturnValue(existing("A reviewer rewrote this description."));
 
-    const result = run({ prBase: "feature/1200-first" });
+    const result = run();
 
     expect(result.success).toBe(true);
     const fields = updateSpy.mock.calls[0][1] as {
@@ -438,7 +425,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
     };
     expect(fields.title).toBeUndefined();
     expect(fields.body).toBeUndefined();
-    expect(fields.base).toBe("feature/1200-first");
+    expect(fields.base).toBeUndefined();
     expect(logs.join("\n")).toContain(
       "PR #5 body was edited by hand; not overwritten",
     );
@@ -454,7 +441,7 @@ describe("#1247 AC-2: createPR updates a PR that already exists", () => {
       exitCode: 1,
     });
 
-    const result = run({ prBase: "feature/1200-first" });
+    const result = run();
 
     expect(result).toMatchObject({ success: true, prNumber: 5 });
     expect(updateSpy).toHaveBeenCalledTimes(1);
@@ -977,7 +964,7 @@ process.stdout.write("\\nRESULT=" + JSON.stringify(info));`,
     expect(recorded(wt)).toBe("local-base");
   }, 60_000);
 
-  it("1406 a stacked predecessor that is also on origin stays local", () => {
+  it("1406 a chain predecessor that is also on origin stays local", () => {
     lagBehindOrigin("pred");
     const wt = ensure(12, "pred", true);
     expect(git(wt, "rev-parse", "HEAD")).toBe(git(clone, "rev-parse", "pred"));
@@ -1042,24 +1029,19 @@ describe("#1386: resolvePrBase", () => {
   const detected = () => "main";
 
   it("no base: undefined, so gh uses the repo default", () => {
-    expect(resolvePrBase(undefined, undefined, detected)).toBeUndefined();
+    expect(resolvePrBase(undefined, detected)).toBeUndefined();
   });
 
   it("a base equal to the detected default: undefined (unchanged)", () => {
-    expect(resolvePrBase(undefined, "main", detected)).toBeUndefined();
-    expect(resolvePrBase(undefined, "origin/main", detected)).toBeUndefined();
+    expect(resolvePrBase("main", detected)).toBeUndefined();
+    expect(resolvePrBase("origin/main", detected)).toBeUndefined();
   });
 
   it("a non-default base: the bare branch name", () => {
-    expect(resolvePrBase(undefined, "feat/x", detected)).toBe("feat/x");
-    expect(resolvePrBase(undefined, "origin/feat/x", detected)).toBe("feat/x");
+    expect(resolvePrBase("feat/x", detected)).toBe("feat/x");
+    expect(resolvePrBase("origin/feat/x", detected)).toBe("feat/x");
   });
 
-  it("--stacked predecessor wins and detection is not consulted", () => {
-    const detect = vi.fn(() => "main");
-    expect(resolvePrBase("feature/1-a", "feat/x", detect)).toBe("feature/1-a");
-    expect(detect).not.toHaveBeenCalled();
-  });
 });
 
 // #1380: a stale-and-clean worktree is recreated from origin/<branch> when the

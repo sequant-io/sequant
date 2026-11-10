@@ -565,10 +565,6 @@ export function buildExecutionConfig(
     // useless if it stops reaching the executor here.
     readyGate: mergedOptions.readyGate ?? false,
     phasePolicies,
-    // #982: CLI > settings > default `false`, mirrors `readyGate` above. `ready-gate.ts` still overrides this per-dispatch with its own
-    // `buildPhaseConfig(opts, { fullQa: true })` (AC-5) — this resolver only
-    // sets the base value `sequant run` uses.
-    fullQa: mergedOptions.fullQa ?? settings.run.fullQa ?? false,
     // #1197: settings-only, no CLI flag. Threaded straight to `createPR` via
     // `ExecutionConfig` so the automated PR path resolves the same mode
     // `resolvePrLinkMode` would from raw settings.

@@ -536,12 +536,6 @@ export interface RunOptions {
   /** Chain issues: each branches from previous (requires --sequential) */
   chain?: boolean;
   /**
-   * Stacked PRs: each non-first PR targets its predecessor branch instead of
-   * `main`. Implies --chain. The final PR still targets `main` so partial
-   * progress can land without the whole stack. (#605)
-   */
-  stacked?: boolean;
-  /**
    * Wait for QA pass before starting next issue in chain mode.
    * When enabled, the chain pauses if QA fails, preventing downstream issues
    * from building on potentially broken code.
@@ -602,12 +596,6 @@ export interface RunOptions {
    * that covers, and why `blocked` is not one of them.
    */
   force?: boolean;
-  /**
-   * Analyze run results and suggest workflow improvements.
-   * Displays observations about timing patterns, phase mismatches, and
-   * actionable suggestions after the summary output.
-   */
-  reflect?: boolean;
   /**
    * Max concurrent issues in parallel mode (default: 3).
    * Only applies when --sequential is not set.
@@ -686,15 +674,6 @@ export interface RunOptions {
    * validates against the SDK's closed `low|medium|high|xhigh|max` enum.
    */
   efforts?: string;
-  /**
-   * Force full-weight (standalone) QA regardless of resume/context state
-   * (#982). Set via `--full-qa`. Mirrors the existing `ExecutionConfig.fullQa`
-   * (#683) already honored by `phase-executor.ts` and forced unconditionally
-   * by `sequant ready` — this just exposes the same knob on `sequant run`.
-   * CLI > `settings.run.fullQa` > default `false`, resolved by
-   * `buildExecutionConfig`.
-   */
-  fullQa?: boolean;
 }
 
 /**
@@ -850,17 +829,6 @@ export interface IssueExecutionContext {
   chain?: {
     enabled: boolean;
     isLast: boolean;
-    /**
-     * Stacked-PR base branch for this issue. Set only when --stacked is active
-     * and this issue has a predecessor in the chain. When set, createPR targets
-     * this branch instead of `main`. (#605)
-     */
-    predecessorBranch?: string;
-    /**
-     * Pre-rendered stack manifest line for the PR body, e.g.
-     * `Part of stack: #100 → #101 (this) → #102`. Set only under --stacked.
-     */
-    stackManifest?: string;
   };
   /** Package manager name (e.g., "npm", "pnpm") */
   packageManager?: string;

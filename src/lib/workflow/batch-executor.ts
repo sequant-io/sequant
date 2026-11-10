@@ -1376,20 +1376,9 @@ async function openOrUpdatePR(
     title: issueTitle,
     labels,
     services: { stateManager },
-    chain,
     baseBranch,
   } = env.ctx;
   const { phaseResults } = state;
-  // #605: under --stacked, target predecessor branch (only for non-first,
-  // non-last issues). The last PR targets the run's base (#1386: `--base`,
-  // else the repo default) so partial progress can land.
-  const stackOptions =
-    chain?.predecessorBranch || chain?.stackManifest
-      ? {
-          prBase: chain.predecessorBranch,
-          stackManifest: chain.stackManifest,
-        }
-      : undefined;
   // #1223 AC-2: surface exec's own `## Summary` in the PR body instead of
   // the placeholder text.
   // The latest exec pass: a quality-loop iteration re-runs exec, and the
@@ -1462,7 +1451,6 @@ async function openOrUpdatePR(
     prBranch,
     config.verbose,
     labels,
-    stackOptions,
     after.qaVerdict,
     after.readyGateReport,
     // #1197: closing-keyword mode + its label override, resolved once by
@@ -2939,7 +2927,7 @@ async function postReadFirstForPR(
   worktreePath: string,
   postQaPr: number | undefined,
 ): Promise<void> {
-  const { issueNumber, chain, baseBranch, services } = env.ctx;
+  const { issueNumber, baseBranch, services } = env.ctx;
   if (!state.phaseResults.some((p) => p.phase === "qa")) return;
   const provider = env.ctx.readFirstProvider ?? new GitHubProvider();
   const prNumber = await resolveReadFirstPR(
@@ -2959,7 +2947,7 @@ async function postReadFirstForPR(
   await deliverReadFirstComment({
     provider,
     worktreePath,
-    baseBranch: chain?.predecessorBranch ?? baseBranch ?? "main",
+    baseBranch: baseBranch ?? "main",
     prNumber,
     issueNumber,
     mutationMarkers,
