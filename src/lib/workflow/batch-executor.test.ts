@@ -3839,8 +3839,8 @@ describe("#1250: a spec-phase SPEC_DIVERGENCE halts the run before exec", () => 
 describe("#1246: a PR from a run QA has not reviewed says so", () => {
   /**
    * The body `createPR` would publish for one recorded call: the same
-   * `buildAutomatedPRBody` inputs createPR forwards (verdict = 8th positional,
-   * ready-gate report = 9th, options object last).
+   * `buildAutomatedPRBody` inputs createPR forwards (verdict = 7th positional,
+   * ready-gate report = 8th, options object last).
    */
   function bodyOf(call: unknown[]): string {
     const opts = (call.at(-1) ?? {}) as {

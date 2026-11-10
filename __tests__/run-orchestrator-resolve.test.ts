@@ -6,9 +6,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import {
-  RunOrchestrator,
-} from "../src/lib/workflow/run-orchestrator.js";
+import { RunOrchestrator } from "../src/lib/workflow/run-orchestrator.js";
 import { DEFAULT_SETTINGS } from "../src/lib/settings.js";
 import type { RunInit } from "../src/lib/workflow/run-orchestrator.js";
 import type { RunOptions } from "../src/lib/workflow/types.js";
