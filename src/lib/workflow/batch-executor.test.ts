@@ -1814,9 +1814,9 @@ describe("#1223: the PR body gets the latest exec pass's output", () => {
 
     expect(passes()).toBe(2);
     // The post-QA call is the last; the after-exec calls pass no verdict.
-    // `qaVerdict` is createPR's 8th positional argument.
-    expect(mockCreatePR.mock.calls.at(-1)![7]).toBe("NEEDS_VERIFICATION");
-    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
+    // `qaVerdict` is createPR's 7th positional argument.
+    expect(mockCreatePR.mock.calls.at(-1)![6]).toBe("NEEDS_VERIFICATION");
+    expect(mockCreatePR.mock.calls[0][6]).toBeUndefined();
   });
 
   it("hands createPR the latest QA pass's findings as follow-ups (#1249 AC-2)", async () => {
@@ -1935,8 +1935,8 @@ describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () =
 
     // The verdict is forwarded as the 8th arg so the PR body surfaces the
     // "not A+" note. The after-exec call has no verdict yet.
-    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
-    expect(mockCreatePR.mock.calls[1][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
+    expect(mockCreatePR.mock.calls[0][6]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[1][6]).toBe("AC_MET_BUT_NOT_A_PLUS");
   });
 });
 
@@ -2480,7 +2480,7 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
       worktree: { path: "/tmp/wt-1247", branch: "feature/1247" },
     });
     expect(mockCreatePR).toHaveBeenCalledTimes(1);
-    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[0][6]).toBeUndefined();
     expect(stateManager.issues.get(1247)?.execSummary).toBe(
       "The exec summary from run 1.",
     );
@@ -2699,12 +2699,12 @@ describe("#1247: exec summary persists for a later qa-only run (AC-3) and --no-p
       expect(afterExec).toBeLessThan(qaOrder);
       expect(afterQa).toBeGreaterThan(qaOrder);
       // After exec: exec's summary, no verdict yet. After qa: the verdict.
-      expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
+      expect(mockCreatePR.mock.calls[0][6]).toBeUndefined();
       expect(
         (mockCreatePR.mock.calls[0].at(-1) as { execOutput?: string })
           .execOutput,
       ).toBe("## Summary\nexec work");
-      expect(mockCreatePR.mock.calls[1][7]).toBe("READY_FOR_MERGE");
+      expect(mockCreatePR.mock.calls[1][6]).toBe("READY_FOR_MERGE");
     });
 
     // #1386: the run's one resolved base reaches `rebaseBeforePR` and both
@@ -3847,8 +3847,8 @@ describe("#1246: a PR from a run QA has not reviewed says so", () => {
       qaNotRun?: { phasesRun: string[] };
     };
     return buildAutomatedPRBody(call[1] as number, {
-      qaVerdict: call[7] as string | undefined,
-      readyGateReport: call[8] as string | undefined,
+      qaVerdict: call[6] as string | undefined,
+      readyGateReport: call[7] as string | undefined,
       qaNotRun: opts.qaNotRun,
     });
   }

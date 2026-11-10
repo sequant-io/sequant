@@ -206,7 +206,7 @@ describe("run --ready-gate wiring (#817)", () => {
       "ready_for_merge",
     );
     // PR body carries no gate report.
-    expect(mockCreatePR.mock.calls[0]?.[8]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
   });
 
   it("AC-3/AC-1: invokes the gate when the flag is on and persists its terminal status", async () => {
@@ -279,11 +279,11 @@ describe("run --ready-gate wiring (#817)", () => {
   it("AC-6: surfaces the gate report in the PR body", async () => {
     await runIssueWithLogging(makeCtx({ config: { readyGate: true } }));
 
-    // #1247 AC-5: once after exec, once after the gate. createPR's 9th
+    // #1247 AC-5: once after exec, once after the gate. createPR's 8th
     // positional arg is the readyGateReport; only the post-gate call has it.
     expect(mockCreatePR).toHaveBeenCalledTimes(2);
-    expect(mockCreatePR.mock.calls[0][8]).toBeUndefined();
-    expect(mockCreatePR.mock.calls[1][8]).toBe(cannedGate.report);
+    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[1][7]).toBe(cannedGate.report);
   });
 
   it("gate failure is non-fatal — the run still reaches PR with the standard status", async () => {
@@ -322,7 +322,7 @@ describe("run --ready-gate wiring (#817)", () => {
     // Mutually exclusive with a real outcome — a crash must never look gated.
     expect(result.readyGate).toBeUndefined();
     // And the PR body must not claim a gate report it never produced.
-    expect(mockCreatePR.mock.calls[0]?.[8]).toBeUndefined();
+    expect(mockCreatePR.mock.calls[0][7]).toBeUndefined();
   });
 
   it("a successful gate leaves no failure marker", async () => {
