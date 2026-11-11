@@ -15,6 +15,11 @@
  * long-term producer and replaces the parse at the same call site.
  */
 import { extractAcceptanceCriteria } from "../ac-parser.js";
+import type {
+  EvidenceReach,
+  EvidenceReachReason,
+  NeedsHumanAc,
+} from "../evidence-reach.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
@@ -173,6 +178,10 @@ export interface AcStatusEntry {
   id: string;
   status: ACStatus;
   notes?: string;
+  /** Whether the AC's Evidence stays in the worktree (#1652, E-3). */
+  reach?: EvidenceReach;
+  /** Why the Evidence needs a person; only with `reach: "needs-human"`. */
+  reachReasons?: EvidenceReachReason[];
 }
 
 export interface RecordAcStatusesArgs {
@@ -186,6 +195,11 @@ export interface RecordAcStatusesArgs {
    * yet. Defaults to `gh issue view`.
    */
   fetchBody?: (issueNumber: number) => string | null;
+  /**
+   * The issue's needs-human ACs (#1652), classified at the qa dispatch. When
+   * given, every entry carries `reach`; omitted, no entry does.
+   */
+  needsHuman?: readonly NeedsHumanAc[];
 }
 
 export interface RecordAcStatusesResult {
@@ -201,11 +215,12 @@ const CONTEXT = "ac-status:recordAcStatuses";
  * tracked but has none (only `/spec` registers it otherwise). Null when the
  * issue is not tracked, has no ACs, or a read fails.
  */
-async function acRecordFor(
-  args: RecordAcStatusesArgs,
+export async function acRecordFor(
+  issueNumber: number,
   stateManager: StateManager,
+  fetchBody: (issueNumber: number) => string | null = (n) =>
+    new GitHubProvider().fetchIssueBodySync(String(n)),
 ): Promise<AcceptanceCriteria | null> {
-  const { issueNumber } = args;
   try {
     const issueState = await stateManager.getIssueState(issueNumber);
     if (!issueState) return null;
@@ -214,9 +229,6 @@ async function acRecordFor(
     noteSuppressed("state", err, CONTEXT);
     return null;
   }
-  const fetchBody =
-    args.fetchBody ??
-    ((n: number) => new GitHubProvider().fetchIssueBodySync(String(n)));
   const body = fetchBody(issueNumber);
   if (!body) return null;
   const record = extractAcceptanceCriteria(body);
@@ -240,22 +252,34 @@ async function acRecordFor(
 export async function recordAcStatuses(
   args: RecordAcStatusesArgs,
 ): Promise<RecordAcStatusesResult> {
-  const { issueNumber, output, stateManager, logWriter } = args;
+  const { issueNumber, output, stateManager, logWriter, needsHuman } = args;
   const empty: RecordAcStatusesResult = { acs: [], ignored: [] };
   if (!stateManager) return empty;
   try {
-    const record = await acRecordFor(args, stateManager);
+    const record = await acRecordFor(
+      issueNumber,
+      stateManager,
+      args.fetchBody,
+    );
     if (!record || record.items.length === 0) return empty;
 
     const rows = parseAcRows(
       output,
       record.items.map((item) => item.id),
     );
+    const reachById = needsHuman
+      ? new Map(needsHuman.map((ac) => [ac.id.toUpperCase(), ac.reasons]))
+      : null;
     const acs: AcStatusEntry[] = record.items.map((item) => {
       const row = rows.get(item.id.toUpperCase()) ?? { status: "unknown" };
-      return row.notes
-        ? { id: item.id, status: row.status, notes: row.notes }
-        : { id: item.id, status: row.status };
+      const entry: AcStatusEntry = { id: item.id, status: row.status };
+      if (row.notes) entry.notes = row.notes;
+      if (reachById) {
+        const reasons = reachById.get(item.id.toUpperCase());
+        entry.reach = reasons ? "needs-human" : "worktree";
+        if (reasons) entry.reachReasons = [...reasons];
+      }
+      return entry;
     });
     for (const ac of acs) {
       try {

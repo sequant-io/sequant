@@ -249,6 +249,26 @@ export function displaySummary(
     console.log("");
   }
 
+  // #1652 (E-4): an AC whose Evidence names an env file, a production CLI or
+  // a live URL is a person's to run. Printed from the classifier, not from
+  // the QA output: whether the qa agent obeyed the do-not-run block is
+  // unverified (OQ-3). The command stays backticked and verbatim (#1655 greps
+  // this line).
+  const needsHuman = results.filter((r) => r.needsHuman?.length);
+  if (needsHuman.length > 0) {
+    console.log(colors.muted("  Evidence a person runs (#1652):"));
+    for (const r of needsHuman) {
+      for (const ac of r.needsHuman ?? []) {
+        for (const command of ac.commands) {
+          console.log(
+            `     #${r.issueNumber} ${ac.id} needs a person: \`${command}\``,
+          );
+        }
+      }
+    }
+    console.log("");
+  }
+
   // #760: a chain link whose checkpoint commit failed keeps its own work but
   // loses the recovery point resume depends on, and the per-issue warning has
   // long scrolled past by now on a multi-hour chain. Restate it at the summary,
