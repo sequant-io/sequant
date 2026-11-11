@@ -68,3 +68,29 @@ describe("#1647 AC-3: removed settings keys", () => {
     expect(settings.run.timeout).toBe(900);
   });
 });
+
+describe("#1648 AC-4: removed run.fullQa", () => {
+  const RAW_FULLQA = { run: { timeout: 900, fullQa: true } };
+
+  it("fullQa: warns exactly once, naming 3.0, with no unknown-key warning", () => {
+    const { warnings } = validateSettings(RAW_FULLQA);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].path).toBe("run.fullQa");
+    expect(warnings[0].message).toMatch(/removed in 3\.0/);
+    expect(warnings[0].message).not.toMatch(/Unknown key/);
+  });
+
+  it("fullQa: drops the key, keeps sibling settings, and the run resolves without it", () => {
+    const { settings } = validateSettings(RAW_FULLQA);
+    const config = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+
+    expect(settings.run.timeout).toBe(900);
+    expect("fullQa" in settings.run).toBe(false);
+    expect(config.fullQa).toBeFalsy();
+  });
+});

@@ -656,14 +656,6 @@ export const runToolInputSchema = {
     .string()
     .optional()
     .describe("Agent driver for phase execution (default: configured default)"),
-  fullQa: z
-    .boolean()
-    .optional()
-    .describe(
-      "Force full-weight (standalone) QA regardless of resume/context state " +
-        "(mirrors CLI --full-qa). Requires sequant >= 2.15.0 — older servers " +
-        "silently drop this param (#972 precedent).",
-    ),
 };
 
 /** @internal Exported for testing only — the CLI arg-forwarding logic for `sequant_run` (#982). */
@@ -674,11 +666,10 @@ export function buildRunArgs(
     qualityLoop?: boolean;
     force?: boolean;
     agent?: string;
-    fullQa?: boolean;
   },
   prefixArgs: string[],
 ): string[] {
-  const { issues, phases, qualityLoop, force, agent, fullQa } = options;
+  const { issues, phases, qualityLoop, force, agent } = options;
   const args = [...prefixArgs, "run", ...issues.map(String)];
   if (phases) {
     args.push("--phases", phases);
@@ -691,9 +682,6 @@ export function buildRunArgs(
   }
   if (agent) {
     args.push("--agent", agent);
-  }
-  if (fullQa) {
-    args.push("--full-qa");
   }
   args.push("--log-json");
   return args;
@@ -725,14 +713,12 @@ export function registerRunTool(server: McpServer): void {
         qualityLoop,
         force,
         agent,
-        fullQa,
       }: {
         issues: number[];
         phases?: string;
         qualityLoop?: boolean;
         force?: boolean;
         agent?: string;
-        fullQa?: boolean;
       },
       extra: ToolHandlerExtra,
     ) => {
@@ -756,7 +742,7 @@ export function registerRunTool(server: McpServer): void {
 
       // Build command arguments
       const args = buildRunArgs(
-        { issues, phases, qualityLoop, force, agent, fullQa },
+        { issues, phases, qualityLoop, force, agent },
         prefixArgs,
       );
 

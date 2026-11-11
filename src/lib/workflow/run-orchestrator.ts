@@ -114,24 +114,6 @@ import {
 } from "./config-resolver.js";
 import { pipelineHasFailed } from "./status-derivation.js";
 
-/**
- * Build the stack-manifest line emitted into PR bodies under --stacked.
- *
- * Example for issues `[100, 101, 102]` at `currentIndex=1`:
- *   `Part of stack: #100 → #101 (this) → #102`
- *
- * @internal Exported for testing.
- */
-export function buildStackManifest(
-  issueNumbers: number[],
-  currentIndex: number,
-): string {
-  const parts = issueNumbers.map((n, i) =>
-    i === currentIndex ? `#${n} (this)` : `#${n}`,
-  );
-  return `Part of stack: ${parts.join(" → ")}`;
-}
-
 // ── Public types ────────────────────────────────────────────────────────────
 
 /**
@@ -2026,8 +2008,7 @@ export class RunOrchestrator {
       // the predecessor branch still pointed at the base, so on a fresh run each
       // successor effectively branched from main. Now that the predecessor has
       // executed and committed, re-rebase this successor's worktree onto the
-      // predecessor's *local* committed tip — independent of --stacked, and
-      // targeting the local feature branch (not origin/main). This is what makes
+      // predecessor's *local* committed tip, targeting the local feature branch (not origin/main). This is what makes
       // the chain contract ("each branches from previous") actually hold.
       if (options.chain && i > 0) {
         const successorWorktree = this.cfg.worktreeMap.get(issueNumber);
@@ -2067,9 +2048,8 @@ export class RunOrchestrator {
             break;
           }
         } else {
-          // The worktree map is expected to be fully populated for a chain (the
-          // --stacked block below treats a missing predecessor branch as
-          // unreachable). If it isn't, the successor cannot be chained onto its
+          // The worktree map is expected to be fully populated for a chain (a
+          // missing entry is unreachable). If it isn't, the successor cannot be chained onto its
           // predecessor's work — the same end state as a rebase conflict — so we
           // break the chain identically rather than letting the successor
           // silently branch from its un-rebased base (the original #748 bug).
@@ -2094,26 +2074,6 @@ export class RunOrchestrator {
         }
       }
 
-      // #605: under --stacked, non-first PRs target the predecessor branch.
-      // The final PR still targets `main` (AC-3 open-question default) so the
-      // stack can land partially. Manifest renders for every PR in the stack.
-      let predecessorBranch: string | undefined;
-      let stackManifest: string | undefined;
-      if (options.chain && options.stacked) {
-        if (i > 0 && i < issueNumbers.length - 1) {
-          // Invariant: chain breaks on prior failure (see `break` below), so the
-          // predecessor's worktree is always in worktreeMap when we reach this
-          // branch. The optional-chained fallback to undefined is unreachable.
-          predecessorBranch = this.cfg.worktreeMap.get(
-            issueNumbers[i - 1],
-          )?.branch;
-        } else if (i > 0) {
-          // Last PR: still emit manifest, but base stays main (no predecessor).
-          // intentionally undefined predecessorBranch
-        }
-        stackManifest = buildStackManifest(issueNumbers, i);
-      }
-
       const result = await this.executeOneIssue({
         issueNumber,
         batchCtx,
@@ -2121,8 +2081,6 @@ export class RunOrchestrator {
           ? {
               enabled: true,
               isLast: i === issueNumbers.length - 1,
-              predecessorBranch,
-              stackManifest,
             }
           : undefined,
       });
@@ -2193,8 +2151,6 @@ export class RunOrchestrator {
     chain?: {
       enabled: boolean;
       isLast: boolean;
-      predecessorBranch?: string;
-      stackManifest?: string;
     };
     parallelIssueNumber?: number;
   }): Promise<IssueResult> {

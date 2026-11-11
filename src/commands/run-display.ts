@@ -25,7 +25,6 @@ import {
   formatRateLimitMessage,
   isBillingFailure,
 } from "../lib/errors.js";
-import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
 import { latestWhere } from "../lib/workflow/latest-phase.js";
 import { LOOP_PHASE } from "../lib/workflow/status-derivation.js";
 import type { IssueResult } from "../lib/workflow/types.js";
@@ -294,19 +293,6 @@ export function displaySummary(
     console.log("");
   }
 
-  if (mergedOptions.reflect && results.length > 0) {
-    const reflection = analyzeRun({
-      results,
-      issueInfoMap: result.issueInfoMap,
-      runLog: result.logWriter?.getRunLog() ?? null,
-      config: { phases: config.phases, qualityLoop: config.qualityLoop },
-    });
-    const reflectionOutput = formatReflection(reflection);
-    if (reflectionOutput) {
-      console.log(reflectionOutput);
-      console.log("");
-    }
-  }
   const passed = results.filter((r) => r.success).length;
   if (results.length > 1 && passed > 0 && !config.dryRun) {
     console.log(
