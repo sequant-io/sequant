@@ -396,6 +396,15 @@ export const IssueLogSchema = z.object({
         id: z.string(),
         status: ACStatusSchema,
         notes: z.string().optional(),
+        /**
+         * #1652 (E-3): whether the AC's Evidence stays in the worktree or a
+         * person runs it. Optional and additive, so the log stays at
+         * `version: 1`.
+         */
+        reach: z.enum(["worktree", "needs-human"]).optional(),
+        reachReasons: z
+          .array(z.enum(["env-file", "production-cli", "live-url"]))
+          .optional(),
       }),
     )
     .optional(),

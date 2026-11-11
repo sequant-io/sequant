@@ -722,3 +722,56 @@ describe("displaySummary — PR-skip reason surfaces on a successful run (#920)"
     expect(input.issues[0].prSkippedReason).toBeUndefined();
   });
 });
+
+/**
+ * #1652 AC-4 (E-4): one `needs a person` line per needs-human command, read
+ * from the classifier's result on `IssueResult`, not from the QA output.
+ */
+describe("displaySummary — needs a person (#1652)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("prints one needs a person line per needs-human AC with its command, backticked", () => {
+    const output = capture(
+      runResult([
+        issueResult({
+          issueNumber: 1652,
+          // A passing QA verdict does not suppress the line.
+          phaseResults: [phase({ verdict: "READY_FOR_MERGE" })],
+          needsHuman: [
+            {
+              id: "AC-2",
+              reasons: ["env-file"],
+              commands: ["npx tsx --env-file=.env.local scripts/dev/query.ts"],
+            },
+            {
+              id: "AC-4",
+              reasons: ["production-cli"],
+              commands: ["vercel env ls production"],
+            },
+          ],
+        }),
+        issueResult({ issueNumber: 7 }),
+      ]),
+    );
+
+    const lines = output
+      .split("\n")
+      .filter((l) => l.includes("needs a person"));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain(
+      "#1652 AC-2 needs a person: `npx tsx --env-file=.env.local scripts/dev/query.ts`",
+    );
+    expect(lines[1]).toContain(
+      "#1652 AC-4 needs a person: `vercel env ls production`",
+    );
+    // #1655 AC-2's grep: one character, then the command.
+    expect(output).toMatch(/needs a person: .npx tsx --env-file/);
+  });
+
+  it("prints no needs a person line when no AC needs one", () => {
+    const output = capture(runResult([issueResult({ issueNumber: 7 })]));
+    expect(output).not.toContain("needs a person");
+  });
+});

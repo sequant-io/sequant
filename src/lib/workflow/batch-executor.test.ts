@@ -210,6 +210,12 @@ beforeEach(() => {
     GitHubProvider.prototype,
     "fetchIssueCommentBodiesSync",
   ).mockReturnValue([]);
+  // #1652: the qa dispatch reads the AC record, falling back to the issue
+  // body through `gh issue view` when state has none; null is what it
+  // returns when gh fails.
+  vi.spyOn(GitHubProvider.prototype, "fetchIssueBodySync").mockReturnValue(
+    null,
+  );
   // Default: all phases succeed
   mockExecutePhase.mockResolvedValue(successResult("exec"));
 });
