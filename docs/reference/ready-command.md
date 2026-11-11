@@ -1,6 +1,6 @@
 # Ready Command
 
-**Quick Start:** After a resolve finishes, run `sequant ready <issue>` to reproduce the maintainer's manual fresh-session A+ QA pass deterministically. It drives the issue's worktree through a full-weight `qa → loop → qa` pipeline, surfaces every gap in a structured report, and **stops at the human merge gate — it never merges.**
+**Quick Start:** After a resolve finishes, run `sequant ready <issue>` to run a full-weight A+ QA pass deterministically. It drives the issue's worktree through a full-weight `qa → loop → qa` pipeline, surfaces every gap in a structured report, and **stops at the human merge gate — it never merges.**
 
 ## Access
 
@@ -18,7 +18,7 @@ gh pr merge 712          # human decides
 
 ## Why it exists
 
-A study of the maintainer's standalone `/qa` second looks found that a second pass often catches what the first QA pass accepted. The original 2026-05-30 figure is not reproducible from the surviving transcripts; the reproducible figure is **10 of 27 reviews (37%) caught a would-ship bug**. 7 of those 10 landed only after the human's "any gaps?" follow-up and 3 in the first verdict; none needed a step that orchestrated QA skips. Most of the value is therefore the follow-up pass, which `sequant ready` automates ([dataset](../investigations/qa-second-look-dataset.md)). The design also closes two structural gaps, although no catch in the reconstructed set depended on the first:
+The design closes two structural gaps. It makes no claim about how many defects a second pass catches: on fixture #34 the final verdict named +0.025 more planted defects than the first, null by #1344's rule, and what the loop did reliably was turn the first verdict's named catch into a fix commit (8 of 8 pairs). The earlier n = 27 study is kept as history in the [dataset](../investigations/qa-second-look-dataset.md); the gate asks no "any gaps?" probe, so it is not a justification for the gate. See [the measurement](../investigations/qa-second-look-measured.md).
 
 1. **Orchestrated QA trusts the orchestrator's git state** and skips the branch-freshness / process-state pre-flight checks — exactly the no-implementation / divergent-branch class.
 2. **The fullsolve QA loop stops at "good enough"** (`AC_MET_BUT_NOT_A_PLUS`) and never drives toward A+.

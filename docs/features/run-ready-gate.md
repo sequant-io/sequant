@@ -1,10 +1,12 @@
 # Run Ready Gate (`--ready-gate`)
 
-**Quick Start:** `sequant run <issue> --ready-gate` runs the post-QA ready gate inside a normal `run`. Once the issue's standard phases pass, it drives one more full-weight `qa → loop → qa` gate (the same engine as `sequant ready`) to the configured policy **before** opening the PR — automating the habitual any-gaps → fix-gaps second look — then stops at the human merge gate. It **never merges**. Off by default.
+**Quick Start:** `sequant run <issue> --ready-gate` runs the post-QA ready gate inside a normal `run`. Once the issue's standard phases pass, it drives one more full-weight `qa → loop → qa` gate (the same engine as `sequant ready`) to the configured policy **before** opening the PR, then stops at the human merge gate. It **never merges**. Off by default.
 
 ## Why
 
-Session-log analysis showed that after essentially every `/qa`, the maintainer manually typed the same triple: a gap probe ("any gaps?"), a fix command ("fix all gaps"), then "merge". That probe reliably surfaced real defects the first `/qa` accepted (10 of 27 reconstructed second looks caught a would-ship bug, 7 of them only after the "any gaps?" follow-up; the original study figure is not reproducible from the surviving transcripts — see the [dataset](../investigations/qa-second-look-dataset.md)). `sequant ready` (#683) already automates exactly that loop — but on the `run` path it required a second, manually-invoked command. `--ready-gate` makes it reachable in-line, while keeping the human merge gate deliberate.
+`sequant ready` (#683) drives a full-weight `qa → loop → qa` pass to a policy, but on the `run` path it needed a second, manually-invoked command. `--ready-gate` makes it reachable in-line, while keeping the human merge gate deliberate.
+
+**What was measured (#1344).** On fixture #34 the gate's final verdict named +0.025 more planted defects than the first verdict, which is null by #1344's rule, so the docs claim no catch rate. What the loop did reliably was turn the first verdict's named catch into a fix commit (8 of 8 pairs). The gate asks no "any gaps?" probe. See [the measurement](../investigations/qa-second-look-measured.md).
 
 It also gives the #749 `AC_MET_BUT_NOT_A_PLUS` break-to-PR outcome an automatic escalation path: with the flag, that verdict is re-driven through the gate per policy instead of dead-ending at the PR.
 
@@ -26,7 +28,7 @@ The gate reuses **all** of `sequant ready`'s bounds — no new configuration is 
 | Token budget | disabled on the run path (the iteration cap bounds cost) |
 | Stagnation guard (`LOOP_NO_DIFF`), Non-Goals handling | internal to the gate engine (Non-Goals parsed from the issue body) |
 
-Under the default `ac` policy, `AC_MET_BUT_NOT_A_PLUS` is already at threshold, so the gate's value there is the **fresh second look** — a re-verification that can surface (and then loop-fix) an `AC_NOT_MET` the first pass missed — rather than an automatic push to A+. Set `ready.policy` to `a-plus` to drive toward `READY_FOR_MERGE`.
+Under the default `ac` policy, `AC_MET_BUT_NOT_A_PLUS` is already at threshold, so the gate stops there rather than pushing to A+; it re-runs QA and loop-fixes only an `AC_NOT_MET`. Set `ready.policy` to `a-plus` to drive toward `READY_FOR_MERGE`.
 
 ## Usage
 
@@ -51,7 +53,7 @@ That degradation is **reported, never silent**. The summary lists the issue unde
      #42: ✗ gate did not run · <error> · PR opened ungated — re-run `sequant ready 42`
 ```
 
-Without that line a crashed gate would look identical to a clean one, and you would believe a second look happened when it never did.
+Without that line a crashed gate would look identical to a clean one, and you would believe the gate ran when it never did.
 
 ## Options & Settings
 
@@ -59,7 +61,7 @@ Without that line a crashed gate would look identical to a clean one, and you wo
 |--------|-------------|---------|
 | `--ready-gate` | Run the post-QA ready gate after phases succeed, before the PR. Never merges. | `false` (off) |
 
-No settings accompany the flag — the gate sources its policy and bounds from the existing `ready` and `run` settings. See the [run command reference](../reference/run-command.md#ready-gate-post-qa-second-look) and the [`sequant ready` reference](../reference/ready-command.md).
+No settings accompany the flag — the gate sources its policy and bounds from the existing `ready` and `run` settings. See the [run command reference](../reference/run-command.md#ready-gate) and the [`sequant ready` reference](../reference/ready-command.md).
 
 ## Out of Scope
 
