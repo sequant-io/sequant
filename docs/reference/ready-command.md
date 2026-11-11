@@ -18,7 +18,7 @@ gh pr merge 712          # human decides
 
 ## Why it exists
 
-The design closes two structural gaps. It makes no claim about how many defects a second pass catches: on fixture #34 the final verdict named +0.025 more planted defects than the first, null by #1344's rule, and what the loop did reliably was turn the first verdict's named catch into a fix commit (8 of 8 pairs). The earlier n = 27 study is kept as history in the [dataset](../investigations/qa-second-look-dataset.md); the gate asks no "any gaps?" probe, so it is not a justification for the gate. See [the measurement](../investigations/qa-second-look-measured.md).
+The design closes two structural gaps. It makes no claim about how many defects a second pass catches: on fixture #34 the final verdict named +0.025 more planted defects than the first, null by #1344's rule, and what the loop did reliably was turn the first verdict's named catch into a fix commit (8 of 8 pairs). The earlier n = 27 study is kept as history in the [dataset](../investigations/qa-second-look-dataset.md); the gate asks no "any gaps?" probe, so it is not a justification for the gate. The fixture #34 run's record is not in this repo; #1344's own record, [qa-second-look-measured.md](../investigations/qa-second-look-measured.md), stops at the pilot.
 
 1. **Orchestrated QA trusts the orchestrator's git state** and skips the branch-freshness / process-state pre-flight checks — exactly the no-implementation / divergent-branch class.
 2. **The fullsolve QA loop stops at "good enough"** (`AC_MET_BUT_NOT_A_PLUS`) and never drives toward A+.

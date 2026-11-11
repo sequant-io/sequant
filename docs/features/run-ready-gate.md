@@ -6,7 +6,7 @@
 
 `sequant ready` (#683) drives a full-weight `qa → loop → qa` pass to a policy, but on the `run` path it needed a second, manually-invoked command. `--ready-gate` makes it reachable in-line, while keeping the human merge gate deliberate.
 
-**What was measured (#1344).** On fixture #34 the gate's final verdict named +0.025 more planted defects than the first verdict, which is null by #1344's rule, so the docs claim no catch rate. What the loop did reliably was turn the first verdict's named catch into a fix commit (8 of 8 pairs). The gate asks no "any gaps?" probe. See [the measurement](../investigations/qa-second-look-measured.md).
+**What was measured.** A run of the gate on fixture #34 (eight pairs, scored by the null rule pre-registered in #1344) found that its final verdict named +0.025 more planted defects than the first verdict, null by that rule, so these docs claim no catch rate. What the loop did reliably was turn the first verdict's named catch into a fix commit (8 of 8 pairs). The gate asks no "any gaps?" probe. That run's record is not in this repo; #1344's own record, [qa-second-look-measured.md](../investigations/qa-second-look-measured.md), stops at the pilot, and its arms were not run.
 
 It also gives the #749 `AC_MET_BUT_NOT_A_PLUS` break-to-PR outcome an automatic escalation path: with the flag, that verdict is re-driven through the gate per policy instead of dead-ending at the PR.
 

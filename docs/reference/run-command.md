@@ -255,7 +255,7 @@ SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
 
 ### Ready Gate
 
-**Default: off.** `--ready-gate` opts a `sequant run` into the same post-QA gate as [`sequant ready`](ready-command.md), without the second manual command. After a `/qa` accepts an issue, it drives one more full-weight `qa → loop → qa` pass to the configured policy, turning each gap the first verdict names into a fix commit, then hands back to a human. It asks no "any gaps?" probe and claims no catch rate: on fixture #34 the final verdict named +0.025 more planted defects than the first, null by the rule in #1344 (see [the measurement](../investigations/qa-second-look-measured.md)); what the loop did reliably was fix the first verdict's named catch (8 of 8 pairs).
+**Default: off.** `--ready-gate` opts a `sequant run` into the same post-QA gate as [`sequant ready`](ready-command.md), without the second manual command. After a `/qa` accepts an issue, it drives one more full-weight `qa → loop → qa` pass to the configured policy, turning each gap the first verdict names into a fix commit, then hands back to a human. It asks no "any gaps?" probe and claims no catch rate: on fixture #34 the final verdict named +0.025 more planted defects than the first, null by the rule pre-registered in #1344 (that run's record is not in this repo; #1344's own record, [qa-second-look-measured.md](../investigations/qa-second-look-measured.md), stops at the pilot); what the loop did reliably was fix the first verdict's named catch (8 of 8 pairs).
 
 ```bash
 npx sequant run 42 --ready-gate      # phases, then the gate, then a PR — never merges
