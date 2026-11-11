@@ -9,6 +9,7 @@ import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
 import { ui } from "../lib/cli-ui.js";
 import { parseBatches } from "../lib/workflow/batch-executor.js";
 import { RunOrchestrator } from "../lib/workflow/run-orchestrator.js";
+import { emitExperimentalWarnings } from "./run-experimental.js";
 import { displayConfig, displaySummary } from "./run-display.js";
 import { buildProgressWiring } from "./run-progress.js";
 import {
@@ -87,6 +88,8 @@ export async function runCommand(
       ),
     );
   }
+
+  emitExperimentalWarnings(issues, options, batches);
 
   const init = { options, settings, manifest: manifestForRun(manifest) };
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
