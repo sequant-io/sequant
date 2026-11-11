@@ -5,10 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  getPhasePrompt,
-  PROMPT_CONTEXT_SENTINEL,
-} from "./phase-executor.js";
+import { getPhasePrompt, PROMPT_CONTEXT_SENTINEL } from "./phase-executor.js";
 import { withEvidenceReachContext } from "./batch-executor.js";
 import { needsHumanAcs } from "../evidence-reach.js";
 import type { ExecutionConfig } from "./types.js";

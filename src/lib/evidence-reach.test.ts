@@ -91,9 +91,9 @@ describe("classifyEvidenceReach — worktree (#1652 AC-1)", () => {
   });
 
   it("leaves a grep whose pattern contains https:// as worktree", () => {
-    expect(
-      classifyEvidenceReach("`grep -c 'https://x' f` → `1`").reach,
-    ).toBe("worktree");
+    expect(classifyEvidenceReach("`grep -c 'https://x' f` → `1`").reach).toBe(
+      "worktree",
+    );
     expect(
       classifyEvidenceReach(
         "`git grep -nE 'http://a|https://b.example.com' src`",

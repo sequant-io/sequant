@@ -756,7 +756,9 @@ describe("displaySummary — needs a person (#1652)", () => {
       ]),
     );
 
-    const lines = output.split("\n").filter((l) => l.includes("needs a person"));
+    const lines = output
+      .split("\n")
+      .filter((l) => l.includes("needs a person"));
     expect(lines).toHaveLength(2);
     expect(lines[0]).toContain(
       "#1652 AC-2 needs a person: `npx tsx --env-file=.env.local scripts/dev/query.ts`",

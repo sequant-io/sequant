@@ -256,11 +256,7 @@ export async function recordAcStatuses(
   const empty: RecordAcStatusesResult = { acs: [], ignored: [] };
   if (!stateManager) return empty;
   try {
-    const record = await acRecordFor(
-      issueNumber,
-      stateManager,
-      args.fetchBody,
-    );
+    const record = await acRecordFor(issueNumber, stateManager, args.fetchBody);
     if (!record || record.items.length === 0) return empty;
 
     const rows = parseAcRows(
