@@ -28,6 +28,8 @@ npx sequant run 100 101 102
 
 Processes issues #100, #101, and #102. By default, issues continue processing even if one fails.
 
+> **Experimental.** Multi-issue runs print a warning to stderr before any worktree is provisioned: 41 of 87 recorded multi-issue runs succeeded, against 301 of 366 single-issue runs (sequant's own runs, 2026-01-21 to 2026-10-28). The counts are fixed text, not read from your metrics. `--json` output is unchanged.
+
 ### Sequential Mode with Dependencies
 
 ```bash
@@ -177,6 +179,8 @@ npx sequant run 42 --quality-loop --max-iterations 5
 When a phase fails on one iteration but **recovers** on a later one, the issue is reported as passed consistently across the live view, the summary table, and the JSON log — a transient failure that the loop later fixes is not left showing as `failed`. The summary's failure reason reflects the *last* failing attempt, not the first.
 
 ### Chain Mode
+
+> **Experimental.** `--chain` prints a warning to stderr before any worktree is provisioned: 3 of 9 recorded `--chain` runs succeeded (sequant's own runs to 2026-10-28; 2 of 7 in #604), against 301 of 366 single-issue runs. A `--chain` run of several issues also prints the multi-issue warning (41 of 87). The counts are fixed text, not read from your metrics.
 
 Run dependent issues where each branches from the previous:
 
