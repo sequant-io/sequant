@@ -28,6 +28,8 @@ npx sequant run 100 101 102
 
 Processes issues #100, #101, and #102. By default, issues continue processing even if one fails.
 
+> **Experimental.** Multi-issue runs print a warning to stderr before any worktree is provisioned: 41 of 87 recorded multi-issue runs succeeded, against 301 of 366 single-issue runs (sequant's own runs, 2026-01-21 to 2026-10-28). The counts are fixed text, not read from your metrics. `--json` output is unchanged.
+
 ### Sequential Mode with Dependencies
 
 ```bash
@@ -177,6 +179,8 @@ npx sequant run 42 --quality-loop --max-iterations 5
 When a phase fails on one iteration but **recovers** on a later one, the issue is reported as passed consistently across the live view, the summary table, and the JSON log — a transient failure that the loop later fixes is not left showing as `failed`. The summary's failure reason reflects the *last* failing attempt, not the first.
 
 ### Chain Mode
+
+> **Experimental.** `--chain` prints a warning to stderr before any worktree is provisioned: 3 of 9 recorded `--chain` runs succeeded (sequant's own runs to 2026-10-28; 2 of 7 in #604), against 301 of 366 single-issue runs. A `--chain` run of several issues also prints the multi-issue warning (41 of 87). The counts are fixed text, not read from your metrics.
 
 Run dependent issues where each branches from the previous:
 
@@ -607,6 +611,8 @@ SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 | `SEQUANT_ISSUE` | The issue number (worktree phases only) |
 | `SEQUANT_ISSUE_TYPE` | The issue type, when known |
 | `SEQUANT_BASE_BRANCH` | The base branch name, without `origin/` (#1460). It is the base recorded for the worktree, or the repository's default branch (`origin/HEAD`) when none is recorded, as for spec. On a repository whose default branch is `master`, it is `master`. |
+
+**Evidence a person runs (#1652).** Before each qa phase, `sequant run` classifies the backticked commands in every AC's `Evidence:` clause. A command that names an env file (`--env-file`, a `.env` path), runs a production CLI (`vercel`, `supabase`, `netlify`, `fly`, `heroku`, `wrangler`, `railway`, `aws`, `gcloud`, `az`, also through `npx`), or requests a URL other than `localhost`, `127.0.0.1`, `0.0.0.0` or `[::1]` is *needs-human*. A URL inside a `grep`, `rg`, `ag` or `git grep` pattern does not count. The qa prompt lists those ACs with their commands and tells the agent not to run them and to report each AC as `PENDING`. The run log's `acs[]` entries record `reach` (`worktree` or `needs-human`) and `reachReasons`, and the run summary prints ``#N AC-N needs a person: `<command>` `` for each such command, whatever the QA output said. The list is fixed; there is no setting.
 
 ## MCP Server Support
 

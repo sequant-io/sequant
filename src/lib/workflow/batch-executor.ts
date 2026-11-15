@@ -73,7 +73,16 @@ import {
 } from "../relay/activation.js";
 import { getSettings } from "../settings.js";
 import { GhCommandError, GitHubProvider } from "./platforms/github.js";
-import { recordAcStatuses, type AcStatusEntry } from "./ac-status.js";
+import {
+  acRecordFor,
+  recordAcStatuses,
+  type AcStatusEntry,
+} from "./ac-status.js";
+import {
+  buildEvidenceReachContext,
+  needsHumanAcs,
+  type NeedsHumanAc,
+} from "../evidence-reach.js";
 import type { PlatformProvider } from "./platforms/platform-provider.js";
 import {
   runReadyGate,
@@ -1214,6 +1223,11 @@ interface IssueRunState {
    * post-QA PR update never runs.
    */
   earlyPr: { number: number; url: string } | null;
+  /**
+   * #1652: the ACs whose Evidence a person runs, classified once at the
+   * first qa dispatch. Null until then.
+   */
+  needsHuman: NeedsHumanAc[] | null;
 }
 
 /** #1507: one outer quality-loop iteration, as its phase steps see it. */
@@ -1253,6 +1267,7 @@ function createIssueRunState(): IssueRunState {
     acNotMetStreak: [],
     repeatHaltBundle: null,
     earlyPr: null,
+    needsHuman: null,
   };
 }
 
@@ -2144,6 +2159,54 @@ async function runPhaseStep(
 }
 
 /**
+ * #1652 (E-2): the config a phase is dispatched with. For qa, the needs-human
+ * ACs become a do-not-run block, joined to any existing `promptContext` so
+ * `getPhasePrompt` still appends one sentinel block. Other phases, and a qa
+ * pass with no needs-human AC, get `base` unchanged.
+ *
+ * @internal Exported for testing only
+ */
+export function withEvidenceReachContext(
+  base: ExecutionConfig,
+  phase: Phase,
+  needsHuman: readonly NeedsHumanAc[],
+): ExecutionConfig {
+  if (phase !== "qa") return base;
+  const block = buildEvidenceReachContext(needsHuman);
+  if (!block) return base;
+  return {
+    ...base,
+    promptContext: base.promptContext
+      ? `${base.promptContext}\n\n${block}`
+      : block,
+  };
+}
+
+/**
+ * #1652: classify the issue's AC Evidence once, from the same AC record
+ * `recordAcStatuses` reads. No state manager (a dry run) or no AC record
+ * classifies nothing.
+ */
+async function classifyIssueEvidence(
+  env: IssueRunEnv,
+  state: IssueRunState,
+): Promise<NeedsHumanAc[]> {
+  if (state.needsHuman) return state.needsHuman;
+  const { issueNumber, services } = env.ctx;
+  let needsHuman: NeedsHumanAc[] = [];
+  if (services.stateManager) {
+    try {
+      const record = await acRecordFor(issueNumber, services.stateManager);
+      if (record) needsHuman = needsHumanAcs(record.items);
+    } catch (err) {
+      noteSuppressed("state", err, "evidence reach");
+    }
+  }
+  state.needsHuman = needsHuman;
+  return needsHuman;
+}
+
+/**
  * Emits the phase's start and dispatches it.
  */
 async function dispatchLoopPhase(
@@ -2184,8 +2247,10 @@ async function dispatchLoopPhase(
     }
   }
 
+  const needsHuman =
+    phase === "qa" ? await classifyIssueEvidence(env, state) : [];
   const dispatchConfig = withActivityHook(
-    env.issueConfig,
+    withEvidenceReachContext(env.issueConfig, phase, needsHuman),
     issueNumber,
     phase,
     onProgress,
@@ -2372,6 +2437,7 @@ async function recordLoopPhaseOutcome(
       output: result.output,
       stateManager,
       logWriter: env.ctx.services.logWriter,
+      needsHuman: state.needsHuman ?? undefined,
     });
     if (ignored.length > 0) {
       warn(
@@ -3105,6 +3171,8 @@ async function deliverIssueBranch(
     // its terminal reason (AC-6).
     readyGate: readyGateResult,
     readyGateError,
+    // #1652 (E-4): whatever the QA output said.
+    ...(state.needsHuman?.length ? { needsHuman: state.needsHuman } : {}),
   };
 }
 

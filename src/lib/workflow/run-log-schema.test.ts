@@ -296,6 +296,66 @@ describe("Zod Schemas", () => {
       expect(() => IssueLogSchema.parse(validIssueLog)).not.toThrow();
     });
 
+    // #1652 AC-3 (E-3): `reach`/`reachReasons` on the `acs[]` entry.
+    describe("acs[] reach (#1652)", () => {
+      it("records reach and reachReasons per AC", () => {
+        const parsed = IssueLogSchema.parse({
+          ...validIssueLog,
+          acs: [
+            {
+              id: "AC-1",
+              status: "pending",
+              reach: "needs-human",
+              reachReasons: ["env-file", "live-url"],
+            },
+            { id: "AC-2", status: "met", reach: "worktree" },
+          ],
+        });
+        expect(parsed.acs?.[0]).toMatchObject({
+          reach: "needs-human",
+          reachReasons: ["env-file", "live-url"],
+        });
+        expect(parsed.acs?.[1].reach).toBe("worktree");
+      });
+
+      it("validates an old version-1 log whose acs[] carry no reach", () => {
+        const oldLog = {
+          version: 1,
+          runId: "550e8400-e29b-41d4-a716-446655440000",
+          startTime: "2024-01-01T10:00:00.000Z",
+          endTime: "2024-01-01T10:30:00.000Z",
+          config: {
+            phases: ["exec", "qa"],
+            sequential: false,
+            qualityLoop: false,
+            maxIterations: 3,
+          },
+          issues: [
+            {
+              ...validIssueLog,
+              acs: [{ id: "AC-1", status: "met", notes: "MET | 3 passed" }],
+            },
+          ],
+          summary: {
+            totalIssues: 1,
+            passed: 1,
+            failed: 0,
+            totalDurationSeconds: 300,
+          },
+        };
+        const parsed = RunLogSchema.parse(oldLog);
+        expect(parsed.issues[0].acs?.[0].reach).toBeUndefined();
+      });
+
+      it("rejects a reach outside the enum", () => {
+        const result = IssueLogSchema.safeParse({
+          ...validIssueLog,
+          acs: [{ id: "AC-1", status: "met", reach: "maybe" }],
+        });
+        expect(result.success).toBe(false);
+      });
+    });
+
     it("accepts empty labels array", () => {
       expect(() =>
         IssueLogSchema.parse({ ...validIssueLog, labels: [] }),

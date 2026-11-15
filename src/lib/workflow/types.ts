@@ -16,6 +16,7 @@ import type { WorktreeInfo } from "./worktree-manager.js";
 import type { SequantError } from "../errors.js";
 import type { ErrorCategory } from "./error-classifier.js";
 import type { EvidenceBundle } from "./divergence-halt.js";
+import type { NeedsHumanAc } from "../evidence-reach.js";
 // Type-only import — erased at compile, so the ready-gate ⇄ types cycle is
 // purely nominal (ready-gate.ts imports these types back, also type-only).
 import type { ReadyResult } from "./ready-gate.js";
@@ -499,6 +500,13 @@ export interface IssueResult {
    * did not. The summary renders this as an explicit "gate did not run" line.
    */
   readyGateError?: string;
+  /**
+   * The ACs whose Evidence a person runs (#1652, E-4): an env file, a
+   * production CLI or a live URL. Set whenever qa was dispatched and any AC
+   * qualifies, whatever the QA output said; the run summary prints each
+   * command.
+   */
+  needsHuman?: NeedsHumanAc[];
 }
 
 /**
