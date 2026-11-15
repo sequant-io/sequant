@@ -64,7 +64,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--batch "<issues>"` | Group issues to run together | - |
 | `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
 | `--auto-wait <minutes>` | Total minutes willing to wait for an exhausted rate-limit window to reopen instead of halting. See [Auto-wait](#auto-wait-for-a-rate-limit-window) | `0` (off) |
-| `--ready-gate` | After an issue's standard phases succeed, run the post-QA ready gate (`qa → loop → qa` to `ready.policy`) before opening the PR. **Never merges** — stops at the human merge gate. See [Ready Gate](#ready-gate-post-qa-second-look) | `false` (off) |
+| `--ready-gate` | After an issue's standard phases succeed, run the post-QA ready gate (`qa → loop → qa` to `ready.policy`) before opening the PR. **Never merges** — stops at the human merge gate. See [Ready Gate](#ready-gate) | `false` (off) |
 | `--models <spec>` | Per-phase Claude model override — a bare value (`sonnet`) applies to every phase, or a comma list of `phase=model` pairs (`spec=fable,exec=sonnet`). See [Per-Phase Model & Effort](#per-phase-model--effort) | none (CLI default model) |
 | `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. See [Per-Phase Model & Effort](#per-phase-model--effort) | none (SDK default) |
 | `--agent <name>` | Agent driver for every phase: `claude-code` (default), `aider`, or `opencode` (**experimental** — see [opencode Issues](../troubleshooting.md#opencode-issues); its promotion gate #997 is deferred). Also settable as `run.agent`. | `claude-code` |
@@ -253,9 +253,9 @@ SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
 
 **In-process only.** The wait is a sleep inside the running process: it does **not** survive closing the terminal. For long waits, run under `tmux`/`screen` or leave the terminal open — or use the durable alternative: a run that halts on a waitable window writes a machine-readable `resumeAt` to issue state and releases its locks, and `sequant resume` (safe to schedule via cron/launchd) re-enters once the window reopens. See [halt-and-resume.md](halt-and-resume.md) (#892).
 
-### Ready Gate (post-QA second look)
+### Ready Gate
 
-**Default: off.** `--ready-gate` opts a `sequant run` into the same post-QA gate as [`sequant ready`](ready-command.md), without the second manual command. It automates the maintainer's habitual any-gaps → fix-gaps → merge triple: after a fresh `/qa` accepts an issue, drive one more full-weight `qa → loop → qa` pass to catch what the first pass missed, then hand back to a human.
+**Default: off.** `--ready-gate` opts a `sequant run` into the same post-QA gate as [`sequant ready`](ready-command.md), without the second manual command. After a `/qa` accepts an issue, it drives one more full-weight `qa → loop → qa` pass to the configured policy, turning each gap the first verdict names into a fix commit, then hands back to a human. It asks no "any gaps?" probe and claims no catch rate: on fixture #34 the final verdict named +0.025 more planted defects than the first, null by the rule pre-registered in #1344 (that run's record is not in this repo; #1344's own record, [qa-second-look-measured.md](../investigations/qa-second-look-measured.md), stops at the pilot); what the loop did reliably was fix the first verdict's named catch (8 of 8 pairs).
 
 ```bash
 npx sequant run 42 --ready-gate      # phases, then the gate, then a PR — never merges
@@ -274,7 +274,7 @@ npx sequant run 42 --ready-gate      # phases, then the gate, then a PR — neve
 | Token budget | disabled on the run path (the iteration cap bounds cost) |
 | Stagnation guard, Non-Goals handling | internal to the gate engine (Non-Goals parsed from the issue body) |
 
-Under the default `ac` policy an `AC_MET_BUT_NOT_A_PLUS` verdict is already at threshold, so the gate's value there is the **fresh second look** — a re-verification that can surface (and then loop-fix) an `AC_NOT_MET` the first pass accepted — not an automatic push to A+. Set `ready.policy` to `a-plus` to drive toward `READY_FOR_MERGE`.
+Under the default `ac` policy an `AC_MET_BUT_NOT_A_PLUS` verdict is already at threshold, so the gate stops there rather than pushing to A+; it re-runs QA and loop-fixes only an `AC_NOT_MET`. Set `ready.policy` to `a-plus` to drive toward `READY_FOR_MERGE`.
 
 The gate outcome (threshold reached vs guard halt) is surfaced in both the end-of-run summary and the PR body, the same way `sequant ready` reports it.
 
