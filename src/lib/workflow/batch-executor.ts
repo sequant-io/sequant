@@ -1027,6 +1027,8 @@ interface ReadyGateForIssueArgs {
   issueNumber: number;
   worktreePath: string;
   config: ExecutionConfig;
+  /** #1681: read for the AC record that feeds the qa passes' do-not-run block. */
+  stateManager?: StateManager;
   shutdownManager?: ShutdownManager;
   phasePauseHandle?: PhasePauseHandle;
   onProgress?: ProgressCallback;
@@ -1067,7 +1069,8 @@ interface ReadyGateForIssueArgs {
  * otherwise a crashed gate is indistinguishable from an approved one, and the
  * whole point of the flag (a second look actually happened) is silently lost.
  */
-async function runReadyGateForIssue(
+/** @internal Exported for testing only */
+export async function runReadyGateForIssue(
   args: ReadyGateForIssueArgs,
 ): Promise<{ result?: ReadyResult; error?: string }> {
   const {
@@ -1100,6 +1103,20 @@ async function runReadyGateForIssue(
     const body = fetchBody(issueNumber);
     const nonGoals = body ? parseNonGoals(body) : [];
 
+    // #1681: the gate's qa passes spread this config (`buildPhaseConfig`), so
+    // the do-not-run block (#1652) reaches each of them; the loop pass sets its
+    // own `promptContext` and does not carry it.
+    let needsHuman: NeedsHumanAc[] = [];
+    if (args.stateManager) {
+      try {
+        const record = await acRecordFor(issueNumber, args.stateManager);
+        if (record) needsHuman = needsHumanAcs(record.items);
+      } catch (err) {
+        noteSuppressed("state", err, "evidence reach (ready gate)");
+      }
+    }
+    const gateConfig = withEvidenceReachContext(config, "qa", needsHuman);
+
     // The gate's phase runner: same executePhaseWithRetry wrapper ready.ts
     // uses, bound to this issue's worktree, shutdown manager, and pause handle.
     const runPhase: ReadyPhaseRunner = (phase, phaseConfig, wt) =>
@@ -1130,7 +1147,7 @@ async function runReadyGateForIssue(
       nonGoals,
       // #863: hand the gate the parent run's own resolved config, whole. The
       // gate applies only its six gate-semantic overrides on top.
-      config,
+      config: gateConfig,
       runPhase,
       onProgress,
       // #937 AC-4: persist the final gap report as an issue comment.
@@ -2858,6 +2875,7 @@ async function settleIssueStatus(
           // #863: `issueConfig`, not `config` — so a docs-labelled issue's gate
           // phases carry the same `issueType` the phases that just ran had.
           config: env.issueConfig,
+          stateManager: env.ctx.services.stateManager ?? undefined,
           shutdownManager,
           phasePauseHandle,
           onProgress,

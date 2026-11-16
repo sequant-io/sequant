@@ -47,6 +47,9 @@ import {
   type ReadyResult,
 } from "../lib/workflow/ready-gate.js";
 import { noteSuppressed } from "../lib/workflow/suppressed.js";
+import { acRecordFor } from "../lib/workflow/ac-status.js";
+import { withEvidenceReachContext } from "../lib/workflow/batch-executor.js";
+import { needsHumanAcs, type NeedsHumanAc } from "../lib/evidence-reach.js";
 
 export interface ReadyCommandOptions {
   policy?: string;
@@ -345,6 +348,16 @@ export async function readyCommand(
       renderer ?? undefined,
     );
 
+  // #1681: the gate's qa passes spread `config`, so the do-not-run block (#1652)
+  // goes in here. An untracked issue has no AC record yet and gets no block.
+  let needsHuman: NeedsHumanAc[] = [];
+  try {
+    const record = await acRecordFor(issueNumber, getStateManager());
+    if (record) needsHuman = needsHumanAcs(record.items);
+  } catch (err) {
+    noteSuppressed("state", err, "ready:evidenceReach");
+  }
+
   let result: ReadyResult;
   const gateStartedAt = Date.now();
   try {
@@ -355,7 +368,7 @@ export async function readyCommand(
       maxIterations,
       tokenBudget,
       nonGoals,
-      config,
+      config: withEvidenceReachContext(config, "qa", needsHuman),
       runPhase,
       onProgress,
       // #937 AC-4: persist the final gap report so it survives the terminal
