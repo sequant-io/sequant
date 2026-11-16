@@ -21,6 +21,7 @@ import {
   AUTO_WAIT_BUFFER_MS,
   parseQaSummary,
   parseSpecDivergence,
+  mapAgentSuccessToPhaseResult,
 } from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
 import {
@@ -3831,6 +3832,34 @@ describe("#1250: a spec-phase SPEC_DIVERGENCE halts the run before exec", () => 
 
     expect(mockExecutePhase.mock.calls.map((c) => c[1])).toContain("exec");
     expect(result.phaseResults.some((p) => p.phase === "exec")).toBe(true);
+  });
+
+  it("spec divergence without timestamp halts before exec", async () => {
+    // The real mapping turns raw agent output into the PhaseResult, so the
+    // parser is exercised rather than a mocked `specDivergence` field.
+    const spec = mapAgentSuccessToPhaseResult(
+      "spec",
+      {
+        success: true,
+        output:
+          'plan\n<!-- SEQUANT_PHASE: {"phase":"spec","status":"failed","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-3","error":"owner must amend AC-3"} -->',
+      },
+      10,
+      process.cwd(),
+      1250,
+      { specMarkerPostedSince: () => false },
+    );
+    expect(spec.specDivergence).toEqual({
+      acs: "AC-3",
+      message: "owner must amend AC-3",
+    });
+
+    const { result, printed } = await runWithSpec(spec);
+
+    expect(mockExecutePhase.mock.calls.map((c) => c[1])).toEqual(["spec"]);
+    expect(result.success).toBe(false);
+    expect(printed).toContain("Ladder halt: SPEC_DIVERGENCE");
+    expect(printed).toContain("Declared impossible: AC-3");
   });
 
   it("parseSpecDivergence reads the outcome from a spec-phase marker", () => {
