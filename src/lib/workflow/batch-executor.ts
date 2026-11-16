@@ -78,11 +78,7 @@ import {
   recordAcStatuses,
   type AcStatusEntry,
 } from "./ac-status.js";
-import {
-  buildEvidenceReachContext,
-  needsHumanAcs,
-  type NeedsHumanAc,
-} from "../evidence-reach.js";
+import { needsHumanAcs, type NeedsHumanAc } from "../evidence-reach.js";
 import type { PlatformProvider } from "./platforms/platform-provider.js";
 import {
   runReadyGate,
@@ -1027,8 +1023,6 @@ interface ReadyGateForIssueArgs {
   issueNumber: number;
   worktreePath: string;
   config: ExecutionConfig;
-  /** #1681: read for the AC record that feeds the qa passes' do-not-run block. */
-  stateManager?: StateManager;
   shutdownManager?: ShutdownManager;
   phasePauseHandle?: PhasePauseHandle;
   onProgress?: ProgressCallback;
@@ -1103,20 +1097,6 @@ export async function runReadyGateForIssue(
     const body = fetchBody(issueNumber);
     const nonGoals = body ? parseNonGoals(body) : [];
 
-    // #1681: the gate's qa passes spread this config (`buildPhaseConfig`), so
-    // the do-not-run block (#1652) reaches each of them; the loop pass sets its
-    // own `promptContext` and does not carry it.
-    let needsHuman: NeedsHumanAc[] = [];
-    if (args.stateManager) {
-      try {
-        const record = await acRecordFor(issueNumber, args.stateManager);
-        if (record) needsHuman = needsHumanAcs(record.items);
-      } catch (err) {
-        noteSuppressed("state", err, "evidence reach (ready gate)");
-      }
-    }
-    const gateConfig = withEvidenceReachContext(config, "qa", needsHuman);
-
     // The gate's phase runner: same executePhaseWithRetry wrapper ready.ts
     // uses, bound to this issue's worktree, shutdown manager, and pause handle.
     const runPhase: ReadyPhaseRunner = (phase, phaseConfig, wt) =>
@@ -1147,7 +1127,7 @@ export async function runReadyGateForIssue(
       nonGoals,
       // #863: hand the gate the parent run's own resolved config, whole. The
       // gate applies only its six gate-semantic overrides on top.
-      config: gateConfig,
+      config,
       runPhase,
       onProgress,
       // #937 AC-4: persist the final gap report as an issue comment.
@@ -2176,30 +2156,6 @@ async function runPhaseStep(
 }
 
 /**
- * #1652 (E-2): the config a phase is dispatched with. For qa, the needs-human
- * ACs become a do-not-run block, joined to any existing `promptContext` so
- * `getPhasePrompt` still appends one sentinel block. Other phases, and a qa
- * pass with no needs-human AC, get `base` unchanged.
- *
- * @internal Exported for testing only
- */
-export function withEvidenceReachContext(
-  base: ExecutionConfig,
-  phase: Phase,
-  needsHuman: readonly NeedsHumanAc[],
-): ExecutionConfig {
-  if (phase !== "qa") return base;
-  const block = buildEvidenceReachContext(needsHuman);
-  if (!block) return base;
-  return {
-    ...base,
-    promptContext: base.promptContext
-      ? `${base.promptContext}\n\n${block}`
-      : block,
-  };
-}
-
-/**
  * #1652: classify the issue's AC Evidence once, from the same AC record
  * `recordAcStatuses` reads. No state manager (a dry run) or no AC record
  * classifies nothing.
@@ -2264,10 +2220,11 @@ async function dispatchLoopPhase(
     }
   }
 
-  const needsHuman =
-    phase === "qa" ? await classifyIssueEvidence(env, state) : [];
+  // #1652: the classification feeds the run log's per-AC `reach` and the
+  // summary; the do-not-run block itself joins in `executePhase` (#1688).
+  if (phase === "qa") await classifyIssueEvidence(env, state);
   const dispatchConfig = withActivityHook(
-    withEvidenceReachContext(env.issueConfig, phase, needsHuman),
+    env.issueConfig,
     issueNumber,
     phase,
     onProgress,
@@ -2875,7 +2832,6 @@ async function settleIssueStatus(
           // #863: `issueConfig`, not `config` — so a docs-labelled issue's gate
           // phases carry the same `issueType` the phases that just ran had.
           config: env.issueConfig,
-          stateManager: env.ctx.services.stateManager ?? undefined,
           shutdownManager,
           phasePauseHandle,
           onProgress,
