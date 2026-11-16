@@ -547,7 +547,7 @@ sequant run 42 --ready-gate   # phases, then the gate, then a PR — never merge
 - **It never merges.** The run stops at the human merge gate with the issue \`waiting_for_human_merge\` (threshold reached) or \`blocked\` (a guard halted it).
 - Reuses \`ready\`'s policy, iteration cap, and stagnation guard — **no new settings**.
 
-Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#ready-gate-post-qa-second-look).
+Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#ready-gate).
 
 ## Documentation
 
