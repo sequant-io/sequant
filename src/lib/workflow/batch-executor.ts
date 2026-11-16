@@ -79,8 +79,9 @@ import {
   type AcStatusEntry,
 } from "./ac-status.js";
 import {
-  buildEvidenceReachContext,
+  joinEvidenceReachContext,
   needsHumanAcs,
+  needsHumanAcsFromBody,
   type NeedsHumanAc,
 } from "../evidence-reach.js";
 import type { PlatformProvider } from "./platforms/platform-provider.js";
@@ -1105,16 +1106,19 @@ export async function runReadyGateForIssue(
 
     // #1681: the gate's qa passes spread this config (`buildPhaseConfig`), so
     // the do-not-run block (#1652) reaches each of them; the loop pass sets its
-    // own `promptContext` and does not carry it.
-    let needsHuman: NeedsHumanAc[] = [];
+    // own `promptContext`, so the runner below joins the block to it (#1688).
+    // An issue with no state record is classified from its body (#1688 AC-2).
+    let record: Awaited<ReturnType<typeof acRecordFor>> = null;
     if (args.stateManager) {
       try {
-        const record = await acRecordFor(issueNumber, args.stateManager);
-        if (record) needsHuman = needsHumanAcs(record.items);
+        record = await acRecordFor(issueNumber, args.stateManager, () => body);
       } catch (err) {
         noteSuppressed("state", err, "evidence reach (ready gate)");
       }
     }
+    const needsHuman = record
+      ? needsHumanAcs(record.items)
+      : needsHumanAcsFromBody(body);
     const gateConfig = withEvidenceReachContext(config, "qa", needsHuman);
 
     // The gate's phase runner: same executePhaseWithRetry wrapper ready.ts
@@ -1123,7 +1127,14 @@ export async function runReadyGateForIssue(
       executePhaseWithRetry(
         issueNumber,
         phase,
-        phaseConfig,
+        {
+          ...phaseConfig,
+          promptContext: joinEvidenceReachContext(
+            phaseConfig.promptContext,
+            phase,
+            needsHuman,
+          ),
+        },
         undefined,
         wt,
         shutdownManager,
@@ -2189,14 +2200,14 @@ export function withEvidenceReachContext(
   needsHuman: readonly NeedsHumanAc[],
 ): ExecutionConfig {
   if (phase !== "qa") return base;
-  const block = buildEvidenceReachContext(needsHuman);
-  if (!block) return base;
-  return {
-    ...base,
-    promptContext: base.promptContext
-      ? `${base.promptContext}\n\n${block}`
-      : block,
-  };
+  const promptContext = joinEvidenceReachContext(
+    base.promptContext,
+    phase,
+    needsHuman,
+  );
+  return promptContext === base.promptContext
+    ? base
+    : { ...base, promptContext };
 }
 
 /**

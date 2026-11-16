@@ -61,6 +61,13 @@ import { formatElapsedTime } from "../cli-ui/format.js";
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
 import { noteSuppressed } from "./suppressed.js";
+import { getStateManager } from "./state-manager.js";
+import { acRecordFor } from "./ac-status.js";
+import {
+  joinEvidenceReachContext,
+  needsHumanAcs,
+  type NeedsHumanAc,
+} from "../evidence-reach.js";
 
 /**
  * Determine whether a phase's session must run inside the issue worktree.
@@ -1718,6 +1725,35 @@ async function buildPhaseEnv(
 }
 
 /**
+ * #1688: the issue's needs-human ACs, from its state record, for the
+ * do-not-run block every phase dispatch gets. A tracked issue with no record
+ * is registered from its body (`acRecordFor`), except in a dry run, which only
+ * reads. An untracked issue gives none here: `gh` is not called per dispatch,
+ * and the one path that dispatches untracked issues (`sequant ready`)
+ * classifies the body it already fetched. Never throws.
+ *
+ * @internal Exported for testing only
+ */
+export async function dispatchNeedsHumanAcs(
+  issueNumber: number,
+  dryRun: boolean | undefined,
+): Promise<NeedsHumanAc[]> {
+  try {
+    const stateManager = getStateManager();
+    if (dryRun) {
+      const state = await stateManager.getIssueState(issueNumber);
+      const items = state?.acceptanceCriteria?.items;
+      return items ? needsHumanAcs(items) : [];
+    }
+    const record = await acRecordFor(issueNumber, stateManager);
+    return record ? needsHumanAcs(record.items) : [];
+  } catch (err) {
+    noteSuppressed("state", err, "phase-executor:evidenceReach");
+    return [];
+  }
+}
+
+/**
  * Execute a single phase for an issue using the configured AgentDriver.
  */
 async function executePhase(
@@ -1734,11 +1770,19 @@ async function executePhase(
   // the run-level agent. Every driver decision below uses it.
   const agent = resolvePhaseAgent(config, phase);
 
+  // #1688: one site for every phase on every path. A block a caller already
+  // joined (#1652's qa wrap, the ready runners) is not repeated.
+  const promptContext = joinEvidenceReachContext(
+    config.promptContext,
+    phase,
+    await dispatchNeedsHumanAcs(issueNumber, config.dryRun),
+  );
+
   const prompt = await getPhasePrompt(
     phase,
     issueNumber,
     agent,
-    config.promptContext,
+    promptContext,
     {
       aiderSettings: config.aiderSettings,
       opencodeSettings: config.opencodeSettings,

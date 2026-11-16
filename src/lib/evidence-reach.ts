@@ -13,6 +13,8 @@
  * not prose. A clause with no backticks is `worktree`.
  */
 
+import { extractAcceptanceCriteria } from "./ac-parser.js";
+
 export type EvidenceReach = "worktree" | "needs-human";
 export type EvidenceReachReason = "env-file" | "production-cli" | "live-url";
 
@@ -187,17 +189,31 @@ export function needsHumanAcs(
 }
 
 /**
- * The qa prompt block for the needs-human ACs (E-2), or undefined when there
- * are none. `getPhasePrompt` wraps it in its one sentinel block.
+ * What a phase is told to do with the needs-human commands. qa reports them as
+ * `PENDING` (#1652); spec, exec and loop run commands to check their own work,
+ * so their wording names that case (#1688: exec ran the env-file command in
+ * the #1655 smoke).
+ */
+const REACH_INSTRUCTION: Record<string, string> = {
+  qa: "Do not run them. Report each AC below as `PENDING` with the command shown, for a person to run.",
+};
+const DEFAULT_REACH_INSTRUCTION =
+  "Do not run them, including to check your own work. Leave them for a person and list each AC below as unverified in your output, with the command shown.";
+
+/**
+ * The prompt block for the needs-human ACs (E-2), worded for `phase`, or
+ * undefined when there are none. `getPhasePrompt` wraps it in its one
+ * sentinel block.
  */
 export function buildEvidenceReachContext(
   acs: readonly NeedsHumanAc[],
+  phase = "qa",
 ): string | undefined {
   if (acs.length === 0) return undefined;
   const lines = [
     "## Evidence a person runs (#1652)",
     "",
-    "These Evidence commands reach outside the worktree (an env file, a production CLI or a live URL). Do not run them. Report each AC below as `PENDING` with the command shown, for a person to run.",
+    `These Evidence commands reach outside the worktree (an env file, a production CLI or a live URL). ${REACH_INSTRUCTION[phase] ?? DEFAULT_REACH_INSTRUCTION}`,
     "",
   ];
   for (const ac of acs) {
@@ -206,4 +222,29 @@ export function buildEvidenceReachContext(
     }
   }
   return lines.join("\n");
+}
+
+/**
+ * `promptContext` with the needs-human block for `phase` joined on, so
+ * `getPhasePrompt` still appends one sentinel block (#1688). Unchanged when
+ * there is no needs-human AC or the context already holds this block, so a
+ * dispatch site that added it earlier is not repeated.
+ */
+export function joinEvidenceReachContext(
+  promptContext: string | undefined,
+  phase: string,
+  acs: readonly NeedsHumanAc[],
+): string | undefined {
+  const block = buildEvidenceReachContext(acs, phase);
+  if (!block || promptContext?.includes(block)) return promptContext;
+  return promptContext ? `${promptContext}\n\n${block}` : block;
+}
+
+/**
+ * The needs-human ACs of an issue body, for an issue with no state record
+ * (#1688 AC-2). Reads the body only; nothing is written to state.
+ */
+export function needsHumanAcsFromBody(body: string | null): NeedsHumanAc[] {
+  if (!body) return [];
+  return needsHumanAcs(extractAcceptanceCriteria(body).items);
 }

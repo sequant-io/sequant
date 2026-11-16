@@ -49,7 +49,12 @@ import {
 import { noteSuppressed } from "../lib/workflow/suppressed.js";
 import { acRecordFor } from "../lib/workflow/ac-status.js";
 import { withEvidenceReachContext } from "../lib/workflow/batch-executor.js";
-import { needsHumanAcs, type NeedsHumanAc } from "../lib/evidence-reach.js";
+import {
+  joinEvidenceReachContext,
+  needsHumanAcs,
+  needsHumanAcsFromBody,
+  type NeedsHumanAc,
+} from "../lib/evidence-reach.js";
 
 export interface ReadyCommandOptions {
   policy?: string;
@@ -337,26 +342,40 @@ export async function readyCommand(
   // Real phase runner: wraps executePhaseWithRetry against the worktree. The
   // renderer doubles as the PhasePauseHandle (7th arg) so `--verbose` streaming
   // pauses/resumes the live zone instead of double-rendering (AC-5).
+  // #1681: the gate's qa passes spread `config`, so the do-not-run block (#1652)
+  // goes in there; the runner joins it to every pass, the loop pass included
+  // (#1688). An untracked issue is classified from its body (#1688 AC-2).
+  let needsHuman: NeedsHumanAc[] = [];
+  try {
+    const record = await acRecordFor(
+      issueNumber,
+      getStateManager(),
+      () => body,
+    );
+    needsHuman = record
+      ? needsHumanAcs(record.items)
+      : needsHumanAcsFromBody(body);
+  } catch (err) {
+    noteSuppressed("state", err, "ready:evidenceReach");
+  }
+
   const runPhase: ReadyPhaseRunner = (phase, config, wt) =>
     executePhaseWithRetry(
       issueNumber,
       phase,
-      config,
+      {
+        ...config,
+        promptContext: joinEvidenceReachContext(
+          config.promptContext,
+          phase,
+          needsHuman,
+        ),
+      },
       undefined,
       wt,
       undefined,
       renderer ?? undefined,
     );
-
-  // #1681: the gate's qa passes spread `config`, so the do-not-run block (#1652)
-  // goes in here. An untracked issue has no AC record yet and gets no block.
-  let needsHuman: NeedsHumanAc[] = [];
-  try {
-    const record = await acRecordFor(issueNumber, getStateManager());
-    if (record) needsHuman = needsHumanAcs(record.items);
-  } catch (err) {
-    noteSuppressed("state", err, "ready:evidenceReach");
-  }
 
   let result: ReadyResult;
   const gateStartedAt = Date.now();
