@@ -174,6 +174,28 @@ export function buildReadyMetricsRecord(
 }
 
 /**
+ * The issue's needs-human ACs for the gate's dispatches (#1681): from its AC
+ * record, or from the body already fetched when the issue has none (#1688
+ * AC-2). Never throws.
+ */
+async function readyNeedsHumanAcs(
+  issueNumber: number,
+  body: string | null,
+): Promise<NeedsHumanAc[]> {
+  try {
+    const record = await acRecordFor(
+      issueNumber,
+      getStateManager(),
+      () => body,
+    );
+    return record ? needsHumanAcs(record.items) : needsHumanAcsFromBody(body);
+  } catch (err) {
+    noteSuppressed("state", err, "ready:evidenceReach");
+    return [];
+  }
+}
+
+/**
  * Best-effort: a metrics failure warns on stderr and never changes the exit
  * code or pollutes `--json` stdout (#929).
  */
@@ -345,19 +367,7 @@ export async function readyCommand(
   // #1681: the gate's qa passes spread `config`, so the do-not-run block (#1652)
   // goes in there; the runner joins it to every pass, the loop pass included
   // (#1688). An untracked issue is classified from its body (#1688 AC-2).
-  let needsHuman: NeedsHumanAc[] = [];
-  try {
-    const record = await acRecordFor(
-      issueNumber,
-      getStateManager(),
-      () => body,
-    );
-    needsHuman = record
-      ? needsHumanAcs(record.items)
-      : needsHumanAcsFromBody(body);
-  } catch (err) {
-    noteSuppressed("state", err, "ready:evidenceReach");
-  }
+  const needsHuman = await readyNeedsHumanAcs(issueNumber, body);
 
   const runPhase: ReadyPhaseRunner = (phase, config, wt) =>
     executePhaseWithRetry(
