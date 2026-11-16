@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ExecutionConfig, PhaseResult } from "./types.js";
+import type { ExecutionConfig } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import type { StateManager } from "./state-manager.js";
 
@@ -194,6 +194,3 @@ describe("ready gate qa passes carry the do-not-run block (#1681)", () => {
     expect(loop.promptContext).toBe("loop only");
   });
 });
-
-// Keep the type import used for PhaseResult-shaped fixtures out of lint noise.
-export type _Unused = PhaseResult;
