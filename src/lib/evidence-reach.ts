@@ -227,8 +227,7 @@ export function buildEvidenceReachContext(
 /**
  * `promptContext` with the needs-human block for `phase` joined on, so
  * `getPhasePrompt` still appends one sentinel block (#1688). Unchanged when
- * there is no needs-human AC or the context already holds this block, so a
- * dispatch site that added it earlier is not repeated.
+ * there is no needs-human AC.
  */
 export function joinEvidenceReachContext(
   promptContext: string | undefined,
@@ -236,7 +235,7 @@ export function joinEvidenceReachContext(
   acs: readonly NeedsHumanAc[],
 ): string | undefined {
   const block = buildEvidenceReachContext(acs, phase);
-  if (!block || promptContext?.includes(block)) return promptContext;
+  if (!block) return promptContext;
   return promptContext ? `${promptContext}\n\n${block}` : block;
 }
 

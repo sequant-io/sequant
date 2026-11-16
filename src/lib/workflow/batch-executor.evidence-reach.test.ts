@@ -1,10 +1,10 @@
 /**
- * #1652 derived AC-6: the qa dispatch itself hands `executePhaseWithRetry` a
- * config whose `promptContext` carries the reach block. Drives the real
- * `runIssueWithLogging` with the phase executor mocked, so deleting the
- * wiring at the dispatch fails here even though `getPhasePrompt` (AC-2) still
- * builds the block when given one. Also checks the issue result carries the
- * needs-human ACs for the summary (E-4) and the run log gets `reach` (E-3).
+ * #1652: the phase loop classifies the issue's Evidence once, so the issue
+ * result carries the needs-human ACs for the summary (E-4) and the run log
+ * gets `reach` (E-3). Drives the real `runIssueWithLogging` with the phase
+ * executor mocked. Since #1688 the do-not-run block joins in `executePhase`,
+ * not here, so the loop dispatches every phase with its config unwrapped; the
+ * prompt-level assertions live in `evidence-reach-dispatch.test.ts`.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -117,8 +117,8 @@ beforeEach(() => {
   );
 });
 
-describe("qa dispatch passes the evidence reach block (#1652 AC-6)", () => {
-  it("puts the needs-human AC and its command in the qa config's promptContext", async () => {
+describe("phase loop evidence classification (#1652, #1688)", () => {
+  it("records the needs-human AC for the summary and the run log, and dispatches qa unwrapped", async () => {
     const setAcStatuses = vi.fn();
     // Every other LogWriter method is a no-op.
     const logWriter = new Proxy({ setAcStatuses } as Record<string, unknown>, {
@@ -134,8 +134,8 @@ describe("qa dispatch passes the evidence reach block (#1652 AC-6)", () => {
       ),
     );
 
-    const qaConfig = configFor("qa");
-    expect(qaConfig?.promptContext).toContain(`- AC-2: \`${COMMAND}\``);
+    // #1688: no caller wraps the config; executePhase joins the block.
+    expect(configFor("qa")?.promptContext).toBeUndefined();
     expect(configFor("exec")?.promptContext).toBeUndefined();
 
     // E-4: the summary's source, whatever the verdict.
@@ -158,7 +158,7 @@ describe("qa dispatch passes the evidence reach block (#1652 AC-6)", () => {
     );
   });
 
-  it("passes no promptContext to qa when no AC needs a person", async () => {
+  it("records no needs-human AC when no AC needs a person", async () => {
     const result = await runIssueWithLogging(
       makeCtx(
         stateManagerWith([

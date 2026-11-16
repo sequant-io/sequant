@@ -47,14 +47,6 @@ import {
   type ReadyResult,
 } from "../lib/workflow/ready-gate.js";
 import { noteSuppressed } from "../lib/workflow/suppressed.js";
-import { acRecordFor } from "../lib/workflow/ac-status.js";
-import { withEvidenceReachContext } from "../lib/workflow/batch-executor.js";
-import {
-  joinEvidenceReachContext,
-  needsHumanAcs,
-  needsHumanAcsFromBody,
-  type NeedsHumanAc,
-} from "../lib/evidence-reach.js";
 
 export interface ReadyCommandOptions {
   policy?: string;
@@ -171,28 +163,6 @@ export function buildReadyMetricsRecord(
       qaIterations: result.iterations,
     },
   };
-}
-
-/**
- * The issue's needs-human ACs for the gate's dispatches (#1681): from its AC
- * record, or from the body already fetched when the issue has none (#1688
- * AC-2). Never throws.
- */
-async function readyNeedsHumanAcs(
-  issueNumber: number,
-  body: string | null,
-): Promise<NeedsHumanAc[]> {
-  try {
-    const record = await acRecordFor(
-      issueNumber,
-      getStateManager(),
-      () => body,
-    );
-    return record ? needsHumanAcs(record.items) : needsHumanAcsFromBody(body);
-  } catch (err) {
-    noteSuppressed("state", err, "ready:evidenceReach");
-    return [];
-  }
 }
 
 /**
@@ -364,23 +334,11 @@ export async function readyCommand(
   // Real phase runner: wraps executePhaseWithRetry against the worktree. The
   // renderer doubles as the PhasePauseHandle (7th arg) so `--verbose` streaming
   // pauses/resumes the live zone instead of double-rendering (AC-5).
-  // #1681: the gate's qa passes spread `config`, so the do-not-run block (#1652)
-  // goes in there; the runner joins it to every pass, the loop pass included
-  // (#1688). An untracked issue is classified from its body (#1688 AC-2).
-  const needsHuman = await readyNeedsHumanAcs(issueNumber, body);
-
   const runPhase: ReadyPhaseRunner = (phase, config, wt) =>
     executePhaseWithRetry(
       issueNumber,
       phase,
-      {
-        ...config,
-        promptContext: joinEvidenceReachContext(
-          config.promptContext,
-          phase,
-          needsHuman,
-        ),
-      },
+      config,
       undefined,
       wt,
       undefined,
@@ -397,7 +355,7 @@ export async function readyCommand(
       maxIterations,
       tokenBudget,
       nonGoals,
-      config: withEvidenceReachContext(config, "qa", needsHuman),
+      config,
       runPhase,
       onProgress,
       // #937 AC-4: persist the final gap report so it survives the terminal

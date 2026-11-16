@@ -66,8 +66,10 @@ import { acRecordFor } from "./ac-status.js";
 import {
   joinEvidenceReachContext,
   needsHumanAcs,
+  needsHumanAcsFromBody,
   type NeedsHumanAc,
 } from "../evidence-reach.js";
+import { GitHubProvider } from "./platforms/github.js";
 
 /**
  * Determine whether a phase's session must run inside the issue worktree.
@@ -1724,29 +1726,45 @@ async function buildPhaseEnv(
   return env;
 }
 
+/** Bodies of untracked issues, fetched once per process (#1688 AC-2). */
+const untrackedIssueBodies = new Map<number, string | null>();
+
+function fetchIssueBodyOnce(issueNumber: number): string | null {
+  if (!untrackedIssueBodies.has(issueNumber)) {
+    untrackedIssueBodies.set(
+      issueNumber,
+      new GitHubProvider().fetchIssueBodySync(String(issueNumber)),
+    );
+  }
+  return untrackedIssueBodies.get(issueNumber) ?? null;
+}
+
 /**
- * #1688: the issue's needs-human ACs, from its state record, for the
- * do-not-run block every phase dispatch gets. A tracked issue with no record
- * is registered from its body (`acRecordFor`), except in a dry run, which only
- * reads. An untracked issue gives none here: `gh` is not called per dispatch,
- * and the one path that dispatches untracked issues (`sequant ready`)
- * classifies the body it already fetched. Never throws.
+ * #1688: the issue's needs-human ACs, for the do-not-run block every phase
+ * dispatch gets. Read from the state record. A tracked issue with no record is
+ * registered from its body (`acRecordFor`), except in a dry run, which only
+ * reads. An issue with no state record (`sequant ready` on an untracked issue)
+ * is classified from its body, and nothing is written to state (AC-2). Never
+ * throws: a failed read or fetch gives no block.
  *
  * @internal Exported for testing only
  */
 export async function dispatchNeedsHumanAcs(
   issueNumber: number,
   dryRun: boolean | undefined,
+  fetchBody: (issueNumber: number) => string | null = fetchIssueBodyOnce,
 ): Promise<NeedsHumanAc[]> {
   try {
     const stateManager = getStateManager();
-    if (dryRun) {
-      const state = await stateManager.getIssueState(issueNumber);
-      const items = state?.acceptanceCriteria?.items;
-      return items ? needsHumanAcs(items) : [];
+    const state = await stateManager.getIssueState(issueNumber);
+    if (state?.acceptanceCriteria) {
+      return needsHumanAcs(state.acceptanceCriteria.items);
     }
-    const record = await acRecordFor(issueNumber, stateManager);
-    return record ? needsHumanAcs(record.items) : [];
+    if (state && !dryRun) {
+      const record = await acRecordFor(issueNumber, stateManager, fetchBody);
+      return record ? needsHumanAcs(record.items) : [];
+    }
+    return needsHumanAcsFromBody(fetchBody(issueNumber));
   } catch (err) {
     noteSuppressed("state", err, "phase-executor:evidenceReach");
     return [];
@@ -1770,8 +1788,9 @@ async function executePhase(
   // the run-level agent. Every driver decision below uses it.
   const agent = resolvePhaseAgent(config, phase);
 
-  // #1688: one site for every phase on every path. A block a caller already
-  // joined (#1652's qa wrap, the ready runners) is not repeated.
+  // #1688: the do-not-run block (#1652) joins here, the one site every phase
+  // on every path (phase loop, --ready-gate, `sequant ready`) dispatches
+  // through, so callers do not wrap the config.
   const promptContext = joinEvidenceReachContext(
     config.promptContext,
     phase,

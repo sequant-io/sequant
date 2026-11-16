@@ -1,30 +1,30 @@
 /**
  * #1652 AC-2 (E-2): the qa prompt carries the needs-human ACs in the one
  * sentinel block `getPhasePrompt` appends, and an issue with none gets no
- * reach block.
+ * reach block. Every other phase's prompt is covered at the dispatch seam in
+ * `evidence-reach-dispatch.test.ts` (#1688).
  */
 
 import { describe, it, expect } from "vitest";
 import { getPhasePrompt, PROMPT_CONTEXT_SENTINEL } from "./phase-executor.js";
-import { withEvidenceReachContext } from "./batch-executor.js";
-import { needsHumanAcs } from "../evidence-reach.js";
-import type { ExecutionConfig } from "./types.js";
+import {
+  joinEvidenceReachContext,
+  needsHumanAcs,
+} from "../evidence-reach.js";
 
 const COMMAND = "npx tsx --env-file=.env.local scripts/dev/query.ts --limit 5";
 const OPEN = `<!-- ${PROMPT_CONTEXT_SENTINEL} -->`;
 
-const base = { phases: ["qa"] } as unknown as ExecutionConfig;
-
 async function qaPrompt(
   items: Array<{ id: string; evidence?: string }>,
-  config: ExecutionConfig = base,
+  promptContext?: string,
 ): Promise<string> {
-  const dispatched = withEvidenceReachContext(
-    config,
+  const joined = joinEvidenceReachContext(
+    promptContext,
     "qa",
     needsHumanAcs(items),
   );
-  return getPhasePrompt("qa", 1652, undefined, dispatched.promptContext);
+  return getPhasePrompt("qa", 1652, undefined, joined);
 }
 
 function count(haystack: string, needle: string): number {
@@ -57,17 +57,11 @@ describe("qa prompt evidence reach block (#1652 AC-2)", () => {
   it("joins an existing context into the same single block", async () => {
     const prompt = await qaPrompt(
       [{ id: "AC-3", evidence: "`vercel env ls production`" }],
-      { ...base, promptContext: "## Prior context" },
+      "## Prior context",
     );
     expect(count(prompt, OPEN)).toBe(1);
     expect(prompt).toContain("## Prior context");
     expect(prompt).toContain("- AC-3: `vercel env ls production`");
   });
 
-  it("adds no block to a non-qa phase", () => {
-    const items = needsHumanAcs([
-      { id: "AC-3", evidence: "`vercel env ls production`" },
-    ]);
-    expect(withEvidenceReachContext(base, "exec", items)).toBe(base);
-  });
 });
