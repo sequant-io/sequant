@@ -29,7 +29,8 @@ import {
 } from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
 import { parseQaGapsMarker } from "./qa-gaps-marker.js";
-import { parsePhaseMarkers } from "./phase-detection.js";
+import { scanMarkerJson } from "./phase-detection.js";
+import { PhaseMarkerSchema } from "./state-schema.js";
 import {
   parseSpecMarker,
   specMarkerPostedSince,
@@ -1137,10 +1138,11 @@ function autoCommitUncommittedWork(
  * The declaration channel is the existing `SEQUANT_PHASE` marker rather than a
  * new marker family: `state-schema.ts` already carries the `outcome` /
  * `divergenceAcs` fields, and a second family would mean a second parser to
- * keep in sync with the first. `parsePhaseMarkers` is reused verbatim, so the
- * code-block stripping and schema validation that protect every other marker
- * read protect this one too — an agent that *documents* the marker in a fenced
- * block does not thereby halt its own run.
+ * keep in sync with the first. The scan (`scanMarkerJson`) is shared with
+ * `parsePhaseMarkers`, so code-block stripping protects this read too — an
+ * agent that *documents* the marker in a fenced block does not thereby halt
+ * its own run. Validation is `PhaseMarkerSchema` minus `timestamp`: the spec
+ * skill's marker carries none, and the shared schema would drop it (#1691).
  *
  * The LAST such marker wins, matching `detectPhaseFromComments`' "most recent
  * marker" rule: an agent that explores, emits a divergence, then retracts it in
@@ -1153,7 +1155,12 @@ export function parseSpecDivergence(
 ): { acs?: string; message?: string } | undefined {
   if (!output) return undefined;
   let found: { acs?: string; message?: string } | undefined;
-  for (const marker of parsePhaseMarkers(output)) {
+  for (const parsed of scanMarkerJson(output)) {
+    const result = PhaseMarkerSchema.omit({ timestamp: true }).safeParse(
+      parsed,
+    );
+    if (!result.success) continue;
+    const marker = result.data;
     if (marker.outcome !== "SPEC_DIVERGENCE") continue;
     found = {
       ...(marker.divergenceAcs !== undefined

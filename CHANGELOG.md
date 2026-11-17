@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A spec's `SPEC_DIVERGENCE` marker now halts the run (#1691).** The spec skill's marker carries no `timestamp`, which `PhaseMarkerSchema` requires, so `parseSpecDivergence` dropped it and the run went on to exec. The escape hatch now validates the marker without `timestamp` (the shared schema and phase detection are unchanged); fenced markers are still ignored.
+
 ### Added
 
 - **Every phase dispatch gets the do-not-run block, not only qa (#1688).** `executePhase` (`src/lib/workflow/phase-executor.ts`) is now the one place the needs-human block is built: it joins the block into the prompt for spec, exec, qa and loop, on every path (`sequant run`, `--ready-gate`, `sequant ready`), and no caller wraps the config any more (the #1652 and #1681 wraps are gone). spec, exec and loop are told not to run those commands even to check their own work, and to list the ACs as unverified; qa keeps "report as `PENDING`". The gate's loop pass now carries the block too. An issue with no state record is classified from its body, fetched once per process, and nothing is written to state. The #1655 smoke showed exec running an env-file Evidence command that qa had been told to leave. The issue's AC record is now written from its body at the first phase dispatch (spec) rather than the first qa, and, as before, it isn't refreshed afterwards (#1692).

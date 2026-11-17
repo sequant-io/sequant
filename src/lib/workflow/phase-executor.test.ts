@@ -52,6 +52,7 @@ import {
   normalizeModelUsage,
   selectResolvedModel,
   PROMPT_CONTEXT_SENTINEL,
+  parseSpecDivergence,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
 import { specMarkerPostedSince } from "./spec-recommendation.js";
@@ -3177,5 +3178,32 @@ describe("recordWorktreeBaseRef (#1469)", () => {
     expect(result).toEqual({ ok: false, error: "fatal: not a git repository" });
     expect(mockSpawnSync).toHaveBeenCalledTimes(1);
     expect(sleep).not.toHaveBeenCalled();
+  });
+});
+
+// #1691: the spec skill's SPEC_DIVERGENCE marker carries no `timestamp`, which
+// the shared PhaseMarkerSchema requires, so the escape hatch never fired.
+describe("#1691: divergence without timestamp", () => {
+  const specLine =
+    '<!-- SEQUANT_PHASE: {"phase":"spec","status":"failed","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-3","error":"AC-3 pins the wrap"} -->';
+  const execLine =
+    '<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"2026-11-16T03:33:00Z","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 contradicts itself"} -->';
+
+  it("divergence without timestamp: the spec skill's marker is read", () => {
+    expect(parseSpecDivergence(`plan text\n${specLine}\n`)).toEqual({
+      acs: "AC-3",
+      message: "AC-3 pins the wrap",
+    });
+  });
+
+  it("divergence without timestamp: a fenced marker is still ignored", () => {
+    expect(parseSpecDivergence("```\n" + specLine + "\n```\n")).toBeUndefined();
+  });
+
+  it("divergence without timestamp: the exec skill's marker keeps working", () => {
+    expect(parseSpecDivergence(execLine)).toEqual({
+      acs: "AC-2",
+      message: "AC-2 contradicts itself",
+    });
   });
 });

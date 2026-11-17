@@ -71,6 +71,24 @@ export function formatPhaseMarker(marker: PhaseMarker): string {
  */
 export function parsePhaseMarkers(commentBody: string): PhaseMarker[] {
   const markers: PhaseMarker[] = [];
+  for (const parsed of scanMarkerJson(commentBody)) {
+    const result = PhaseMarkerSchema.safeParse(parsed);
+    if (result.success) {
+      markers.push(result.data);
+    }
+  }
+  return markers;
+}
+
+/**
+ * Scan a body for `SEQUANT_PHASE` markers and return each one's parsed JSON,
+ * unvalidated. Code blocks are stripped first; malformed JSON is skipped.
+ *
+ * @internal Shared by `parsePhaseMarkers` and readers that must accept a
+ * marker without a `timestamp` (#1691).
+ */
+export function scanMarkerJson(commentBody: string): unknown[] {
+  const found: unknown[] = [];
   // Strip code blocks before matching to avoid false positives
   const strippedBody = stripMarkdownCode(commentBody);
   // Reset regex state for reuse
@@ -79,18 +97,13 @@ export function parsePhaseMarkers(commentBody: string): PhaseMarker[] {
   let match: RegExpExecArray | null;
   while ((match = PHASE_MARKER_REGEX.exec(strippedBody)) !== null) {
     try {
-      const parsed = JSON.parse(match[1]);
-      const result = PhaseMarkerSchema.safeParse(parsed);
-      if (result.success) {
-        markers.push(result.data);
-      }
+      found.push(JSON.parse(match[1]));
     } catch (err) {
       // Malformed JSON — skip silently
       noteSuppressed("state", err, "phase-detection:parsePhaseMarkers");
     }
   }
-
-  return markers;
+  return found;
 }
 
 /**
