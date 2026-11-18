@@ -45,19 +45,21 @@ export function cleanEnv(
 
 /**
  * Highest published `<major>.<minor-1>.x`, derived from this tree's version so
- * it never rots at the next minor bump. Fails loudly when none exists.
+ * it never rots at the next minor bump. On a major release (`X.0.0`) there is
+ * no previous minor in the same line, so it is the highest published
+ * `<major-1>.x` (3.0.0 → the last 2.x). Fails loudly when none exists.
  */
 export function previousMinorVersion(): string {
   const pkg = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
   ) as { version: string };
   const [major, minor] = pkg.version.split(".").map(Number);
-  if (!(minor > 0)) {
+  if (!(minor > 0) && !(major > 0)) {
     throw new Error(
-      `cannot derive a previous minor from ${pkg.version}; extend previousMinorVersion()`,
+      `cannot derive a previous release from ${pkg.version}; extend previousMinorVersion()`,
     );
   }
-  const range = `${major}.${minor - 1}`;
+  const range = minor > 0 ? `${major}.${minor - 1}` : `${major - 1}`;
   const out = execFileSync(
     "npm",
     ["view", `sequant@${range}`, "version", "--json"],
