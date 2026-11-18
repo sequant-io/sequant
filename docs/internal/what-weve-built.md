@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.20.0
+# What We've Built: Sequant v3.0.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -14,14 +14,14 @@ journey through planning, implementation, testing, and review
 | Metric | Count |
 |--------|-------|
 | Slash Commands | 20 |
-| CLI Commands | 20 |
-| Core Library Modules | 149 |
-| Test Files | 397 |
-| Documentation Files | 145 |
+| CLI Commands | 21 |
+| Core Library Modules | 163 |
+| Test Files | 418 |
+| Documentation Files | 153 |
 | Stack Configurations | 9 |
-| Lines of TypeScript | ~72,900 |
+| Lines of TypeScript | ~75,700 |
 
-*Counted 2026-10-18 (v2.20.0) with the commands in `/release` Step 4.6.*
+*Counted 2026-11-17 (v3.0.0) with the commands in `/release` Step 4.6.*
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)
@@ -741,6 +741,14 @@ Shell scripts in `templates/scripts/`:
 - VS Code extension
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
+
+### Recent Additions (v3.0.0)
+
+- **Removed run flags** - `--model-ladder`, `--escalate-effort`, `--stacked`, `--reflect` and `--full-qa` (and their settings and the MCP `fullQa` parameter) are gone (#1647, #1648)
+- **Repeat halt** - the quality loop stops on a second consecutive `AC_NOT_MET` (#1646)
+- **Evidence reach** - Evidence that names an env file, a production CLI or a live URL is handed to a person by every phase, and named in the run summary (#1652, #1681, #1688)
+- **Experimental warnings** - `--chain` and multi-issue runs print their measured success rates (#1651)
+- **Spec divergence halts** - a spec's `SPEC_DIVERGENCE` marker without a timestamp now stops the run (#1691)
 
 ### Recent Additions (v2.20.0)
 
