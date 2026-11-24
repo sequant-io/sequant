@@ -2,7 +2,7 @@
 
 `main` = `63d74cb02` ("chore: release v3.0.0 (#1701)"), tagged `v3.0.0`. Tracker #1645. Merge consent was **stop at every PR** (I-5) throughout. Every merge below had the owner's word, logged in the research repo's decision log.
 
-sequant 3.0.0 is on npm under `next`. `latest` stays on 2.20.0 until `/release --soaked`. Registry at close: `{"latest":"2.20.0","next":"3.0.0"}`; `npm view sequant@3.0.0 dist.shasum` → `e888a63f4305e7b9ecc56771f183739fb3ce410e`. Since `research-baseline-2026-11-03` (`31c6f8bdc`, untouched): `src` and `bin` show 70 files changed, 2619 insertions and 6404 deletions.
+sequant 3.0.0 was published to npm under `next` on 2026-11-18 and promoted to `latest` on 2026-11-24, on the owner's word after the Step 9b soak (see Soak below). Registry after the promotion: `{"latest":"3.0.0","next":"3.0.0"}`; `npm view sequant@3.0.0 dist.shasum` → `e888a63f4305e7b9ecc56771f183739fb3ce410e`. Since `research-baseline-2026-11-03` (`31c6f8bdc`, untouched): `src` and `bin` show 70 files changed, 2619 insertions and 6404 deletions.
 
 ## Ledger
 
@@ -35,8 +35,17 @@ sequant 3.0.0 is on npm under `next`. `latest` stays on 2.20.0 until `/release -
 
 ## Next
 
-1. **Owner:** promote `latest` with `/release --soaked`, after the Step 9b checklist passes: the CI canary against the published tarball, then `npx sequant@next sync --dry-run` and `npx sequant@next doctor` in your own repos.
-2. **Owner:** approve E8 (#1653), and confirm or correct the 50 labels (#1654). Then close tracker #1645.
+1. **Owner:** approve E8 (#1653), and confirm or correct the 50 labels (#1654). Then close tracker #1645.
+2. **Owner:** merge admarble/matcha-maps#1261 (the hook-channel fix for that repo), then re-run `doctor` there.
+
+## Soak (2026-11-18 to 2026-11-24)
+
+The Step 9b checklist ran against the published 3.0.0 in the owner's 17 repos.
+
+- **Canary:** a pack of `63d74cb02` has npm's shasum, and the `canary` job was green on that commit. The canary test packs the checkout and can't target the registry, so the equal shasum is the link.
+- **`sync --dry-run`:** only known decisions.
+- **`doctor`:** failed in 13 repos, all on Hook channels (#1603). The user-level `sequant@sequant` plugin and the repo's own hooks were both registered, so every hook ran twice. The fix, per repo: remove the repo's sequant hooks and their registrations in `.claude/settings.json`, and set `"hooks": "plugin"` in `.sequant-manifest.json`. After it, `doctor` exits 0 in 14 of 17. The other 3 fail only Hook channels: matcha-maps (PR open), and two checkouts on feature branches that don't have the fix from `main` yet.
+- **Promotion:** the owner ran `npm dist-tag add sequant@3.0.0 latest` on 2026-11-24. Checked after: `npm view sequant@latest version` and `npx -y sequant@latest --version` both return `3.0.0`.
 
 ## Rules that mattered
 
